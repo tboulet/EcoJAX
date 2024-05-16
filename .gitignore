@@ -1,3 +1,28 @@
+# Virtual Environments
+venv*
+
+# Data
+data/
+
+# Logs (text files or other output files)
+logs/
+wandb/
+tensorboard/
+out.txt
+error.txt
+
+# Hydra config files
+.hydra/
+outputs/
+
+# Personal development files usefull for debugging
+personal*
+
+
+
+
+# ========== GitHub's default Python .gitignore ==========
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -122,7 +147,6 @@ celerybeat.pid
 # Environments
 .env
 .venv
-env/
 venv/
 ENV/
 env.bak/

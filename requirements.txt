@@ -1,0 +1,31 @@
+# pip install --upgrade "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+#jaxlib==0.4.24
+moviepy
+matplotlib
+PyYAML
+IPython
+pandas
+flax==0.8.3
+
+
+
+# Monitoring
+snakeviz
+
+# Config system
+hydra-core
+
+# Code quality
+black
+
+# Logging
+wandb
+tensorboardX
+tensorboard
+
+# Utils
+matplotlib 
+tqdm
+
+# Common libraries
+numpy

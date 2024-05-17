@@ -1,5 +1,5 @@
 # Hyperparameters
-n_timesteps : 1000
+n_timesteps : 5000
 
 
 
@@ -11,7 +11,18 @@ do_tb : True
 do_cli : True
 do_tqdm : True
 do_snakeviz : False
+config_dirs_to_log :
+  run : True
+  last_of_all : True
+  last_of_agents : True
+  last_of_day : False
 
+# Video recording
+do_video : True
+n_steps_between_videos : 500
+n_steps_per_video : 500
+n_steps_between_frames : 1
+dir_video : null
 
 
 # Defaults sub-configs and other Hydra config.

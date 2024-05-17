@@ -1,5 +1,6 @@
 from typing import Any, Dict, Union
 
+import jax.numpy as jnp
 import numpy as np
 
 
@@ -54,3 +55,10 @@ def try_get(
         return dictionnary[key] if dictionnary[key] is not None else default
     except KeyError:
         return default
+    
+    
+def sigmoid(x):
+    return 1/(1+jnp.exp(-x))
+
+def logit(x):
+    return jnp.log(x/(1-x))

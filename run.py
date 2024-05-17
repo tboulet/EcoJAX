@@ -15,8 +15,8 @@ from typing import Dict, Type
 import cProfile
 
 # ML libraries
-import random
 import numpy as np
+from jax import random
 
 # Project imports
 from src.environment import env_name_to_EnvClass
@@ -44,13 +44,13 @@ def main(config: DictConfig):
     do_cli: bool = config["do_cli"]
     do_tqdm: bool = config["do_tqdm"]
     do_snakeviz: bool = config["do_snakeviz"]
-    config_dirs_to_log : Dict[str, bool] = config["config_dirs_to_log"]
-    
+    config_dirs_to_log: Dict[str, bool] = config["config_dirs_to_log"]
+
     # Video recording
     do_video: bool = config["do_video"]
     n_steps_between_videos: int = config["n_steps_between_videos"]
     n_steps_per_video: int = config["n_steps_per_video"]
-    n_steps_between_frames : int = config["n_steps_between_frames"]
+    n_steps_between_frames: int = config["n_steps_between_frames"]
     assert (
         n_steps_per_video <= n_steps_between_videos
     ) or not do_video, "len_video must be less than or equal to freq_video"
@@ -59,7 +59,6 @@ def main(config: DictConfig):
 
     # Set the seeds
     seed = try_get_seed(config)
-    random.seed(seed)
     np.random.seed(seed)
     print(f"Using seed: {seed}")
 
@@ -87,8 +86,8 @@ def main(config: DictConfig):
 
     # =============== Start simulation ===============
     print("Starting simulation...")
-    env.start()
-    
+    env.reset(seed=seed)
+
     # ============== Simulation loop ===============
     print("Simulation started.")
     # Training loop
@@ -103,14 +102,16 @@ def main(config: DictConfig):
                     fps=20,
                 )
             t_current_video = t - (t // n_steps_between_videos) * n_steps_between_videos
-            if (t_current_video < n_steps_per_video) and (t_current_video % n_steps_between_frames == 0):
+            if (t_current_video < n_steps_per_video) and (
+                t_current_video % n_steps_between_frames == 0
+            ):
                 video_writer.add(env.get_RGB_map())
             if t_current_video == n_steps_per_video - 1:
                 video_writer.close()
-        
+
         # Env step
         env.step()
-        
+
     # Finish the WandB run.
     if do_wandb:
         run.finish()

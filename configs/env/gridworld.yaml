@@ -1,4 +1,66 @@
 name : Gridworld
 
+# The dimensions of the gridworld
 width : 400
 height : 400
+
+# The type of border of the gridworld, among :
+# - "torus" : the gridworld is a torus
+# - "wall" : the gridworld has walls
+# - "wall_kill" : the gridworld has walls that kill agents
+type_border : "wall"
+
+
+
+# ======================== Sun Parameters ========================
+# The duration of 1 cycle of the sun (for methods using a period)
+period_sun : 300
+
+# The method to determine the sun's position, among :
+# - "none" : there is no sun
+# - "fixed" : the sun does not move at, all and is fixed in the middle latitude
+# - "random" : the sun moves randomly
+# - "brownian" : the sun moves in a brownian motion
+# - "sine" : the sun moves in a sine wave between south and north
+# - "linear" : the sun moves in a linear way and wraps around the gridworld when reaching the south
+method_sun : "linear"
+
+# The radius of the effect of the sun, i.e. the distance at which the sun increase food's growth
+radius_sun_effect : 10
+
+# The radius of the perception of the sun by the agents
+radius_sun_perception : 40
+
+
+
+# ======================== Food Dynamics ========================
+
+# The initial proportion of food tiles at the beginning of the simulation
+p_initial_food : 0.001
+
+# The rule for a tile to be a food-tile is the following :
+# P(food spawn) = sigmoid(
+# + logit(p_base_grow_food) * 1_if_tile_is_not_food
+# + factor_sun_grow_food * 1_if_sun_is_up
+# + factor_food_grow_food * average_food_in_radius_food_grow_food
+# - factor_food_kill_food * average_food_in_radius_food_kill_food
+# - logit(p_base_die_food) * 1_if_tile_is_food
+
+# The base probability of a non-food tile to grow spontaneously
+p_base_grow_food : 0.001
+# The base probability of a food tile to die spontaneously
+p_base_die_food : 0.001
+
+# The factor of the sun's effect on the growth of food
+factor_sun_grow_food : 0
+
+# The factor of the effect of the presence of food on the growth of food
+factor_food_grow_food : 4
+# The radius of the effect of the presence of food on the growth of food
+radius_food_grow_food : 10
+
+# The factor of the effect of the presence of food on the death of food
+factor_food_kill_food : 8
+# The radius of the effect of the presence of food on the death of food
+radius_food_kill_food : 15
+

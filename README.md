@@ -21,6 +21,11 @@ pip install -r requirements.txt
 ```
 
 Install EvoJAX (for now)
+```bash
+cd evojax
+pip install -e .
+cd ..
+```
 
 
 

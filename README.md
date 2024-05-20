@@ -10,13 +10,24 @@ The python version used was 3.12.2.
 git clone git@github.com:tboulet/EcoJAX.git
 cd EcoJAX
 python -m venv venv
-source venv/bin/activate
+source venv/bin/activate   # on Windows, use `venv\Scripts\activate.bat`
 ```
 
-Install the dependencies. Note your CUDA version may vary.
+### Install JAX
+
+On linux (note your CUDA version may var) :
 ```bash
-pip install --upgrade "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 pip install jax[cuda12_pip]==0.4.24 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+```
+
+On Windows :
+```bash
+pip install jax[cpu]==0.4.24
+```
+
+### Install the requirements
+
+```bash
 pip install -r requirements.txt
 ```
 
@@ -26,8 +37,6 @@ cd evojax
 pip install -e .
 cd ..
 ```
-
-
 
 
 # Usage

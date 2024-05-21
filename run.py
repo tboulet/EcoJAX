@@ -59,17 +59,17 @@ def main(config: DictConfig):
 
     # Set the seeds
     seed = try_get_seed(config)
-    np.random.seed(seed)
     print(f"Using seed: {seed}")
+    np.random.seed(seed)
+    key_random = random.PRNGKey(seed)
 
     # Create the env
-    print("Creating the env...")
     env_name: str = config["env"]["name"]
     EnvClass = env_name_to_EnvClass[env_name]
     env = EnvClass(config["env"])
 
     # Initialize loggers
-    run_name = f"[{None}]_[{env_name}]_{datetime.datetime.now().strftime('%dth%mmo_%Hh%Mmin%Ss')}_seed{seed}"
+    run_name = f"[{env_name}]_{datetime.datetime.now().strftime('%dth%mmo_%Hh%Mmin%Ss')}_seed{seed}"
     os.makedirs(f"logs/{run_name}", exist_ok=True)
     print(f"\nStarting run {run_name}")
     if do_snakeviz:
@@ -86,7 +86,8 @@ def main(config: DictConfig):
 
     # =============== Start simulation ===============
     print("Starting simulation...")
-    env.reset(seed=seed)
+    key_random, subkey = random.split(key_random)
+    state_env = env.start(key_random=subkey)
 
     # ============== Simulation loop ===============
     print("Simulation started.")
@@ -105,12 +106,17 @@ def main(config: DictConfig):
             if (t_current_video < n_steps_per_video) and (
                 t_current_video % n_steps_between_frames == 0
             ):
-                video_writer.add(env.get_RGB_map())
+                video_writer.add(env.get_RGB_map(state=state_env))
             if t_current_video == n_steps_per_video - 1:
                 video_writer.close()
 
         # Env step
-        env.step()
+        key_random, subkey = random.split(key_random)
+        state_env, done_env, info_env = env.step(
+            key_random=subkey,
+            state=state_env,
+            actions=None,  # TODO: Implement agent
+        )
 
     # Finish the WandB run.
     if do_wandb:

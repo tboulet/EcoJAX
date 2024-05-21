@@ -2,7 +2,7 @@ name : Gridworld
 
 # The dimensions of the gridworld
 width : 400
-height : 400
+height : 200
 
 # The type of border of the gridworld, among :
 # - "torus" : the gridworld is a torus
@@ -36,7 +36,7 @@ radius_sun_perception : 40
 # ======================== Food Dynamics ========================
 
 # The initial proportion of food tiles at the beginning of the simulation
-p_initial_food : 0.001
+proportion_plant_initial : 0.001
 
 # The rule for a tile to be a food-tile is the following :
 # P(food spawn) = sigmoid(
@@ -47,20 +47,20 @@ p_initial_food : 0.001
 # - logit(p_base_die_food) * 1_if_tile_is_food
 
 # The base probability of a non-food tile to grow spontaneously
-p_base_grow_food : 0.001
+p_base_plant_growth : 0.001
 # The base probability of a food tile to die spontaneously
 p_base_die_food : 0.001
 
 # The factor of the sun's effect on the growth of food
-factor_sun_grow_food : 0
+factor_sun_effect : 0
 
 # The factor of the effect of the presence of food on the growth of food
-factor_food_grow_food : 4
+factor_plant_reproduction : 4
 # The radius of the effect of the presence of food on the growth of food
-radius_food_grow_food : 10
+radius_plant_reproduction : 10
 
 # The factor of the effect of the presence of food on the death of food
-factor_food_kill_food : 8
+factor_plant_asphyxia : 8
 # The radius of the effect of the presence of food on the death of food
-radius_food_kill_food : 15
+radius_plant_asphyxia : 15
 

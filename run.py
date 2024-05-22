@@ -66,7 +66,16 @@ def main(config: DictConfig):
     # Create the env
     env_name: str = config["env"]["name"]
     EnvClass = env_name_to_EnvClass[env_name]
-    env = EnvClass(config["env"])
+    env = EnvClass(
+        config=config["env"],
+        n_agents_max=config["n_agents_max"],
+        n_agents_initial=config["n_agents_initial"],
+    )
+
+    # Create the agent's species
+    agent_species_name: str = config["agent"]["name"]
+    AgentSpeciesClass = agent_name_to_AgentSpeciesClass[agent_species_name]
+    agent_species = AgentSpeciesClass(config["agent"])
 
     # Initialize loggers
     run_name = f"[{env_name}]_{datetime.datetime.now().strftime('%dth%mmo_%Hh%Mmin%Ss')}_seed{seed}"
@@ -87,7 +96,7 @@ def main(config: DictConfig):
     # =============== Start simulation ===============
     print("Starting simulation...")
     key_random, subkey = random.split(key_random)
-    state_env = env.start(key_random=subkey)
+    state_env, observations_agents = env.start(key_random=subkey)
 
     # ============== Simulation loop ===============
     print("Simulation started.")
@@ -110,13 +119,23 @@ def main(config: DictConfig):
             if t_current_video == n_steps_per_video - 1:
                 video_writer.close()
 
+        # Agents step
+        key_random, subkey = random.split(key_random)
+        actions = agent_species.react(
+            key_random=subkey,
+            observations=observations_agents,
+        )
+
         # Env step
         key_random, subkey = random.split(key_random)
-        state_env, done_env, info_env = env.step(
+        state_env, observations_agents, done_env, info_env = env.step(
             key_random=subkey,
             state=state_env,
-            actions=None,  # TODO: Implement agent
+            actions=actions,
         )
+        if done_env:
+            print("Environment done.")
+            break
 
     # Finish the WandB run.
     if do_wandb:

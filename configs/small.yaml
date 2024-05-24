@@ -1,7 +1,7 @@
 # Hyperparameters
 n_timesteps : 5000
-n_agents_max : 100
-n_agents_initial : 50
+n_agents_max : 10
+n_agents_initial : 5
 
 
 # Logging
@@ -32,7 +32,7 @@ dir_video : null
 # Defaults sub-configs and other Hydra config.
 defaults:
   - _self_
-  - env : gridworld
+  - env : small
   - agent : evo
   - model : mlp
   - override hydra/hydra_logging: disabled  

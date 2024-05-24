@@ -123,7 +123,7 @@ def main(config: DictConfig):
         key_random, subkey = random.split(key_random)
         actions = agent_species.react(
             key_random=subkey,
-            observations=observations_agents,
+            batch_observations=observations_agents,
         )
 
         # Env step

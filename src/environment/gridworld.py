@@ -27,14 +27,15 @@ class EnvState:
     # The latitude of the sun (the row of the map where the sun is). It represents entirely the sun location.
     latitude_sun: int
 
-    # Where the agents are, of shape (n_max_agents, 2). agents_positions[i, :] represents the (x,y) coordinates of the i-th agent in the map. Ghost agents are still represented in the array (in position (0,0)).
-    agents_positions: jnp.ndarray  # (n_max_agents, 2) in [0, height-1] x [0, width-1]
-    # The orientation of the agents, of shape (n_max_agents,) and of values in {0, 1, 2, 3}. agents_orientations[i] represents the index of its orientation in the env.
+    # Where the agents are, of shape (n_max_agents, 2). positions_agents[i, :] represents the (x,y) coordinates of the i-th agent in the map. Ghost agents are still represented in the array (in position (0,0)).
+    positions_agents: jnp.ndarray  # (n_max_agents, 2) in [0, height-1] x [0, width-1]
+    # The orientation of the agents, of shape (n_max_agents,) and of values in {0, 1, 2, 3}. orientation_agents[i] represents the index of its orientation in the env.
     # The orientation of an agent will have an impact on the way the agent's surroundings are perceived, because a certain rotation will be performed on the agent's vision in comparison to the traditional map[x-v:x+v+1, y-v:y+v+1, :] vision.
-    agents_orientations: jnp.ndarray  # (n_max_agents,) in {0, 1, 2, 3}
-    # Whether the agents exist or not, of shape (n_max_agents,) and of values in {0, 1}. agents_exist[i] represents whether the i-th agent actually exists in the environment and should interact with it.
-    # An non existing agent is called a Ghost Agent and is only kept as a placeholder in the agents_positions array, in order to keep the array of agents_positions of shape (n_max_agents, 2).
-    agents_exist: jnp.ndarray  # (n_max_agents,) in {0, 1}
+    # The angle the agent is facing is given by orientation_agents[i] * 90 degrees (modulo 360 degrees), where 0 is facing north.
+    orientation_agents: jnp.ndarray  # (n_max_agents,) in {0, 1, 2, 3}
+    # Whether the agents exist or not, of shape (n_max_agents,) and of values in {0, 1}. are_existing_agents[i] represents whether the i-th agent actually exists in the environment and should interact with it.
+    # An non existing agent is called a Ghost Agent and is only kept as a placeholder in the positions_agents array, in order to keep the array of positions_agents of shape (n_max_agents, 2).
+    are_existing_agents: jnp.ndarray  # (n_max_agents,) in {0, 1}
 
 
 @struct.dataclass
@@ -140,18 +141,19 @@ class GridworldEnv:
         idx_sun = self.name_channel_to_idx["sun"]
         idx_plants = self.name_channel_to_idx["plants"]
         idx_agents = self.name_channel_to_idx["agents"]
+        H, W = self.height, self.width
         # Initialize the map
-        map = jnp.zeros(shape=(self.height, self.width, self.n_channels_map))
+        map = jnp.zeros(shape=(H, W, self.n_channels_map))
         # Initialize the sun
         if self.method_sun != "none":
-            latitude_sun = self.height // 2
-            latitudes = jnp.arange(self.height)
+            latitude_sun = H // 2
+            latitudes = jnp.arange(H)
             distance_from_sun = jnp.minimum(
                 jnp.abs(latitudes - latitude_sun),
-                self.height - jnp.abs(latitudes - latitude_sun),
+                H - jnp.abs(latitudes - latitude_sun),
             )
             effect = jnp.clip(1 - distance_from_sun / self.radius_sun_effect, 0, 1)
-            effect_map = jnp.repeat(effect[:, None], self.width, axis=1)
+            effect_map = jnp.repeat(effect[:, None], W, axis=1)
             map = map.at[:, :, idx_sun].set(effect_map)
         else:
             latitude_sun = None
@@ -161,46 +163,36 @@ class GridworldEnv:
             jax.random.bernoulli(
                 key=subkey,
                 p=self.proportion_plant_initial,
-                shape=(self.height, self.width),
+                shape=(H, W),
             )
         )
         # Initialize the agents
-        key_random, subkey1, subkey2 = jax.random.split(key_random, 3)
-        agents_positions = jnp.zeros((self.n_agents_max, 2), dtype=jnp.int32)
-        agents_positions = agents_positions.at[: self.n_agents_initial, 0].set(
-            jax.random.randint(
-                key=subkey1,
-                minval=0,
-                maxval=self.height,
-                shape=(self.n_agents_initial,),
-            ),
-        )
-        agents_positions = agents_positions.at[: self.n_agents_initial, 1].set(
-            jax.random.randint(
-                key=subkey2,
-                minval=0,
-                maxval=self.width,
-                shape=(self.n_agents_initial,),
-            ),
-        )
-        map = map.at[agents_positions[:, 0], agents_positions[:, 1], idx_agents].set(1)
         key_random, subkey = jax.random.split(key_random)
-        agents_orientations = jax.random.randint(
+        positions_agents = jax.random.randint(
+            key=subkey,
+            shape=(self.n_agents_max, 2),
+            minval=0,
+            maxval=max(H, W),
+        )
+        positions_agents %= jnp.array([H, W])
+        map = map.at[positions_agents[:, 0], positions_agents[:, 1], idx_agents].set(1)
+        key_random, subkey = jax.random.split(key_random)
+        orientation_agents = jax.random.randint(
             key=subkey,
             shape=(self.n_agents_max,),
             minval=0,
             maxval=4,
         )
-        agents_exist = jnp.zeros(self.n_agents_max)
-        agents_exist = agents_exist.at[: self.n_agents_initial].set(1)
+        are_existing_agents = jnp.zeros(self.n_agents_max)
+        are_existing_agents = are_existing_agents.at[: self.n_agents_initial].set(1)
         # Return the initial state and observations
         state = EnvState(
             timestep=0,
             map=map,
             latitude_sun=latitude_sun,
-            agents_positions=agents_positions,
-            agents_orientations=agents_orientations,
-            agents_exist=agents_exist,
+            positions_agents=positions_agents,
+            orientation_agents=orientation_agents,
+            are_existing_agents=are_existing_agents,
         )
         observations_agents = self.get_observations_agents(state=state)
         return state, observations_agents
@@ -231,6 +223,11 @@ class GridworldEnv:
             bool: whether the environment is done
             Dict[str, Any]: the info of the environment
         """
+        # Update the timestep
+        state = state.replace(timestep=state.timestep + 1)
+        # Apply the actions of the agents
+        key_random, subkey = jax.random.split(key_random)
+        state = self.step_action_agents(state=state, actions=actions, key_random=subkey)
         # Update the sun
         key_random, subkey = jax.random.split(key_random)
         state = self.step_update_sun(state=state, key_random=subkey)
@@ -298,6 +295,7 @@ class GridworldEnv:
         """
         # Update the latitude of the sun depending on the method
         idx_sun = self.name_channel_to_idx["sun"]
+        H, W, C = state.map.shape
         if self.method_sun == "none":
             return state
         elif self.method_sun == "fixed":
@@ -306,7 +304,7 @@ class GridworldEnv:
             latitude_sun = jax.random.randint(
                 key=key_random,
                 minval=0,
-                maxval=self.height,
+                maxval=H,
                 shape=(),
             )
         elif self.method_sun == "brownian":
@@ -315,28 +313,94 @@ class GridworldEnv:
                     key=key_random,
                     shape=(),
                 )
-                * self.height
+                * H
                 / 2
                 / jax.numpy.sqrt(self.period_sun)
             )
         elif self.method_sun == "sine":
-            latitude_sun = self.height // 2 + self.height // 2 * jax.numpy.sin(
+            latitude_sun = H // 2 + H // 2 * jax.numpy.sin(
                 2 * jax.numpy.pi * state.timestep / self.period_sun
             )
         elif self.method_sun == "linear":
             latitude_sun = (
-                self.height // 2 + self.height * state.timestep // self.period_sun
+                H // 2 + H * state.timestep // self.period_sun
             )
         else:
             raise ValueError(f"Unknown method_sun: {self.method_sun}")
         latitude_sun = jax.numpy.round(latitude_sun).astype(jnp.int32)
-        latitude_sun = latitude_sun % self.height
+        latitude_sun = latitude_sun % H
         shift = latitude_sun - state.latitude_sun
         return state.replace(
             latitude_sun=latitude_sun,
             map=state.map.at[:, :, idx_sun].set(
                 jnp.roll(state.map[:, :, idx_sun], shift, axis=0)
             ),
+        )
+
+    def step_action_agents(
+        self, state: EnvState, actions: jnp.ndarray, key_random: jnp.ndarray
+    ) -> EnvState:
+        """Modify the state of the environment by applying the actions of the agents."""
+        H, W, C = state.map.shape
+        idx_agents = self.name_channel_to_idx["agents"]
+        # Apply the movements of the agents
+
+        def get_single_agent_new_position_and_orientation(
+            agent_position: jnp.ndarray,
+            agent_orientation: jnp.ndarray,
+            action: jnp.ndarray,
+        ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+            """Get the new position and orientation of a single agent.
+            Args:
+                agent_position (jnp.ndarray): the position of the agent, of shape (2,)
+                agent_orientation (jnp.ndarray): the orientation of the agent, of shape ()
+                action (jnp.ndarray): the action of the agent, of shape ()
+
+            Returns:
+                jnp.ndarray: the new position of the agent, of shape (2,)
+                jnp.ndarray: the new orientation of the agent, of shape ()
+            """
+            # Compute the new position and orientation of the agent
+            agent_orientation_new = (agent_orientation + action) % 4
+            angle_new = agent_orientation_new * jnp.pi / 2
+            d_position = jnp.array([jnp.cos(angle_new), jnp.sin(angle_new)]).astype(
+                jnp.int32
+            )
+            agent_position_new = agent_position + d_position
+            agent_position_new = agent_position_new % jnp.array([H, W])
+
+            # Warning : if non-moving action are implemented, this would require a jnp.select here
+
+            # Return the new position and orientation of the agent
+            return agent_position_new, agent_orientation_new
+
+        # Vectorize the function to get the new position and orientation of many agents
+        get_many_agents_new_position_and_orientation = jax.vmap(
+            get_single_agent_new_position_and_orientation, in_axes=(0, 0, 0)
+        )
+
+        # Compute the new positions and orientations of all the agents
+        positions_agents_new, orientation_agents_new = (
+            get_many_agents_new_position_and_orientation(
+                state.positions_agents,
+                state.orientation_agents,
+                actions,
+            )
+        )
+        
+        # Update the map with the new positions of the agents (remove the agents from their previous positions and add them to their new positions)
+        map_new = state.map.at[
+            state.positions_agents[:, 0], state.positions_agents[:, 1], idx_agents
+        ].set(0)
+        map_new = map_new.at[
+            positions_agents_new[:, 0], positions_agents_new[:, 1], idx_agents
+        ].set(1)
+
+        # Update the state
+        return state.replace(
+            map=map_new,
+            positions_agents=positions_agents_new,
+            orientation_agents=orientation_agents_new,
         )
 
     def get_observations_agents(self, state: EnvState) -> jnp.ndarray:
@@ -365,7 +429,6 @@ class GridworldEnv:
                 jnp.ndarray: the observation of the agent, of shape (2v+1, 2v+1, n_channels_map)
             """
             H, W, c = state.map.shape
-            v = self.vision_range_agent
 
             # Get the visual field of the agent
             visual_field_x = agent_position[0] + self.grid_indexes_vision_x
@@ -393,19 +456,17 @@ class GridworldEnv:
             return obs
 
         # Vectorize the function to get the observation of many agents
-        get_many_agents_obs = jax.vmap(
-            get_single_agent_obs,
-        )
+        get_many_agents_obs = jax.vmap(get_single_agent_obs, in_axes=(0, 0))
 
         # Compute the observations of all the agents
         observations = get_many_agents_obs(
-            state.agents_positions,
-            state.agents_orientations,
+            state.positions_agents,
+            state.orientation_agents,
         )
 
         # print(f"Map : {state.map[..., 0]}")
-        # print(f"Agents positions : {state.agents_positions}")
-        # print(f"Agents orientations : {state.agents_orientations}")
+        # print(f"Agents positions : {state.positions_agents}")
+        # print(f"Agents orientations : {state.orientation_agents}")
         # print(f"First agent obs : {observations[0, ..., 0]}, shape : {observations[0, ..., 0].shape}")
         # raise ValueError("Stop")
 

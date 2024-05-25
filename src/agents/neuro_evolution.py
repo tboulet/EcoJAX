@@ -29,7 +29,7 @@ class NeuroEvolutionAgentSpecies:
         Returns:
             jnp.ndarray: the action, of shape (**dim_action)
         """
-        return random.normal(key_random, shape=())
+        return random.randint(key_random, (), 0, 4)
 
     def react(
         self,

@@ -1,4 +1,4 @@
-from typing import Any, Dict, Union
+from typing import Any, Dict, List, Union
 
 import jax.numpy as jnp
 import numpy as np
@@ -55,10 +55,31 @@ def try_get(
         return dictionnary[key] if dictionnary[key] is not None else default
     except KeyError:
         return default
-    
-    
+
+
 def sigmoid(x):
-    return 1/(1+jnp.exp(-x))
+    return 1 / (1 + jnp.exp(-x))
+
 
 def logit(x):
-    return jnp.log(x/(1-x))
+    return jnp.log(x / (1 - x))
+
+
+DICT_COLOR_TAG_TO_RGB = {
+    "red": (1.0, 0.0, 0.0),
+    "green": (0.0, 1.0, 0.0),
+    "blue": (0.0, 0.0, 1.0),
+    "yellow": (1.0, 1.0, 0.0),
+    "cyan": (0.0, 1.0, 1.0),
+    "magenta": (1.0, 0.0, 1.0),
+    "black": (0.0, 0.0, 0.0),
+    "white": (1.0, 1.0, 1.0),
+    "gray": (0.5, 0.5, 0.5),
+    "orange": (1.0, 0.5, 0.0),
+    "purple": (0.5, 0.0, 0.5),
+    "pink": (1.0, 0.5, 0.5),
+    "brown": (0.6, 0.3, 0.0),
+    "lime": (0.5, 1.0, 0.0),
+}
+
+

@@ -28,7 +28,6 @@ n_steps_between_frames : 1
 dir_video : null
 
 
-
 # Defaults sub-configs and other Hydra config.
 defaults:
   - _self_

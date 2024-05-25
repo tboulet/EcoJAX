@@ -10,8 +10,15 @@ import numpy as np
 
 class NeuroEvolutionAgentSpecies:
 
-    def __init__(self, config: Dict):
+    def __init__(
+        self,
+        config: Dict,
+        n_agents_max: int,
+        n_agents_initial: int,
+    ):
         self.config = config
+        self.n_agents_max = n_agents_max
+        self.n_agents_initial = n_agents_initial
 
     @partial(jax.vmap, in_axes=(None, 0, 0))
     @partial(jax.jit, static_argnums=(0,))
@@ -45,7 +52,6 @@ class NeuroEvolutionAgentSpecies:
         Returns:
             jnp.ndarray: the actions, of shape (n_agents, **dim_action)
         """
-        n_agents = batch_observations.shape[0]
-        batch_keys_random = jax.random.split(key_random, n_agents)
+        batch_keys_random = jax.random.split(key_random, self.n_agents_max)
         actions = self.single_agent_react(batch_keys_random, batch_observations)
         return actions

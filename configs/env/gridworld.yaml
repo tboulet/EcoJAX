@@ -12,6 +12,14 @@ type_border : "wall"
 
 
 
+# ======================== Video parameters ========================
+# A mapping from channel names to the corresponding colors
+dict_name_channel_to_color_tag:
+  "sun" : "yellow"
+  "plants" : "green"
+  "agents" : "blue"
+color_background : "gray"
+
 # ======================== Sun Parameters ========================
 # The duration of 1 cycle of the sun (for methods using a period)
 period_sun : 300
@@ -68,5 +76,22 @@ radius_plant_asphyxia : 15
 
 # ======================== Agent Parameters ========================
 
-# The vision range of an agent. If v, the agent will receive the information v tiles around it, so a (2v+1)*(2v+1) grid
+# The vision range of an agent. If of value v, the agent will receive the information v tiles around it, so a (2v+1)*(2v+1) grid
 vision_range_agent : 10
+
+# The initial energy of an agent
+energy_initial : 50
+# The energy amount obtained by eating a food tile
+energy_food : 10
+# The energy threshold under which an agent dies
+energy_thr_death : 0
+
+# The energy required to be able to reproduce
+energy_req_reprod : 80
+# The energy cost of reproduction
+energy_cost_reprod : 20
+# Whether the agent has to activate the reproduction action to reproduce.
+# In asexual reproduction, the agent will reproduce as soon as the "reproduce" mode is activated.
+# In sexual reproduction, agents will reproduce if they are in the same tile and both have the "reproduce" mode activated. To indicate that they are ready to reproduce, they emit reproductive pheromones.
+do_active_reprod : false
+

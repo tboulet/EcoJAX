@@ -75,7 +75,11 @@ def main(config: DictConfig):
     # Create the agent's species
     agent_species_name: str = config["agent"]["name"]
     AgentSpeciesClass = agent_name_to_AgentSpeciesClass[agent_species_name]
-    agent_species = AgentSpeciesClass(config["agent"])
+    agent_species = AgentSpeciesClass(
+        config=config["agent"],
+        n_agents_max=config["n_agents_max"],
+        n_agents_initial=config["n_agents_initial"],
+    )
 
     # Initialize loggers
     run_name = f"[{env_name}]_{datetime.datetime.now().strftime('%dth%mmo_%Hh%Mmin%Ss')}_seed{seed}"

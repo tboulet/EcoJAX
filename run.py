@@ -83,7 +83,7 @@ def main(config: DictConfig):
 
     # Initialize loggers
     run_name = f"[{env_name}]_{datetime.datetime.now().strftime('%dth%mmo_%Hh%Mmin%Ss')}_seed{seed}"
-    os.makedirs(f"logs/{run_name}", exist_ok=True)
+    os.makedirs(f"logs/runs/{run_name}", exist_ok=True)
     print(f"\nStarting run {run_name}")
     if do_snakeviz:
         pr = cProfile.Profile()
@@ -100,7 +100,12 @@ def main(config: DictConfig):
     # =============== Start simulation ===============
     print("Starting simulation...")
     key_random, subkey = random.split(key_random)
-    state_env, observations_agents = env.start(key_random=subkey)
+    (
+        state_env,
+        observations_agents,
+        are_newborns_agents,
+        indexes_parents_agents,
+    ) = env.start(key_random=subkey)
 
     # ============== Simulation loop ===============
     print("Simulation started.")
@@ -128,11 +133,20 @@ def main(config: DictConfig):
         actions = agent_species.react(
             key_random=subkey,
             batch_observations=observations_agents,
+            are_newborns=are_newborns_agents,
+            indexes_parents=indexes_parents_agents,
         )
 
         # Env step
         key_random, subkey = random.split(key_random)
-        state_env, observations_agents, done_env, info_env = env.step(
+        (
+            state_env,
+            observations_agents,
+            are_newborns_agents,
+            indexes_parents_agents,
+            done_env,
+            info_env,
+        ) = env.step(
             key_random=subkey,
             state=state_env,
             actions=actions,

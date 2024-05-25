@@ -10,7 +10,7 @@ from flax import struct
 
 
 from src.environment.base_env import BaseEnvironment
-from src.agents import AgentObservation, EnvState
+from src.types_base import AgentObservation, EnvState
 from src.utils import DICT_COLOR_TAG_TO_RGB, sigmoid, logit, try_get
 
 
@@ -67,8 +67,10 @@ class GridworldEnv:
         >>> state_env, observations_agents = env.start(key_random)
         >>> while not done:
         >>>     actions = ...
-        >>>     state_env, observations_agents, done, info = env.step(key_random, state_env, actions)
+        >>>     state_env, observations_agents, are_newborns_agents, indexes_parents_agents, done, info = env.step(key_random, state_env, actions)
         >>>     RGB_map = env.get_RGB_map(state_env)
+        >>>     if done_env:
+        >>>         break
 
         Args:
             config (Dict[str, Any]): the configuration of the environment
@@ -85,18 +87,24 @@ class GridworldEnv:
         self.width: int = config["width"]
         self.height: int = config["height"]
         self.type_border: str = config["type_border"]
-        self.list_names_channels : List[str] = [
+        self.list_names_channels: List[str] = [
             "sun",
             "plants",
             "agents",
         ]
-        self.dict_name_channel_to_idx : Dict[str, int] = {
-            name_channel: idx_channel for idx_channel, name_channel in enumerate(self.list_names_channels)
-        } # dict_name_channel_to_idx["sun"] = 0
+        self.dict_name_channel_to_idx: Dict[str, int] = {
+            name_channel: idx_channel
+            for idx_channel, name_channel in enumerate(self.list_names_channels)
+        }  # dict_name_channel_to_idx["sun"] = 0
         self.n_channels_map: int = len(self.dict_name_channel_to_idx)
         # Video parameters
-        self.dict_name_channel_to_color_tag : Dict[str, str] = config["dict_name_channel_to_color_tag"] # dict_name_channel_to_color_tag["sun"] = "yellow"
-        self.dict_idx_channel_to_color_tag : Dict[int, str] = {idx_channel: self.dict_name_channel_to_color_tag[name_channel] for name_channel, idx_channel in self.dict_name_channel_to_idx.items()}
+        self.dict_name_channel_to_color_tag: Dict[str, str] = config[
+            "dict_name_channel_to_color_tag"
+        ]
+        self.dict_idx_channel_to_color_tag: Dict[int, str] = {
+            idx_channel: self.dict_name_channel_to_color_tag[name_channel]
+            for name_channel, idx_channel in self.dict_name_channel_to_idx.items()
+        }
         # Sun Parameters
         self.period_sun: int = config["period_sun"]
         self.method_sun: str = config["method_sun"]
@@ -137,15 +145,17 @@ class GridworldEnv:
     def start(
         self,
         key_random: jnp.ndarray,
-    ) -> EnvStateGridworld:
-        """Start the environment. This initialize the state and also returns the initial observations of the agents.
+    ) -> Tuple[EnvStateGridworld, AgentObservationGridworld, jnp.ndarray, jnp.ndarray]:
+        """Start the environment. This initialize the state and also returns the initial observations and eco variables of the agents.
 
         Args:
             key_random (jnp.ndarray): the random key used for the initialization
 
         Returns:
             EnvStateGridworld: the initial state of the environment
-            jnp.ndarray: the observations of the agents after the initialization, of shape (n_max_agents, dim_observation)
+            AgentObservationGridworld: the observations of the agents after the initialization, of shape (n_max_agents, dim_observation)
+            jnp.ndarray: a (n_max_agents,) boolean array indicating which agents are newborns, i.e. which agents need to be reset
+            jnp.ndarray: a (n_max_agents, n_max_parents) array indicating the indexes of the parents of each (newborn) agent. For agents that are not newborns, the value is -1. For asexual reproduction, there would be 1 parent. For sexual reproduction, there would be 2 parents.
         """
         idx_sun = self.dict_name_channel_to_idx["sun"]
         idx_plants = self.dict_name_channel_to_idx["plants"]
@@ -177,8 +187,10 @@ class GridworldEnv:
         )
         # Initialize the agents
         key_random, subkey = jax.random.split(key_random)
-        are_existing_agents = jnp.zeros(self.n_agents_max)
-        are_existing_agents = are_existing_agents.at[: self.n_agents_initial].set(1)
+        are_existing_agents = jnp.array(
+            [i < self.n_agents_initial for i in range(self.n_agents_max)],
+            dtype=jnp.bool_,
+        )
         positions_agents = jax.random.randint(
             key=subkey,
             shape=(self.n_agents_max, 2),
@@ -194,8 +206,15 @@ class GridworldEnv:
             minval=0,
             maxval=4,
         )
+        are_newborns_agents = jnp.array(
+            [i >= self.n_agents_initial for i in range(self.n_agents_max)],
+            dtype=jnp.bool_,
+        )
+        indexes_parents_agents = -1 * jnp.ones(
+            shape=(self.n_agents_max, 1), dtype=jnp.int32
+        )
         energy_agents = jnp.ones(self.n_agents_max) * self.energy_initial
-        # Return the initial state and observations
+        # Return the information required by the agents
         state = EnvStateGridworld(
             timestep=0,
             map=map,
@@ -206,7 +225,7 @@ class GridworldEnv:
             energy_agents=energy_agents,
         )
         observations_agents = self.get_observations_agents(state=state)
-        return state, observations_agents
+        return state, observations_agents, are_newborns_agents, indexes_parents_agents
 
     @partial(jax.jit, static_argnums=(0,))
     def step(
@@ -220,7 +239,7 @@ class GridworldEnv:
         bool,
         Dict[str, Any],
     ]:
-        """Performe one step of the Gridworld environment.
+        """Perform one step of the Gridworld environment.
 
         Args:
             key_random (jnp.ndarray): the random key used for this step
@@ -229,8 +248,10 @@ class GridworldEnv:
             actions (jnp.ndarray): the actions to perform
 
         Returns:
-            EnvStateGridworld: the new state of the environment
-            AgentObservationGridworld: the new observations of the agents, of attributes of shape (n_max_agents, dim_observation_components)
+            state (EnvStateGridworld): the new state of the environment
+            observations_agents (AgentObservationGridworld): the new observations of the agents, of attributes of shape (n_max_agents, dim_observation_components)
+            are_newborns_agents (jnp.ndarray): a (n_max_agents,) boolean array indicating which agents are newborns, i.e. which agents need to be reset
+            indexes_parents_agents (jnp.ndarray): a (n_max_agents, n_max_parents) array indicating the indexes of the parents of each (newborn) agent. For agents that are not newborns, the value is -1. For asexual reproduction, there would be 1 parent. For sexual reproduction, there would be 2 parents.
             bool: whether the environment is done
             Dict[str, Any]: the info of the environment
         """
@@ -242,11 +263,21 @@ class GridworldEnv:
         # Manage the agents energy
         key_random, subkey = jax.random.split(key_random)
         state = self.step_manage_energy(state=state, key_random=subkey)
-        # # Reproduce the agents
-        # key_random, subkey = jax.random.split(key_random)
-        # state, are_new_babies, indexes_parents_new_babies = self.step_reproduce_agents(
-        #     state=state, key_random=subkey
-        # )
+        # Reproduce the agents
+        key_random, subkey = jax.random.split(key_random)
+        state, are_newborns_agents, indexes_parents_agents = self.step_reproduce_agents(
+            state=state, key_random=subkey
+        )
+        # Display agents
+        map_agents_new = jnp.zeros(state.map.shape[:2])
+        map_agents_new = map_agents_new.at[
+            state.positions_agents[:, 0], state.positions_agents[:, 1]
+        ].set(state.are_existing_agents)
+        state = state.replace(
+            map=state.map.at[:, :, self.dict_name_channel_to_idx["agents"]].set(
+                map_agents_new
+            )
+        )
         # Update the sun
         key_random, subkey = jax.random.split(key_random)
         state = self.step_update_sun(state=state, key_random=subkey)
@@ -259,6 +290,8 @@ class GridworldEnv:
         return (
             state,
             observations_agents,
+            are_newborns_agents,
+            indexes_parents_agents,
             False,
             {},
         )
@@ -273,11 +306,22 @@ class GridworldEnv:
         Returns:
             Any: the RGB map of the environment
         """
-        return self.blend_images(
+        RGB_image_blended = self.blend_images(
             images=state.map,
             dict_idx_channel_to_color_tag=self.dict_idx_channel_to_color_tag,
         )
-        return state.map[:, :, :3]
+        max_H = 500
+        max_W = 500
+        H, W, C = RGB_image_blended.shape
+        upscale_factor = min(max_H / H, max_W / W)
+        upscale_factor = int(upscale_factor)
+        assert upscale_factor >= 1, "The upscale factor must be at least 1"
+        RGB_image_upscaled = jax.image.resize(
+            RGB_image_blended,
+            shape=(H * upscale_factor, W * upscale_factor, C),
+            method="nearest",
+        )
+        return RGB_image_upscaled
 
     # ================== Helper functions ==================
 
@@ -415,17 +459,9 @@ class GridworldEnv:
             )
         )
 
-        # Update the map with the new positions of the agents (remove the agents from their previous positions and add them to their new positions)
-        map_new = state.map.at[
-            positions_agents[:, 0], positions_agents[:, 1], idx_agents
-        ].add(-1)
-        map_new = map_new.at[
-            positions_agents_new[:, 0], positions_agents_new[:, 1], idx_agents
-        ].add(1)
-
         # Update the state
         return state.replace(
-            map=map_new,
+            # map=map_new,
             positions_agents=positions_agents_new,
             orientation_agents=orientation_agents_new,
         )
@@ -440,7 +476,7 @@ class GridworldEnv:
         map_plants = state.map[..., idx_plants]
         map_agents = state.map[..., idx_agents]
         positions_agents = state.positions_agents
-        
+
         # Compute the new energy level of the agents
         map_energy_bonus_by_agent = (
             self.energy_food * map_plants / jnp.maximum(1, map_agents)
@@ -452,12 +488,24 @@ class GridworldEnv:
         # Consume energy and check if agents are dead
         energy_agents_new -= 1
         are_existing_agents_new = energy_agents_new > self.energy_thr_death
-        
+
         # Update the state
         return state.replace(
             energy_agents=energy_agents_new,
             are_existing_agents=are_existing_agents_new,
         )
+
+    def step_reproduce_agents(
+        self, state: EnvStateGridworld, key_random: jnp.ndarray
+    ) -> Tuple[EnvStateGridworld, jnp.ndarray, jnp.ndarray]:
+        """Reproduce the agents in the environment."""
+        are_newborns_agents = jnp.array(
+            [False] * self.n_agents_max
+        )  # whether the agents are newborns
+        indexes_parents_agents = -1 * jnp.ones(
+            shape=(self.n_agents_max, 1), dtype=jnp.int32
+        )  # indexes of the parents of each (newborn) agent
+        return state, are_newborns_agents, indexes_parents_agents
 
     def get_observations_agents(
         self, state: EnvStateGridworld
@@ -529,16 +577,18 @@ class GridworldEnv:
 
         return observations
 
-    def blend_images(self, images: jnp.ndarray, dict_idx_channel_to_color_tag: Dict[int, tuple]) -> jnp.ndarray:
+    def blend_images(
+        self, images: jnp.ndarray, dict_idx_channel_to_color_tag: Dict[int, tuple]
+    ) -> jnp.ndarray:
         """Apply a color to each channel of a list of grey images and blend them together
 
         Args:
             images (np.ndarray): the array of grey images, of shape (height, width, channels)
-            dict_idx_channel_to_color_tag (Dict[int, tuple]): a mapping from channel index to color tag. 
+            dict_idx_channel_to_color_tag (Dict[int, tuple]): a mapping from channel index to color tag.
                 A color tag is a tuple of 3 floats between 0 and 1
 
         Returns:
-            np.ndarray: the blended image, of shape (height, width, 3), with the color applied to each channel, 
+            np.ndarray: the blended image, of shape (height, width, 3), with the color applied to each channel,
                 with pixel values between 0 and 1
         """
         # Initialize an empty array to store the blended image
@@ -548,23 +598,25 @@ class GridworldEnv:
         for channel_idx, color_tag in dict_idx_channel_to_color_tag.items():
             # Get the color components
             color = jnp.array(DICT_COLOR_TAG_TO_RGB[color_tag], dtype=jnp.float32)
-            
+
             # Normalize the color components
             # color /= jnp.max(color)
 
             blended_image += color * images[:, :, channel_idx][:, :, None]
-            
+
         # Clip the pixel values to be between 0 and 1
         blended_image = jnp.clip(blended_image, 0, 1)
 
         # Turn black pixels (value of 0 in the 3 channels) to "color_background" pixels
         tag_color_background = try_get(self.config, "color_background", default="gray")
-        assert tag_color_background in DICT_COLOR_TAG_TO_RGB, f"Unknown color tag: {tag_color_background}"
+        assert (
+            tag_color_background in DICT_COLOR_TAG_TO_RGB
+        ), f"Unknown color tag: {tag_color_background}"
         color_empty = DICT_COLOR_TAG_TO_RGB[tag_color_background]
         blended_image = jnp.where(
             jnp.sum(blended_image, axis=-1, keepdims=True) == 0,
             jnp.array(color_empty, dtype=jnp.float32) * jnp.ones_like(blended_image),
             blended_image,
         )
-        
+
         return blended_image

@@ -1,14 +1,24 @@
 name : Gridworld
 
 # The dimensions of the gridworld
-width : 10
-height : 10
+width : 40
+height : 40
 
 # The type of border of the gridworld, among :
 # - "torus" : the gridworld is a torus
 # - "wall" : the gridworld has walls
 # - "wall_kill" : the gridworld has walls that kill agents
 type_border : "wall"
+
+
+
+# ======================== Video parameters ========================
+# A mapping from channel names to the corresponding colors
+dict_name_channel_to_color_tag:
+  "sun" : "yellow"
+  "plants" : "green"
+  "agents" : "blue"
+color_background : "gray"
 
 
 
@@ -23,7 +33,7 @@ period_sun : 300
 # - "brownian" : the sun moves in a brownian motion
 # - "sine" : the sun moves in a sine wave between south and north
 # - "linear" : the sun moves in a linear way and wraps around the gridworld when reaching the south
-method_sun : "linear"
+method_sun : "none"
 
 # The radius of the effect of the sun, i.e. the distance at which the sun increase food's growth
 radius_sun_effect : 10
@@ -68,5 +78,21 @@ radius_plant_asphyxia : 15
 
 # ======================== Agent Parameters ========================
 
-# The vision range of an agent. If v, the agent will receive the information v tiles around it, so a (2v+1)*(2v+1) grid
-vision_range_agent : 2
+# The vision range of an agent. If of value v, the agent will receive the information v tiles around it, so a (2v+1)*(2v+1) grid
+vision_range_agent : 10
+
+# The initial energy of an agent
+energy_initial : 50
+# The energy amount obtained by eating a food tile
+energy_food : 10
+# The energy threshold under which an agent dies
+energy_thr_death : 0
+
+# The energy required to be able to reproduce
+energy_req_reprod : 80
+# The energy cost of reproduction
+energy_cost_reprod : 20
+# Whether the agent has to activate the reproduction action to reproduce.
+# In asexual reproduction, the agent will reproduce as soon as the "reproduce" mode is activated.
+# In sexual reproduction, agents will reproduce if they are in the same tile and both have the "reproduce" mode activated. To indicate that they are ready to reproduce, they emit reproductive pheromones.
+do_active_reprod : false

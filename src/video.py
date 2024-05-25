@@ -20,7 +20,6 @@ class VideoWriter:
         self.params = dict(filename=filename, fps=fps, **kw)
 
     def add(self, img):
-        # img = np.asarray(img)
         if self.writer is None:
             h, w = img.shape[:2]
             self.writer = FFMPEG_VideoWriter(size=(w, h), **self.params)

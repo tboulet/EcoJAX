@@ -7,6 +7,8 @@ from jax import random
 import jax.numpy as jnp
 import numpy as np
 
+from src.types_base import AgentObservation
+
 
 class NeuroEvolutionAgentSpecies:
 
@@ -41,13 +43,17 @@ class NeuroEvolutionAgentSpecies:
     def react(
         self,
         key_random: jnp.ndarray,
-        batch_observations: jnp.ndarray,
+        batch_observations: AgentObservation,
+        are_newborns: jnp.ndarray,
+        indexes_parents: jnp.ndarray,
     ) -> jnp.ndarray:
         """React to the observations
 
         Args:
             key_random (jnp.ndarray): the random key, of shape (2,)
             batch_observations (jnp.ndarray): the observations, of shape (n_agents, **dim_obs)
+            are_newbors (jnp.ndarray): the mask of newborn agents, of shape (n_agents,)
+            indexes_parents (jnp.ndarray): the indexes of the parents of each (newborn) agents, of shape (n_agents, n_max_parents)
 
         Returns:
             jnp.ndarray: the actions, of shape (n_agents, **dim_action)

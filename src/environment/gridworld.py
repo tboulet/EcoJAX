@@ -3,8 +3,12 @@
 from functools import partial
 from time import sleep
 from typing import Any, Dict, List, Tuple
-import jax.numpy as jnp
+
+
 import jax
+import jax.numpy as jnp
+import numpy as np
+from jax import random
 from jax.scipy.signal import convolve2d
 from flax import struct
 
@@ -145,7 +149,7 @@ class GridworldEnv:
     def start(
         self,
         key_random: jnp.ndarray,
-    ) -> Tuple[EnvStateGridworld, AgentObservationGridworld, jnp.ndarray, jnp.ndarray]:
+    ) -> Tuple[EnvStateGridworld, AgentObservationGridworld, jnp.ndarray, jnp.ndarray, bool, Dict[str, Any]]:
         """Start the environment. This initialize the state and also returns the initial observations and eco variables of the agents.
 
         Args:
@@ -156,6 +160,8 @@ class GridworldEnv:
             AgentObservationGridworld: the observations of the agents after the initialization, of shape (n_max_agents, dim_observation)
             jnp.ndarray: a (n_max_agents,) boolean array indicating which agents are newborns, i.e. which agents need to be reset
             jnp.ndarray: a (n_max_agents, n_max_parents) array indicating the indexes of the parents of each (newborn) agent. For agents that are not newborns, the value is -1. For asexual reproduction, there would be 1 parent. For sexual reproduction, there would be 2 parents.
+            bool: whether the environment is done
+            Dict[str, Any]: the info of the environment
         """
         idx_sun = self.dict_name_channel_to_idx["sun"]
         idx_plants = self.dict_name_channel_to_idx["plants"]
@@ -225,7 +231,7 @@ class GridworldEnv:
             energy_agents=energy_agents,
         )
         observations_agents = self.get_observations_agents(state=state)
-        return state, observations_agents, are_newborns_agents, indexes_parents_agents
+        return state, observations_agents, are_newborns_agents, indexes_parents_agents, False, {}
 
     @partial(jax.jit, static_argnums=(0,))
     def step(
@@ -272,7 +278,7 @@ class GridworldEnv:
         map_agents_new = jnp.zeros(state.map.shape[:2])
         map_agents_new = map_agents_new.at[
             state.positions_agents[:, 0], state.positions_agents[:, 1]
-        ].set(state.are_existing_agents)
+        ].add(state.are_existing_agents)
         state = state.replace(
             map=state.map.at[:, :, self.dict_name_channel_to_idx["agents"]].set(
                 map_agents_new
@@ -432,7 +438,7 @@ class GridworldEnv:
             # Compute the new position and orientation of the agent
             agent_orientation_new = (agent_orientation + action) % 4
             angle_new = agent_orientation_new * jnp.pi / 2
-            d_position = jnp.array([jnp.cos(angle_new), jnp.sin(angle_new)]).astype(
+            d_position = jnp.array([jnp.cos(angle_new), -jnp.sin(angle_new)]).astype(
                 jnp.int32
             )
             agent_position_new = agent_position + d_position
@@ -461,7 +467,6 @@ class GridworldEnv:
 
         # Update the state
         return state.replace(
-            # map=map_new,
             positions_agents=positions_agents_new,
             orientation_agents=orientation_agents_new,
         )
@@ -487,7 +492,9 @@ class GridworldEnv:
         )
         # Consume energy and check if agents are dead
         energy_agents_new -= 1
-        are_existing_agents_new = energy_agents_new > self.energy_thr_death
+        are_existing_agents_new = (
+            energy_agents_new > self.energy_thr_death
+        ) * state.are_existing_agents
 
         # Update the state
         return state.replace(
@@ -499,13 +506,62 @@ class GridworldEnv:
         self, state: EnvStateGridworld, key_random: jnp.ndarray
     ) -> Tuple[EnvStateGridworld, jnp.ndarray, jnp.ndarray]:
         """Reproduce the agents in the environment."""
-        are_newborns_agents = jnp.array(
-            [False] * self.n_agents_max
-        )  # whether the agents are newborns
+        if self.do_active_reprod:
+            raise NotImplementedError("Active reproduction is not implemented yet")
+        else:
+            # Detect which agents are reproducing
+            are_existing_agents = state.are_existing_agents
+            are_agents_reproducing = (
+                state.energy_agents > self.energy_req_reprod
+            ) & are_existing_agents
+
+            # Get the indices of the ghost agents. To have constant (n_max_agents,) shape, we fill the remaining indices with the value self.n_agents_max (which will have no effect as an index of (n_agents_max,) array)
+            fill_value = self.n_agents_max
+            ghost_agents_indices_with_filled_values = jnp.where(
+                condition=~are_existing_agents,
+                size=self.n_agents_max,
+                fill_value=fill_value,
+            )[
+                0
+            ]  # placeholder_indices = [i1, i2, ..., i(n_ghost_agents), f, f, ..., f] of shape (n_max_agents,)
+
+            # Compute the number of newborns. If there are more agents trying to reproduce than there are ghost agents, only the first n_ghost_agents agents will be able to reproduce.
+            n_agents_trying_reprod = jnp.sum(are_agents_reproducing)
+            n_ghost_agents = jnp.sum(~are_existing_agents)
+            n_newborns = jnp.minimum(n_agents_trying_reprod, n_ghost_agents)
+
+            # Get the indices of the ghost agents that will become newborns and define the newborns
+            ghost_agents_indices_with_filled_values = jnp.where(
+                condition=self.n_agents_max < n_newborns,
+                x=ghost_agents_indices_with_filled_values,
+                y=fill_value,
+            )
+            are_newborns_agents = jnp.zeros_like(are_existing_agents, dtype=jnp.bool_)
+            are_newborns_agents = are_newborns_agents.at[
+                ghost_agents_indices_with_filled_values
+            ].set(True)
+
+            # Construct the indexes of the parents of each newborn agent
+            indexes_parents_agents = jnp.full(
+                shape=(self.n_agents_max, 1), fill_value=-1, dtype=jnp.int32
+            )
+            indexes_parents_agents = indexes_parents_agents.at[
+                ghost_agents_indices_with_filled_values, 0
+            ].set(are_agents_reproducing)
+
+            # Pay the cost of reproduction
+            energy_agents_new = (
+                state.energy_agents - are_agents_reproducing * self.energy_cost_reprod
+            )
+
         indexes_parents_agents = -1 * jnp.ones(
             shape=(self.n_agents_max, 1), dtype=jnp.int32
         )  # indexes of the parents of each (newborn) agent
-        return state, are_newborns_agents, indexes_parents_agents
+        return (
+            state.replace(energy_agents=energy_agents_new),
+            are_newborns_agents,
+            indexes_parents_agents,
+        )
 
     def get_observations_agents(
         self, state: EnvStateGridworld

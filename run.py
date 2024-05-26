@@ -105,6 +105,8 @@ def main(config: DictConfig):
         observations_agents,
         are_newborns_agents,
         indexes_parents_agents,
+        done_env,
+        info_env,
     ) = env.start(key_random=subkey)
 
     # ============== Simulation loop ===============

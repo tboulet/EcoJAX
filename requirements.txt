@@ -17,6 +17,7 @@ hydra-core
 
 # Code quality
 black
+pytest
 
 # Logging
 wandb

@@ -1,4 +1,5 @@
 # Hyperparameters
+seed: 0
 n_timesteps : 5000
 n_agents_max : 10
 n_agents_initial : 5

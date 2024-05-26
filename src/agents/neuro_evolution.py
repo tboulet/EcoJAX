@@ -1,16 +1,17 @@
 from abc import ABC, abstractmethod
 from functools import partial
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import jax
 from jax import random
 import jax.numpy as jnp
 import numpy as np
 
-from src.types_base import AgentObservation
+from src.agents import BaseAgentSpecies
+from src.types_base import ObservationAgent
 
 
-class NeuroEvolutionAgentSpecies:
+class NeuroEvolutionAgentSpecies(BaseAgentSpecies):
 
     def __init__(
         self,
@@ -18,16 +19,18 @@ class NeuroEvolutionAgentSpecies:
         n_agents_max: int,
         n_agents_initial: int,
     ):
-        self.config = config
-        self.n_agents_max = n_agents_max
-        self.n_agents_initial = n_agents_initial
+        super().__init__(
+            config=config,
+            n_agents_max=n_agents_max,
+            n_agents_initial=n_agents_initial,
+        )
 
     @partial(jax.vmap, in_axes=(None, 0, 0))
     @partial(jax.jit, static_argnums=(0,))
     def single_agent_react(
         self,
         key_random: jnp.ndarray,
-        obs: jnp.ndarray,
+        obs: ObservationAgent,
     ) -> jnp.ndarray:
         """React to a single observation, for a single agent
 
@@ -43,17 +46,15 @@ class NeuroEvolutionAgentSpecies:
     def react(
         self,
         key_random: jnp.ndarray,
-        batch_observations: AgentObservation,
-        are_newborns: jnp.ndarray,
-        indexes_parents: jnp.ndarray,
+        batch_observations: ObservationAgent,
+        dict_reproduction: Dict[int, List[int]],
     ) -> jnp.ndarray:
         """React to the observations
 
         Args:
             key_random (jnp.ndarray): the random key, of shape (2,)
             batch_observations (jnp.ndarray): the observations, of shape (n_agents, **dim_obs)
-            are_newbors (jnp.ndarray): the mask of newborn agents, of shape (n_agents,)
-            indexes_parents (jnp.ndarray): the indexes of the parents of each (newborn) agents, of shape (n_agents, n_max_parents)
+            dict_reproduction (Dict[int, List[int]]): a dictionary indicating the indexes of the parents of each newborn agent. The keys are the indexes of the newborn agents, and the values are the indexes of the parents of the newborn agents.
 
         Returns:
             jnp.ndarray: the actions, of shape (n_agents, **dim_action)

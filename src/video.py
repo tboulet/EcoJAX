@@ -9,7 +9,7 @@ import datetime
 import yaml
 
 
-class VideoWriter:
+class VideoRecorder:
     def __init__(
         self,
         filename: List[str],

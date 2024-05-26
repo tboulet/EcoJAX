@@ -4,7 +4,6 @@ from functools import partial
 from time import sleep
 from typing import Any, Dict, List, Tuple
 
-
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -12,14 +11,14 @@ from jax import random
 from jax.scipy.signal import convolve2d
 from flax import struct
 
-
 from src.environment.base_env import BaseEnvironment
-from src.types_base import AgentObservation, EnvState
+from src.types_base import ObservationAgent, StateEnv
 from src.utils import DICT_COLOR_TAG_TO_RGB, sigmoid, logit, try_get
+from src.video import VideoRecorder
 
 
 @struct.dataclass
-class EnvStateGridworld(EnvState):
+class StateEnvGridworld(StateEnv):
     # The current timestep of the environment
     timestep: int
 
@@ -43,14 +42,14 @@ class EnvStateGridworld(EnvState):
 
 
 @struct.dataclass
-class AgentObservationGridworld(AgentObservation):
+class ObservationAgentGridworld(ObservationAgent):
 
     # The visual field of the agent, of shape (2v+1, 2v+1, n_channels_map) where n_channels_map is the number of channels used to represent the environment.
     visual_field: jnp.ndarray  # (2v+1, 2v+1, n_channels_map) in R
 
 
-class GridworldEnv:
-    """The Gridworld environment."""
+class GridworldEnv(BaseEnvironment):
+    """A Gridworld environment."""
 
     def __init__(
         self,
@@ -70,9 +69,10 @@ class GridworldEnv:
         >>> env = GridworldEnv(config, n_agents_max, n_agents_initial)
         >>> state_env, observations_agents = env.start(key_random)
         >>> while not done:
+        >>>     env.render(state_env)
         >>>     actions = ...
-        >>>     state_env, observations_agents, are_newborns_agents, indexes_parents_agents, done, info = env.step(key_random, state_env, actions)
-        >>>     RGB_map = env.get_RGB_map(state_env)
+        >>>     state_env, observations_agents, dict_reproduction, done, info = env.step(key_random, state_env, actions)
+        >>>
         >>>     if done_env:
         >>>         break
 
@@ -99,9 +99,20 @@ class GridworldEnv:
         self.dict_name_channel_to_idx: Dict[str, int] = {
             name_channel: idx_channel
             for idx_channel, name_channel in enumerate(self.list_names_channels)
-        }  # dict_name_channel_to_idx["sun"] = 0
+        }
         self.n_channels_map: int = len(self.dict_name_channel_to_idx)
         # Video parameters
+        self.do_video: bool = config["do_video"]
+        self.n_steps_between_videos: int = config["n_steps_between_videos"]
+        self.n_steps_per_video: int = config["n_steps_per_video"]
+        self.n_steps_between_frames: int = config["n_steps_between_frames"]
+        assert (
+            self.n_steps_per_video <= self.n_steps_between_videos
+        ) or not self.do_video, "len_video must be less than or equal to freq_video"
+        self.fps_video: int = config["fps_video"]
+        self.dir_videos: str = config["dir_videos"]
+        self.height_max_video: int = config["height_max_video"]
+        self.width_max_video: int = config["width_max_video"]
         self.dict_name_channel_to_color_tag: Dict[str, str] = config[
             "dict_name_channel_to_color_tag"
         ]
@@ -149,20 +160,13 @@ class GridworldEnv:
     def start(
         self,
         key_random: jnp.ndarray,
-    ) -> Tuple[EnvStateGridworld, AgentObservationGridworld, jnp.ndarray, jnp.ndarray, bool, Dict[str, Any]]:
-        """Start the environment. This initialize the state and also returns the initial observations and eco variables of the agents.
-
-        Args:
-            key_random (jnp.ndarray): the random key used for the initialization
-
-        Returns:
-            EnvStateGridworld: the initial state of the environment
-            AgentObservationGridworld: the observations of the agents after the initialization, of shape (n_max_agents, dim_observation)
-            jnp.ndarray: a (n_max_agents,) boolean array indicating which agents are newborns, i.e. which agents need to be reset
-            jnp.ndarray: a (n_max_agents, n_max_parents) array indicating the indexes of the parents of each (newborn) agent. For agents that are not newborns, the value is -1. For asexual reproduction, there would be 1 parent. For sexual reproduction, there would be 2 parents.
-            bool: whether the environment is done
-            Dict[str, Any]: the info of the environment
-        """
+    ) -> Tuple[
+        StateEnvGridworld,
+        ObservationAgentGridworld,
+        Dict[int, List[int]],
+        bool,
+        Dict[str, Any],
+    ]:
         idx_sun = self.dict_name_channel_to_idx["sun"]
         idx_plants = self.dict_name_channel_to_idx["plants"]
         idx_agents = self.dict_name_channel_to_idx["agents"]
@@ -212,16 +216,10 @@ class GridworldEnv:
             minval=0,
             maxval=4,
         )
-        are_newborns_agents = jnp.array(
-            [i >= self.n_agents_initial for i in range(self.n_agents_max)],
-            dtype=jnp.bool_,
-        )
-        indexes_parents_agents = -1 * jnp.ones(
-            shape=(self.n_agents_max, 1), dtype=jnp.int32
-        )
+        dict_reproduction = {i: [] for i in range(self.n_agents_max)}
         energy_agents = jnp.ones(self.n_agents_max) * self.energy_initial
         # Return the information required by the agents
-        state = EnvStateGridworld(
+        state = StateEnvGridworld(
             timestep=0,
             map=map,
             latitude_sun=latitude_sun,
@@ -231,50 +229,85 @@ class GridworldEnv:
             energy_agents=energy_agents,
         )
         observations_agents = self.get_observations_agents(state=state)
-        return state, observations_agents, are_newborns_agents, indexes_parents_agents, False, {}
+        return (
+            state,
+            observations_agents,
+            dict_reproduction,
+            False,
+            {},
+        )
 
-    @partial(jax.jit, static_argnums=(0,))
     def step(
         self,
         key_random: jnp.ndarray,
-        state: EnvStateGridworld,
+        state: StateEnvGridworld,
         actions: jnp.ndarray,
     ) -> Tuple[
-        EnvStateGridworld,
-        AgentObservationGridworld,
+        StateEnvGridworld,
+        ObservationAgentGridworld,
+        Dict[int, List[int]],
         bool,
         Dict[str, Any],
     ]:
-        """Perform one step of the Gridworld environment.
+        (
+            state,
+            observations_agents,
+            are_newborns_agents,
+            indexes_parents_agents,
+            done,
+            info,
+        ) = self.step_to_jit(
+            key_random=key_random,
+            state=state,
+            actions=actions,
+        )
+        dict_reproduction = {
+            idx: list(indexes_parents_agents[idx])
+            for idx in are_newborns_agents.nonzero()[0]
+        }  # TODO: check if this is correct
+        return state, observations_agents, dict_reproduction, done, info
 
-        Args:
-            key_random (jnp.ndarray): the random key used for this step
-            jnp.ndarray: the observations to give to the agents, of shape (n_max_agents, dim_observation)
-            state (EnvStateGridworld): the state of the environment
-            actions (jnp.ndarray): the actions to perform
-
-        Returns:
-            state (EnvStateGridworld): the new state of the environment
-            observations_agents (AgentObservationGridworld): the new observations of the agents, of attributes of shape (n_max_agents, dim_observation_components)
-            are_newborns_agents (jnp.ndarray): a (n_max_agents,) boolean array indicating which agents are newborns, i.e. which agents need to be reset
-            indexes_parents_agents (jnp.ndarray): a (n_max_agents, n_max_parents) array indicating the indexes of the parents of each (newborn) agent. For agents that are not newborns, the value is -1. For asexual reproduction, there would be 1 parent. For sexual reproduction, there would be 2 parents.
-            bool: whether the environment is done
-            Dict[str, Any]: the info of the environment
-        """
+    @partial(jax.jit, static_argnums=(0,))
+    def step_to_jit(
+        self,
+        key_random: jnp.ndarray,
+        state: StateEnvGridworld,
+        actions: jnp.ndarray,
+    ) -> Tuple[
+        StateEnvGridworld,
+        ObservationAgentGridworld,
+        jnp.ndarray,
+        jnp.ndarray,
+        bool,
+        Dict[str, Any],
+    ]:
         # Update the timestep
         state = state.replace(timestep=state.timestep + 1)
-        # Apply the actions of the agents
+
+        # 1) Interaction with the agents
+        # Apply the actions of the agents on the environment
         key_random, subkey = jax.random.split(key_random)
         state = self.step_action_agents(state=state, actions=actions, key_random=subkey)
-        # Manage the agents energy
+        # Manage the energy of the agents
         key_random, subkey = jax.random.split(key_random)
         state = self.step_manage_energy(state=state, key_random=subkey)
-        # Reproduce the agents
+
+        # 2) Internal dynamics of the environment
+        # Update the sun
+        key_random, subkey = jax.random.split(key_random)
+        state = self.step_update_sun(state=state, key_random=subkey)
+        # Grow plants
+        key_random, subkey = jax.random.split(key_random)
+        state = self.step_grow_plants(state=state, key_random=subkey)
+
+        # 3) Reproduction of the agents
         key_random, subkey = jax.random.split(key_random)
         state, are_newborns_agents, indexes_parents_agents = self.step_reproduce_agents(
             state=state, key_random=subkey
         )
-        # Display agents
+
+        # 4) Update the state and extract the observations
+        # Make some last updates to the state
         map_agents_new = jnp.zeros(state.map.shape[:2])
         map_agents_new = map_agents_new.at[
             state.positions_agents[:, 0], state.positions_agents[:, 1]
@@ -284,12 +317,6 @@ class GridworldEnv:
                 map_agents_new
             )
         )
-        # Update the sun
-        key_random, subkey = jax.random.split(key_random)
-        state = self.step_update_sun(state=state, key_random=subkey)
-        # Grow plants
-        key_random, subkey = jax.random.split(key_random)
-        state = self.step_grow_plants(state=state, key_random=subkey)
         # Extract the observations of the agents
         observations_agents = self.get_observations_agents(state=state)
         # Return the new state and observations
@@ -302,12 +329,33 @@ class GridworldEnv:
             {},
         )
 
+    def render(self, state: StateEnvGridworld) -> None:
+        """The rendering function of the environment. It saves the RGB map of the environment as a video."""
+        if self.config["do_video"]:
+            t = state.timestep
+            if t % self.n_steps_between_videos == 0:
+                self.video_writer = VideoRecorder(
+                    filename=f"{self.dir_videos}/video_t{t}.mp4",
+                    fps=self.fps_video,
+                )
+            t_current_video = (
+                t - (t // self.n_steps_between_videos) * self.n_steps_between_videos
+            )
+            if (t_current_video < self.n_steps_per_video) and (
+                t_current_video % self.n_steps_between_frames == 0
+            ):
+                self.video_writer.add(self.get_RGB_map(state=state))
+            if t_current_video == self.n_steps_per_video - 1:
+                self.video_writer.close()
+
+    # ================== Helper functions ==================
+
     @partial(jax.jit, static_argnums=(0,))
-    def get_RGB_map(self, state: EnvStateGridworld) -> Any:
+    def get_RGB_map(self, state: StateEnvGridworld) -> Any:
         """A function for rendering the environment. It returns the RGB map of the environment.
 
         Args:
-            state (EnvStateGridworld): the state of the environment
+            state (StateEnvGridworld): the state of the environment
 
         Returns:
             Any: the RGB map of the environment
@@ -316,10 +364,8 @@ class GridworldEnv:
             images=state.map,
             dict_idx_channel_to_color_tag=self.dict_idx_channel_to_color_tag,
         )
-        max_H = 500
-        max_W = 500
         H, W, C = RGB_image_blended.shape
-        upscale_factor = min(max_H / H, max_W / W)
+        upscale_factor = min(self.height_max_video / H, self.width_max_video / W)
         upscale_factor = int(upscale_factor)
         assert upscale_factor >= 1, "The upscale factor must be at least 1"
         RGB_image_upscaled = jax.image.resize(
@@ -329,10 +375,8 @@ class GridworldEnv:
         )
         return RGB_image_upscaled
 
-    # ================== Helper functions ==================
-
     def step_grow_plants(
-        self, state: EnvStateGridworld, key_random: jnp.ndarray
+        self, state: StateEnvGridworld, key_random: jnp.ndarray
     ) -> jnp.ndarray:
         """Modify the state of the environment by growing the plants."""
         idx_sun = self.dict_name_channel_to_idx["sun"]
@@ -365,8 +409,8 @@ class GridworldEnv:
         return state.replace(map=state.map.at[:, :, idx_plants].set(map_plants))
 
     def step_update_sun(
-        self, state: EnvStateGridworld, key_random: jnp.ndarray
-    ) -> EnvStateGridworld:
+        self, state: StateEnvGridworld, key_random: jnp.ndarray
+    ) -> StateEnvGridworld:
         """Modify the state of the environment by updating the sun.
         The method of updating the sun is defined by the attribute self.method_sun.
         """
@@ -413,8 +457,8 @@ class GridworldEnv:
         )
 
     def step_action_agents(
-        self, state: EnvStateGridworld, actions: jnp.ndarray, key_random: jnp.ndarray
-    ) -> EnvStateGridworld:
+        self, state: StateEnvGridworld, actions: jnp.ndarray, key_random: jnp.ndarray
+    ) -> StateEnvGridworld:
         """Modify the state of the environment by applying the actions of the agents."""
         H, W, C = state.map.shape
         idx_agents = self.dict_name_channel_to_idx["agents"]
@@ -472,8 +516,8 @@ class GridworldEnv:
         )
 
     def step_manage_energy(
-        self, state: EnvStateGridworld, key_random: jnp.ndarray
-    ) -> EnvStateGridworld:
+        self, state: StateEnvGridworld, key_random: jnp.ndarray
+    ) -> StateEnvGridworld:
         # Agents eats plants
         H, W, C = state.map.shape
         idx_plants = self.dict_name_channel_to_idx["plants"]
@@ -503,73 +547,71 @@ class GridworldEnv:
         )
 
     def step_reproduce_agents(
-        self, state: EnvStateGridworld, key_random: jnp.ndarray
-    ) -> Tuple[EnvStateGridworld, jnp.ndarray, jnp.ndarray]:
+        self, state: StateEnvGridworld, key_random: jnp.ndarray
+    ) -> Tuple[StateEnvGridworld, jnp.ndarray, jnp.ndarray]:
         """Reproduce the agents in the environment."""
         if self.do_active_reprod:
             raise NotImplementedError("Active reproduction is not implemented yet")
-        else:
-            # Detect which agents are reproducing
-            are_existing_agents = state.are_existing_agents
-            are_agents_reproducing = (
-                state.energy_agents > self.energy_req_reprod
-            ) & are_existing_agents
 
-            # Get the indices of the ghost agents. To have constant (n_max_agents,) shape, we fill the remaining indices with the value self.n_agents_max (which will have no effect as an index of (n_agents_max,) array)
-            fill_value = self.n_agents_max
-            ghost_agents_indices_with_filled_values = jnp.where(
-                condition=~are_existing_agents,
-                size=self.n_agents_max,
-                fill_value=fill_value,
-            )[
-                0
-            ]  # placeholder_indices = [i1, i2, ..., i(n_ghost_agents), f, f, ..., f] of shape (n_max_agents,)
+        # Detect which agents are reproducing
+        are_existing_agents = state.are_existing_agents
+        are_agents_reproducing = (
+            state.energy_agents > self.energy_req_reprod
+        ) & are_existing_agents
 
-            # Compute the number of newborns. If there are more agents trying to reproduce than there are ghost agents, only the first n_ghost_agents agents will be able to reproduce.
-            n_agents_trying_reprod = jnp.sum(are_agents_reproducing)
-            n_ghost_agents = jnp.sum(~are_existing_agents)
-            n_newborns = jnp.minimum(n_agents_trying_reprod, n_ghost_agents)
+        # Get the indices of the ghost agents. To have constant (n_max_agents,) shape, we fill the remaining indices with the value self.n_agents_max (which will have no effect as an index of (n_agents_max,) array)
+        fill_value = self.n_agents_max
+        ghost_agents_indices_with_filled_values = jnp.where(
+            condition=~are_existing_agents,
+            size=self.n_agents_max,
+            fill_value=fill_value,
+        )[
+            0
+        ]  # placeholder_indices = [i1, i2, ..., i(n_ghost_agents), f, f, ..., f] of shape (n_max_agents,)
 
-            # Get the indices of the ghost agents that will become newborns and define the newborns
-            ghost_agents_indices_with_filled_values = jnp.where(
-                condition=self.n_agents_max < n_newborns,
-                x=ghost_agents_indices_with_filled_values,
-                y=fill_value,
-            )
-            are_newborns_agents = jnp.zeros_like(are_existing_agents, dtype=jnp.bool_)
-            are_newborns_agents = are_newborns_agents.at[
-                ghost_agents_indices_with_filled_values
-            ].set(True)
+        # Compute the number of newborns. If there are more agents trying to reproduce than there are ghost agents, only the first n_ghost_agents agents will be able to reproduce.
+        n_agents_trying_reprod = jnp.sum(are_agents_reproducing)
+        n_ghost_agents = jnp.sum(~are_existing_agents)
+        n_newborns = jnp.minimum(n_agents_trying_reprod, n_ghost_agents)
 
-            # Construct the indexes of the parents of each newborn agent
-            indexes_parents_agents = jnp.full(
-                shape=(self.n_agents_max, 1), fill_value=-1, dtype=jnp.int32
-            )
-            indexes_parents_agents = indexes_parents_agents.at[
-                ghost_agents_indices_with_filled_values, 0
-            ].set(are_agents_reproducing)
+        # Get the indices of the ghost agents that will become newborns and define the newborns
+        ghost_agents_indices_with_filled_values = jnp.where(
+            condition=self.n_agents_max < n_newborns,
+            x=ghost_agents_indices_with_filled_values,
+            y=fill_value,
+        )
+        are_newborns_agents = jnp.zeros_like(are_existing_agents, dtype=jnp.bool_)
+        are_newborns_agents = are_newborns_agents.at[
+            ghost_agents_indices_with_filled_values
+        ].set(True)
 
-            # Pay the cost of reproduction
-            energy_agents_new = (
-                state.energy_agents - are_agents_reproducing * self.energy_cost_reprod
-            )
+        # Construct the indexes of the parents of each newborn agent
+        indexes_parents_agents = jnp.full(
+            shape=(self.n_agents_max, 1), fill_value=-1, dtype=jnp.int32
+        )
+        indexes_parents_agents = indexes_parents_agents.at[
+            ghost_agents_indices_with_filled_values, 0
+        ].set(are_agents_reproducing)
 
-        indexes_parents_agents = -1 * jnp.ones(
-            shape=(self.n_agents_max, 1), dtype=jnp.int32
-        )  # indexes of the parents of each (newborn) agent
+        # Pay the cost of reproduction
+        energy_agents_new = (
+            state.energy_agents - are_agents_reproducing * self.energy_cost_reprod
+        )
+
         return (
             state.replace(energy_agents=energy_agents_new),
             are_newborns_agents,
             indexes_parents_agents,
         )
 
+    @partial(jax.jit, static_argnums=(0,))
     def get_observations_agents(
-        self, state: EnvStateGridworld
-    ) -> AgentObservationGridworld:
+        self, state: StateEnvGridworld
+    ) -> ObservationAgentGridworld:
         """Extract the observations of the agents from the state of the environment.
 
         Args:
-            state (EnvStateGridworld): the state of the environment
+            state (StateEnvGridworld): the state of the environment
 
         Returns:
             jnp.ndarray: the observations of the agents, of shape (n_max_agents, dim_observation)
@@ -579,7 +621,7 @@ class GridworldEnv:
         def get_single_agent_obs(
             agent_position: jnp.ndarray,
             agent_orientation: jnp.ndarray,
-        ) -> AgentObservationGridworld:
+        ) -> ObservationAgentGridworld:
             """Get the observation of a single agent.
 
             Args:
@@ -587,7 +629,7 @@ class GridworldEnv:
                 agent_orientation (jnp.ndarray): the orientation of the agent, of shape ()
 
             Returns:
-                AgentObservationGridworld: the observation of the agent
+                ObservationAgentGridworld: the observation of the agent
             """
             H, W, c = state.map.shape
 
@@ -614,7 +656,7 @@ class GridworldEnv:
                 ],
             )
             # Return the observation
-            return AgentObservationGridworld(visual_field=obs)
+            return ObservationAgentGridworld(visual_field=obs)
 
         # Vectorize the function to get the observation of many agents
         get_many_agents_obs = jax.vmap(get_single_agent_obs, in_axes=(0, 0))

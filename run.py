@@ -22,7 +22,7 @@ from jax import random
 from src.environment import env_name_to_EnvClass
 from src.agents import agent_name_to_AgentSpeciesClass
 from src.models import model_name_to_ModelClass
-from src.video import VideoWriter
+from src.video import VideoRecorder
 from src.time_measure import RuntimeMeter
 from src.utils import try_get_seed
 
@@ -46,14 +46,14 @@ def main(config: DictConfig):
     do_snakeviz: bool = config["do_snakeviz"]
     config_dirs_to_log: Dict[str, bool] = config["config_dirs_to_log"]
 
-    # Video recording
-    do_video: bool = config["do_video"]
-    n_steps_between_videos: int = config["n_steps_between_videos"]
-    n_steps_per_video: int = config["n_steps_per_video"]
-    n_steps_between_frames: int = config["n_steps_between_frames"]
-    assert (
-        n_steps_per_video <= n_steps_between_videos
-    ) or not do_video, "len_video must be less than or equal to freq_video"
+    # # Video recording
+    # do_video: bool = config["do_video"]
+    # n_steps_between_videos: int = config["n_steps_between_videos"]
+    # n_steps_per_video: int = config["n_steps_per_video"]
+    # n_steps_between_frames: int = config["n_steps_between_frames"]
+    # assert (
+    #     n_steps_per_video <= n_steps_between_videos
+    # ) or not do_video, "len_video must be less than or equal to freq_video"
 
     # ================ Initialization ================
 
@@ -73,10 +73,10 @@ def main(config: DictConfig):
     )
 
     # Create the agent's species
-    agent_species_name: str = config["agent"]["name"]
+    agent_species_name: str = config["agents"]["name"]
     AgentSpeciesClass = agent_name_to_AgentSpeciesClass[agent_species_name]
     agent_species = AgentSpeciesClass(
-        config=config["agent"],
+        config=config["agents"],
         n_agents_max=config["n_agents_max"],
         n_agents_initial=config["n_agents_initial"],
     )
@@ -103,8 +103,7 @@ def main(config: DictConfig):
     (
         state_env,
         observations_agents,
-        are_newborns_agents,
-        indexes_parents_agents,
+        dict_reproduction,
         done_env,
         info_env,
     ) = env.start(key_random=subkey)
@@ -114,29 +113,15 @@ def main(config: DictConfig):
     # Training loop
     for t in tqdm(range(n_timesteps), disable=not do_tqdm):
 
-        # Save video frame
-        if do_video:
-            if t % n_steps_between_videos == 0:
-                video_writer = VideoWriter(
-                    # filename=f"logs/{run_name}/video_t{t}.mp4",
-                    filename=f"logs/video_t{t}.mp4",
-                    fps=20,
-                )
-            t_current_video = t - (t // n_steps_between_videos) * n_steps_between_videos
-            if (t_current_video < n_steps_per_video) and (
-                t_current_video % n_steps_between_frames == 0
-            ):
-                video_writer.add(env.get_RGB_map(state=state_env))
-            if t_current_video == n_steps_per_video - 1:
-                video_writer.close()
+        # Render the environment
+        env.render(state=state_env)
 
         # Agents step
         key_random, subkey = random.split(key_random)
         actions = agent_species.react(
             key_random=subkey,
             batch_observations=observations_agents,
-            are_newborns=are_newborns_agents,
-            indexes_parents=indexes_parents_agents,
+            dict_reproduction=dict_reproduction,
         )
 
         # Env step
@@ -144,8 +129,7 @@ def main(config: DictConfig):
         (
             state_env,
             observations_agents,
-            are_newborns_agents,
-            indexes_parents_agents,
+            dict_reproduction,
             done_env,
             info_env,
         ) = env.step(

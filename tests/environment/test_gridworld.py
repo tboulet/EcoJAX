@@ -7,11 +7,11 @@ import numpy as np
 from jax import random
 
 from src.environment.gridworld import (
-    AgentObservationGridworld,
-    EnvStateGridworld,
+    ObservationAgentGridworld,
+    StateEnvGridworld,
     GridworldEnv,
 )
-from src.types_base import AgentObservation, EnvState
+from src.types_base import ObservationAgent, StateEnv
 
 
 class TestGridworldEnv:
@@ -51,7 +51,7 @@ class TestGridworldEnv:
         key_random = random.PRNGKey(1234)
         key_random, subkey = random.split(key_random)
         state, *_ = self.env.start(key_random=subkey)
-        state: EnvStateGridworld = state.replace(
+        state: StateEnvGridworld = state.replace(
             positions_agents=jnp.array(
                 [
                     [0, 0],
@@ -97,7 +97,8 @@ class TestGridworldEnv:
             state.orientation_agents == jnp.array([1, 1, 1, 3, 1, 3, 1, 3, 1, 3])
         ), f"Orientations are wrong: {state.orientation_agents}"
         assert jnp.all(
-            state.map[:, :, self.env.dict_name_channel_to_idx["agents"]] == jnp.array(
+            state.map[:, :, self.env.dict_name_channel_to_idx["agents"]]
+            == jnp.array(
                 [
                     [0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
                     [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -112,24 +113,18 @@ class TestGridworldEnv:
                 ]
             )
         ), f"Map is wrong: {state.map[:, :, self.env.dict_name_channel_to_idx['agents']]}"
+
     # ================ Helper methods ================
 
     def check_env_step_return(self, res):
-        assert len(res) == 6, "The result should have 4 elements"
+        assert len(res) == 5, "The result should have 4 elements"
         (
             env_state,
             agent_observations,
-            are_newborns,
-            indexes_parents,
+            dict_reproduction,
             done_env,
             info_env,
         ) = res
-        assert isinstance(env_state, EnvStateGridworld)
-        assert isinstance(agent_observations, AgentObservationGridworld)
-        assert isinstance(are_newborns, jnp.ndarray) and are_newborns.shape == (
-            self.n_agents_max,
-        )
-        assert (
-            isinstance(indexes_parents, jnp.ndarray)
-            and indexes_parents.shape[0] == self.n_agents_max
-        )
+        assert isinstance(env_state, StateEnvGridworld)
+        assert isinstance(agent_observations, ObservationAgentGridworld)
+        assert isinstance(dict_reproduction, dict)

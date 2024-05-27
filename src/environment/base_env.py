@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import Dict, List, Tuple, Union, Any
+from typing import Dict, List, Tuple, Type, Union, Any
 import numpy as np
 import jax.numpy as jnp
 
-from src.types_base import StateEnv, ObservationAgent
+from src.spaces import Space
+from src.types_base import ActionAgent, StateEnv, ObservationAgent
 
 
 class BaseEcoEnvironment(ABC):
@@ -63,7 +64,7 @@ class BaseEcoEnvironment(ABC):
         self,
         key_random: jnp.ndarray,
         state: StateEnv,
-        actions: jnp.ndarray,
+        actions: ActionAgent,
     ) -> Tuple[
         StateEnv,
         ObservationAgent,
@@ -77,7 +78,7 @@ class BaseEcoEnvironment(ABC):
             key_random (jnp.ndarray): the random key used for this step
             jnp.ndarray: the observations to give to the agents, of shape (n_max_agents, dim_observation)
             state (StateEnvGridworld): the state of the environment
-            actions (jnp.ndarray): the actions to perform
+            actions (ActionAgent): the actions to perform
 
         Returns:
             state (StateEnvGridworld): the new state of the environment
@@ -101,6 +102,54 @@ class BaseEcoEnvironment(ABC):
             done,
             info,
         )
+
+    @abstractmethod
+    def get_observation_space_dict(self) -> Dict[str, Space]:
+        """Return a dictionnary describing the observation space of the environment.
+
+        The keys of the dictionnary are the names of the observation components.
+
+        The values are the shapes of the observation components.
+        If a value is an integer n, it means the observation component will be an integer between 0 and n-1.
+        If a value is a tuple (n1, n2, ...), it means the observation component will be an array of shape (n1, n2, ...).
+
+        Each agent will expect its observation to be an ObservationAgent object that contains each key as attribute, with the corresponding shape.
+
+        Returns:
+            Dict[str, Space]: the observation space dictionnary
+        """
+
+    @abstractmethod
+    def get_action_space_dict(self) -> Dict[str, Space]:
+        """Return a dictionnary describing the action space of the environment.
+
+        The keys of the dictionnary are the names of the action components.
+
+        The values are the shapes of the action components.
+        If a value is an integer n, it means the action component will be an integer between 0 and n-1.
+        If a value is a tuple (n1, n2, ...), it means the action component will be an array of shape (n1, n2, ...).
+
+        The agents will be expected to send an ActionAgent object that contains each key as attribute, with the corresponding shape.
+
+        Returns:
+            Dict[str, Space]: the action space dictionnary
+        """
+
+    @abstractmethod
+    def get_class_observation_agent(self) -> Type[ObservationAgent]:
+        """Return the class of the observation of the agents.
+
+        Returns:
+            Type[ObservationAgent]: the class of the observation of the agents
+        """
+
+    @abstractmethod
+    def get_class_action_agent(self) -> Type[ActionAgent]:
+        """Return the class of the action of the agents.
+
+        Returns:
+            Type[ActionAgent]: the class of the action of the agents
+        """
 
     @abstractmethod
     def render(self, state: StateEnv) -> None:

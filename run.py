@@ -71,6 +71,10 @@ def main(config: DictConfig):
         n_agents_max=config["n_agents_max"],
         n_agents_initial=config["n_agents_initial"],
     )
+    observation_space_dict = env.get_observation_space_dict()
+    action_space_dict = env.get_action_space_dict()
+    observation_class = env.get_class_observation_agent()
+    action_class = env.get_class_action_agent()
 
     # Create the agent's species
     agent_species_name: str = config["agents"]["name"]
@@ -79,6 +83,10 @@ def main(config: DictConfig):
         config=config["agents"],
         n_agents_max=config["n_agents_max"],
         n_agents_initial=config["n_agents_initial"],
+        observation_space_dict=observation_space_dict,
+        action_space_dict=action_space_dict,
+        observation_class=observation_class,
+        action_class=action_class,
     )
 
     # Initialize loggers

@@ -43,3 +43,19 @@ class VideoRecorder:
         self.close()
         fn = self.params["filename"]
         display(mvp.ipython_display(fn, **kw))
+
+
+def merge_videos(directory, num_gens):
+    import os
+    gens = range(0, num_gens, 50)
+    L = []
+
+    print(len(list(gens)))
+    tmep = list(gens)
+    for gen in gens:
+        file_path = "projects/" + directory + "/train/media/gen_" + str(gen) + ".mp4"
+        video = VideoFileClip(file_path)
+        L.append(video)
+
+    final_clip = concatenate_videoclips(L)
+    final_clip.to_videofile("projects/" + directory + "/total_training.mp4", fps=24, remove_temp=False)

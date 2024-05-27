@@ -2,7 +2,7 @@
 
 from functools import partial
 from time import sleep
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Type, TypeVar
 
 import jax
 import jax.numpy as jnp
@@ -12,7 +12,8 @@ from jax.scipy.signal import convolve2d
 from flax import struct
 
 from src.environment.base_env import BaseEcoEnvironment
-from src.types_base import ObservationAgent, StateEnv
+from src.spaces import Space, Discrete, Continuous
+from src.types_base import ActionAgent, ObservationAgent, StateEnv
 from src.utils import DICT_COLOR_TAG_TO_RGB, sigmoid, logit, try_get
 from src.video import VideoRecorder
 
@@ -46,6 +47,13 @@ class ObservationAgentGridworld(ObservationAgent):
 
     # The visual field of the agent, of shape (2v+1, 2v+1, n_channels_map) where n_channels_map is the number of channels used to represent the environment.
     visual_field: jnp.ndarray  # (2v+1, 2v+1, n_channels_map) in R
+
+
+@struct.dataclass
+class ActionAgentGridworld(ActionAgent):
+
+    # The decision of the agent, of shape (). decision represents the direction the agent wants to take.
+    direction: jnp.ndarray
 
 
 class GridworldEnv(BaseEcoEnvironment):
@@ -208,7 +216,11 @@ class GridworldEnv(BaseEcoEnvironment):
             maxval=max(H, W),
         )
         positions_agents %= jnp.array([H, W])
-        map = map.at[positions_agents[are_existing_agents, 0], positions_agents[are_existing_agents, 1], idx_agents].add(1)
+        map = map.at[
+            positions_agents[are_existing_agents, 0],
+            positions_agents[are_existing_agents, 1],
+            idx_agents,
+        ].add(1)
         key_random, subkey = jax.random.split(key_random)
         orientation_agents = jax.random.randint(
             key=subkey,
@@ -328,6 +340,31 @@ class GridworldEnv(BaseEcoEnvironment):
             False,
             {},
         )
+
+    def get_observation_space_dict(self) -> Dict[str, Space]:
+        return {
+            "visual_field": Continuous(
+                shape=(
+                    2 * self.vision_range_agent + 1,
+                    2 * self.vision_range_agent + 1,
+                    self.n_channels_map,
+                ),
+                low=None,
+                high=None,
+            ),
+            # "energy" : Continuous(shape=(), low=0, high=None),
+        }
+
+    def get_action_space_dict(self) -> Dict[str, Space]:
+        return {
+            "direction": Discrete(n=4),
+        }
+    
+    def get_class_observation_agent(self) -> Type[ObservationAgent]:
+        return ObservationAgentGridworld
+    
+    def get_class_action_agent(self) -> Type[ActionAgent]:
+        return ActionAgentGridworld
 
     def render(self, state: StateEnvGridworld) -> None:
         """The rendering function of the environment. It saves the RGB map of the environment as a video."""
@@ -457,7 +494,10 @@ class GridworldEnv(BaseEcoEnvironment):
         )
 
     def step_action_agents(
-        self, state: StateEnvGridworld, actions: jnp.ndarray, key_random: jnp.ndarray
+        self,
+        state: StateEnvGridworld,
+        actions: ActionAgentGridworld,
+        key_random: jnp.ndarray,
     ) -> StateEnvGridworld:
         """Modify the state of the environment by applying the actions of the agents."""
         H, W, C = state.map.shape
@@ -467,20 +507,21 @@ class GridworldEnv(BaseEcoEnvironment):
         def get_single_agent_new_position_and_orientation(
             agent_position: jnp.ndarray,
             agent_orientation: jnp.ndarray,
-            action: jnp.ndarray,
+            action: ActionAgentGridworld,
         ) -> Tuple[jnp.ndarray, jnp.ndarray]:
             """Get the new position and orientation of a single agent.
             Args:
                 agent_position (jnp.ndarray): the position of the agent, of shape (2,)
                 agent_orientation (jnp.ndarray): the orientation of the agent, of shape ()
-                action (jnp.ndarray): the action of the agent, of shape ()
+                action (ActionAgentGridworld): the action of the agent, as a ActionAgentGridworld of components of shape ()
 
             Returns:
                 jnp.ndarray: the new position of the agent, of shape (2,)
                 jnp.ndarray: the new orientation of the agent, of shape ()
             """
             # Compute the new position and orientation of the agent
-            agent_orientation_new = (agent_orientation + action) % 4
+            decision = action.direction
+            agent_orientation_new = (agent_orientation + decision) % 4
             angle_new = agent_orientation_new * jnp.pi / 2
             d_position = jnp.array([jnp.cos(angle_new), -jnp.sin(angle_new)]).astype(
                 jnp.int32

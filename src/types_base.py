@@ -11,5 +11,11 @@ class StateEnv:
 @struct.dataclass
 class ObservationAgent:
     """This class represents the observation of an agent. It is used to store the observation of an agent and to apply JAX transformations to it.
-    Instancess of this class represents objects that will be given as input to the agents.
+    Instancess of this class represents objects that will be given as input to the agents by the environment.
+    """
+
+@struct.dataclass
+class ActionAgent:
+    """This class represents the action of an agent. It is used to store the action of an agent and to apply JAX transformations to it.
+    Instances of this class represents objects that will be output by the agents and given as input to the environment.
     """

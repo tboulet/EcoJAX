@@ -7,6 +7,7 @@ import numpy as np
 from jax import random
 
 from src.environment.gridworld import (
+    ActionAgentGridworld,
     ObservationAgentGridworld,
     StateEnvGridworld,
     GridworldEnv,
@@ -43,7 +44,7 @@ class TestGridworldEnv:
         res = self.env.step(
             key_random=subkey,
             state=state,
-            actions=jnp.zeros((self.n_agents_max,)),
+            actions=ActionAgentGridworld(direction=jnp.zeros((self.n_agents_max,))),
         )
         self.check_env_step_return(res)
 
@@ -68,7 +69,7 @@ class TestGridworldEnv:
             ),
             orientation_agents=jnp.array([0, 0, 2, 3, 0, 1, 2, 3, 0, 1]),
         )
-        actions = jnp.array([1, 1, 3, 0, 1, 2, 3, 0, 1, 2])
+        actions = ActionAgentGridworld(direction=jnp.array([1, 1, 3, 0, 1, 2, 3, 0, 1, 2]))
 
         state, *_ = self.env.step(
             key_random=subkey,

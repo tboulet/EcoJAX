@@ -106,7 +106,7 @@ def main(config: DictConfig):
         dict_reproduction,
         done_env,
         info_env,
-    ) = env.start(key_random=subkey)
+    ) = env.reset(key_random=subkey)
 
     # ============== Simulation loop ===============
     print("Simulation started.")

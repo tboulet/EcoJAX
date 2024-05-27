@@ -30,16 +30,16 @@ class TestGridworldEnv:
             n_agents_initial=cls.n_agents_initial,
         )
 
-    def test_start(self):
+    def test_reset(self):
         key_random = random.PRNGKey(1234)
         key_random, subkey = random.split(key_random)
-        res = self.env.start(key_random=subkey)
+        res = self.env.reset(key_random=subkey)
         self.check_env_step_return(res)
 
     def test_step(self):
         key_random = random.PRNGKey(1234)
         key_random, subkey = random.split(key_random)
-        state, *_ = self.env.start(key_random=subkey)
+        state, *_ = self.env.reset(key_random=subkey)
         res = self.env.step(
             key_random=subkey,
             state=state,
@@ -50,7 +50,7 @@ class TestGridworldEnv:
     def test_step_dynamics(self):
         key_random = random.PRNGKey(1234)
         key_random, subkey = random.split(key_random)
-        state, *_ = self.env.start(key_random=subkey)
+        state, *_ = self.env.reset(key_random=subkey)
         state: StateEnvGridworld = state.replace(
             positions_agents=jnp.array(
                 [

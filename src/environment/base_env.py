@@ -6,7 +6,7 @@ import jax.numpy as jnp
 from src.types_base import StateEnv, ObservationAgent
 
 
-class BaseEnvironment(ABC):
+class BaseEcoEnvironment(ABC):
     """The base class for any EcoJAX environment.
     An Eco-environment is a simulation with which a (non constant) set of agents will interact and evolve.
     It contains those 2 general notions :
@@ -35,7 +35,7 @@ class BaseEnvironment(ABC):
         """
 
     @abstractmethod
-    def start(
+    def reset(
         self,
         key_random: jnp.ndarray,
     ) -> Tuple[

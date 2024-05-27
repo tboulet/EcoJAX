@@ -11,7 +11,7 @@ from jax import random
 from jax.scipy.signal import convolve2d
 from flax import struct
 
-from src.environment.base_env import BaseEnvironment
+from src.environment.base_env import BaseEcoEnvironment
 from src.types_base import ObservationAgent, StateEnv
 from src.utils import DICT_COLOR_TAG_TO_RGB, sigmoid, logit, try_get
 from src.video import VideoRecorder
@@ -48,7 +48,7 @@ class ObservationAgentGridworld(ObservationAgent):
     visual_field: jnp.ndarray  # (2v+1, 2v+1, n_channels_map) in R
 
 
-class GridworldEnv(BaseEnvironment):
+class GridworldEnv(BaseEcoEnvironment):
     """A Gridworld environment."""
 
     def __init__(
@@ -67,7 +67,7 @@ class GridworldEnv(BaseEnvironment):
 
         The pipeline of the environment is the following:
         >>> env = GridworldEnv(config, n_agents_max, n_agents_initial)
-        >>> state_env, observations_agents = env.start(key_random)
+        >>> state_env, observations_agents = env.reset(key_random)
         >>> while not done:
         >>>     env.render(state_env)
         >>>     actions = ...
@@ -157,7 +157,7 @@ class GridworldEnv(BaseEnvironment):
         self.energy_cost_reprod: float = config["energy_cost_reprod"]
         self.do_active_reprod: bool = config["do_active_reprod"]
 
-    def start(
+    def reset(
         self,
         key_random: jnp.ndarray,
     ) -> Tuple[
@@ -208,7 +208,7 @@ class GridworldEnv(BaseEnvironment):
             maxval=max(H, W),
         )
         positions_agents %= jnp.array([H, W])
-        map = map.at[positions_agents[:, 0], positions_agents[:, 1], idx_agents].add(1)
+        map = map.at[positions_agents[are_existing_agents, 0], positions_agents[are_existing_agents, 1], idx_agents].add(1)
         key_random, subkey = jax.random.split(key_random)
         orientation_agents = jax.random.randint(
             key=subkey,
@@ -562,7 +562,7 @@ class GridworldEnv(BaseEnvironment):
         # Get the indices of the ghost agents. To have constant (n_max_agents,) shape, we fill the remaining indices with the value self.n_agents_max (which will have no effect as an index of (n_agents_max,) array)
         fill_value = self.n_agents_max
         ghost_agents_indices_with_filled_values = jnp.where(
-            condition=~are_existing_agents,
+            ~are_existing_agents,
             size=self.n_agents_max,
             fill_value=fill_value,
         )[
@@ -576,9 +576,9 @@ class GridworldEnv(BaseEnvironment):
 
         # Get the indices of the ghost agents that will become newborns and define the newborns
         ghost_agents_indices_with_filled_values = jnp.where(
-            condition=self.n_agents_max < n_newborns,
-            x=ghost_agents_indices_with_filled_values,
-            y=fill_value,
+            self.n_agents_max < n_newborns,
+            ghost_agents_indices_with_filled_values,
+            fill_value,
         )
         are_newborns_agents = jnp.zeros_like(are_existing_agents, dtype=jnp.bool_)
         are_newborns_agents = are_newborns_agents.at[

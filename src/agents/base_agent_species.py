@@ -30,10 +30,6 @@ class BaseAgentSpecies(ABC):
         config: Dict,
         n_agents_max: int,
         n_agents_initial: int,
-        observation_space_dict: Dict[str, Space],
-        action_space_dict: Dict[str, Space],
-        observation_class: Type[ObservationAgent],
-        action_class: Type[ActionAgent],
         model: nn.Module,
     ):
         """The constructor of the BaseAgentSpecies class. It initializes the species of agents with the configuration.
@@ -45,20 +41,22 @@ class BaseAgentSpecies(ABC):
             config (Dict): the agent species configuration
             n_agents_max (int): the maximal number of agents allowed to exist in the simulation. This will also be the number of agents that are simulated every step (even if not all agents exist in the simulation at a given time)
             n_agents_initial (int): the initial number of agents in the simulation
-            observation_space_dict (Dict[str, Space]): a dictionnary describing the observation space of the agents. Keys are the names of the observation components, and values are the spaces of the observation components.
-            action_space_dict (Dict[str, Space]): a dictionnary describing the action space of the agents. Keys are the names of the action components, and values are the spaces of the action components.
-            observation_class (Type[ObservationAgent]): the class of the observation of the agents
-            action_class (Type[ActionAgent]): the class of the action of the agents
+            model (nn.Module): the model used by the agents to react to their observations
         """
         self.config = config
         self.n_agents_max = n_agents_max
         self.n_agents_initial = n_agents_initial
-        self.observation_space_dict = observation_space_dict
-        self.action_space_dict = action_space_dict
-        self.observation_class = observation_class
-        self.action_class = action_class
         self.model = model
-        
+
+    @abstractmethod
+    def init(self, key_random: jnp.ndarray) -> None:
+        """Initialize the agents of the species. This should in particular initialize the agents species' state,
+        i.e. the JAX dataclass that will contain the varying information of the agents species.
+
+        Args:
+            key_random (jnp.ndarray): the random key, of shape (2,)
+        """
+
     @abstractmethod
     def react(
         self,

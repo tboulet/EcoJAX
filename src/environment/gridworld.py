@@ -75,11 +75,11 @@ class GridworldEnv(BaseEcoEnvironment):
 
         The pipeline of the environment is the following:
         >>> env = GridworldEnv(config, n_agents_max, n_agents_initial)
-        >>> state_env, observations_agents = env.reset(key_random)
+        >>> observations = env.reset(key_random)
         >>> while not done:
-        >>>     env.render(state_env)
+        >>>     env.render()
         >>>     actions = ...
-        >>>     state_env, observations_agents, dict_reproduction, done, info = env.step(key_random, state_env, actions)
+        >>>     observations, dict_reproduction, done, info = env.step(key_random, actions)
         >>>
         >>>     if done_env:
         >>>         break
@@ -231,7 +231,7 @@ class GridworldEnv(BaseEcoEnvironment):
         dict_reproduction = {i: [] for i in range(self.n_agents_max)}
         energy_agents = jnp.ones(self.n_agents_max) * self.energy_initial
         # Return the information required by the agents
-        state = StateEnvGridworld(
+        self.state = StateEnvGridworld(
             timestep=0,
             map=map,
             latitude_sun=latitude_sun,
@@ -240,9 +240,8 @@ class GridworldEnv(BaseEcoEnvironment):
             are_existing_agents=are_existing_agents,
             energy_agents=energy_agents,
         )
-        observations_agents = self.get_observations_agents(state=state)
+        observations_agents = self.get_observations_agents(state=self.state)
         return (
-            state,
             observations_agents,
             dict_reproduction,
             False,
@@ -252,10 +251,8 @@ class GridworldEnv(BaseEcoEnvironment):
     def step(
         self,
         key_random: jnp.ndarray,
-        state: StateEnvGridworld,
         actions: jnp.ndarray,
     ) -> Tuple[
-        StateEnvGridworld,
         ObservationAgentGridworld,
         Dict[int, List[int]],
         bool,
@@ -270,14 +267,14 @@ class GridworldEnv(BaseEcoEnvironment):
             info,
         ) = self.step_to_jit(
             key_random=key_random,
-            state=state,
+            state=self.state,
             actions=actions,
         )
         dict_reproduction = {
             idx: list(indexes_parents_agents[idx])
             for idx in are_newborns_agents.nonzero()[0]
         }  # TODO: check if this is correct
-        return state, observations_agents, dict_reproduction, done, info
+        return observations_agents, dict_reproduction, done, info
 
     @partial(jax.jit, static_argnums=(0,))
     def step_to_jit(
@@ -366,10 +363,10 @@ class GridworldEnv(BaseEcoEnvironment):
     def get_class_action_agent(self) -> Type[ActionAgent]:
         return ActionAgentGridworld
 
-    def render(self, state: StateEnvGridworld) -> None:
+    def render(self) -> None:
         """The rendering function of the environment. It saves the RGB map of the environment as a video."""
         if self.config["do_video"]:
-            t = state.timestep
+            t = self.state.timestep
             if t % self.n_steps_between_videos == 0:
                 self.video_writer = VideoRecorder(
                     filename=f"{self.dir_videos}/video_t{t}.mp4",
@@ -381,7 +378,7 @@ class GridworldEnv(BaseEcoEnvironment):
             if (t_current_video < self.n_steps_per_video) and (
                 t_current_video % self.n_steps_between_frames == 0
             ):
-                self.video_writer.add(self.get_RGB_map(state=state))
+                self.video_writer.add(self.get_RGB_map(state=self.state))
             if t_current_video == self.n_steps_per_video - 1:
                 self.video_writer.close()
 

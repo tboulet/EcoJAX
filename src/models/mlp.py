@@ -15,31 +15,6 @@ from src.types_base import ObservationAgent, ActionAgent
 
 class MLP_Model(BaseModel):
 
-    def get_initialized_variables(self, key_random: jnp.ndarray):
-        """Initializes the model with the given configuration.
-
-        Args:
-            key (jnp.ndarray): the random key used for initialization
-
-        Returns:
-            None
-        """
-        # Sample the observation from the different spaces
-        kwargs_obs: Dict[str, np.ndarray] = {}
-        for key_dict, space in self.observation_space_dict.items():
-            key_random, subkey = random.split(key_random)
-            kwargs_obs[key_dict] = space.sample(key_random=subkey)
-        obs = self.observation_class(**kwargs_obs)
-
-        # Run the forward pass to initialize the model
-        key_random, key_random2 = random.split(key_random)
-        return nn.Module.init(
-            self,
-            key_random,
-            obs=obs,
-            key_random=key_random2,
-        )
-
     @nn.compact
     def __call__(self, obs: ObservationAgent, key_random: jnp.ndarray) -> ActionAgent:
 

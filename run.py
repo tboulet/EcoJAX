@@ -44,16 +44,8 @@ def main(config: DictConfig):
     do_cli: bool = config["do_cli"]
     do_tqdm: bool = config["do_tqdm"]
     do_snakeviz: bool = config["do_snakeviz"]
+    do_render: bool = config["do_render"]
     config_dirs_to_log: Dict[str, bool] = config["config_dirs_to_log"]
-
-    # # Video recording
-    # do_video: bool = config["do_video"]
-    # n_steps_between_videos: int = config["n_steps_between_videos"]
-    # n_steps_per_video: int = config["n_steps_per_video"]
-    # n_steps_between_frames: int = config["n_steps_between_frames"]
-    # assert (
-    #     n_steps_per_video <= n_steps_between_videos
-    # ) or not do_video, "len_video must be less than or equal to freq_video"
 
     # ================ Initialization ================
 
@@ -94,15 +86,11 @@ def main(config: DictConfig):
         config=config["agents"],
         n_agents_max=config["n_agents_max"],
         n_agents_initial=config["n_agents_initial"],
-        observation_space_dict=observation_space_dict,
-        action_space_dict=action_space_dict,
-        observation_class=observation_class,
-        action_class=action_class,
         model=model,
     )
 
     # Initialize loggers
-    run_name = f"[{env_name}]_{datetime.datetime.now().strftime('%dth%mmo_%Hh%Mmin%Ss')}_seed{seed}"
+    run_name = f"[{agent_species_name}_{model_name}_{env_name}]_{datetime.datetime.now().strftime('%dth%mmo_%Hh%Mmin%Ss')}_seed{seed}"
     os.makedirs(f"logs/runs/{run_name}", exist_ok=True)
     print(f"\nStarting run {run_name}")
     if do_snakeviz:
@@ -121,7 +109,6 @@ def main(config: DictConfig):
     print("Starting simulation...")
     key_random, subkey = random.split(key_random)
     (
-        state_env,
         observations_agents,
         dict_reproduction,
         done_env,
@@ -130,7 +117,7 @@ def main(config: DictConfig):
 
     print("Starting agents...")
     key_random, subkey = random.split(key_random)
-    agent_species.start(key_random=subkey)
+    agent_species.init(key_random=subkey)
 
     # ============== Simulation loop ===============
     print("Simulation started.")
@@ -138,7 +125,7 @@ def main(config: DictConfig):
     for t in tqdm(range(n_timesteps), disable=not do_tqdm):
 
         # Render the environment
-        env.render(state=state_env)
+        env.render()
 
         # Agents step
         key_random, subkey = random.split(key_random)
@@ -151,14 +138,12 @@ def main(config: DictConfig):
         # Env step
         key_random, subkey = random.split(key_random)
         (
-            state_env,
             observations_agents,
             dict_reproduction,
             done_env,
             info_env,
         ) = env.step(
             key_random=subkey,
-            state=state_env,
             actions=actions,
         )
         if done_env:

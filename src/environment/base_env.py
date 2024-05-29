@@ -40,7 +40,6 @@ class BaseEcoEnvironment(ABC):
         self,
         key_random: jnp.ndarray,
     ) -> Tuple[
-        StateEnv,
         ObservationAgent,
         Dict[int, List[int]],
         bool,
@@ -52,21 +51,19 @@ class BaseEcoEnvironment(ABC):
             key_random (jnp.ndarray): the random key used for the initialization
 
         Returns:
-            state (StateEnvGridworld): the initial state of the environment
             observations_agents (ObservationAgentGridworld): the new observations of the agents, of attributes of shape (n_max_agents, dim_observation_components)
             dict_reproduction (Dict[int, List[int]]): a dictionary indicating the indexes of the parents of each newborn agent. The keys are the indexes of the newborn agents, and the values are the indexes of the parents of the newborn agents.
             done (bool): whether the environment is done
             info (Dict[str, Any]): the info of the environment
         """
+        raise NotImplementedError
 
     @abstractmethod
     def step(
         self,
         key_random: jnp.ndarray,
-        state: StateEnv,
         actions: ActionAgent,
     ) -> Tuple[
-        StateEnv,
         ObservationAgent,
         Dict[int, List[int]],
         bool,
@@ -77,11 +74,9 @@ class BaseEcoEnvironment(ABC):
         Args:
             key_random (jnp.ndarray): the random key used for this step
             jnp.ndarray: the observations to give to the agents, of shape (n_max_agents, dim_observation)
-            state (StateEnvGridworld): the state of the environment
             actions (ActionAgent): the actions to perform
 
         Returns:
-            state (StateEnvGridworld): the new state of the environment
             observations_agents (ObservationAgentGridworld): the new observations of the agents, of attributes of shape (n_max_agents, dim_observation_components)
             dict_reproduction (Dict[int, List[int]]): a dictionary indicating the indexes of the parents of each newborn agent. The keys are the indexes of the newborn agents, and the values are the indexes of the parents of the newborn agents.
             done (bool): whether the environment is done
@@ -89,14 +84,13 @@ class BaseEcoEnvironment(ABC):
         """
         raise NotImplementedError
         # Apply the actions of the agents on the environment
-        state = f(state, actions)
+        self.state = f(state, actions)
         # Get which agents are newborns and which are their parents
-        dict_reproduction = f(state)
+        dict_reproduction = f(self.state)
         # Extract the observations of the agents
-        observations_agents = f(state)
+        observations_agents = f(self.state)
         # Return the results
         return (
-            state,
             observations_agents,
             dict_reproduction,
             done,
@@ -118,6 +112,7 @@ class BaseEcoEnvironment(ABC):
         Returns:
             Dict[str, Space]: the observation space dictionnary
         """
+        raise NotImplementedError
 
     @abstractmethod
     def get_action_space_dict(self) -> Dict[str, Space]:
@@ -134,6 +129,7 @@ class BaseEcoEnvironment(ABC):
         Returns:
             Dict[str, Space]: the action space dictionnary
         """
+        raise NotImplementedError
 
     @abstractmethod
     def get_class_observation_agent(self) -> Type[ObservationAgent]:
@@ -142,6 +138,7 @@ class BaseEcoEnvironment(ABC):
         Returns:
             Type[ObservationAgent]: the class of the observation of the agents
         """
+        raise NotImplementedError
 
     @abstractmethod
     def get_class_action_agent(self) -> Type[ActionAgent]:
@@ -150,12 +147,10 @@ class BaseEcoEnvironment(ABC):
         Returns:
             Type[ActionAgent]: the class of the action of the agents
         """
+        raise NotImplementedError
 
     @abstractmethod
-    def render(self, state: StateEnv) -> None:
+    def render(self) -> None:
         """Do the rendering of the environment. This can be a visual rendering or a logging of the state of any kind.
-
-        Args:
-            state (StateEnv): the state of the environment
         """
         return

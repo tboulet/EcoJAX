@@ -28,8 +28,7 @@ class StateAgentEvolutionary(StateAgent):
 class NeuroEvolutionAgentSpecies(BaseAgentSpecies):
     """A species of agents that evolve their neural network weights."""
 
-    def start(self, key_random: jnp.ndarray) -> None:
-        pass
+    def init(self, key_random: jnp.ndarray) -> None:
 
         # Initialize the state
         def init_single_agent(

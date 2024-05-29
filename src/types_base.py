@@ -19,3 +19,10 @@ class ActionAgent:
     """This class represents the action of an agent. It is used to store the action of an agent and to apply JAX transformations to it.
     Instances of this class represents objects that will be output by the agents and given as input to the environment.
     """
+    
+    
+@struct.dataclass
+class StateAgent:
+    """This class represents the current state of an agent. It is used to store the state of an agent and to apply JAX transformations to it.
+    Instances of this class represents objects that will change of value through the simulation and that entirely representing the non-constant part of the agent.
+    """

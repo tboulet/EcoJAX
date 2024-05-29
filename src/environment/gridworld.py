@@ -52,7 +52,7 @@ class ObservationAgentGridworld(ObservationAgent):
 @struct.dataclass
 class ActionAgentGridworld(ActionAgent):
 
-    # The decision of the agent, of shape (). decision represents the direction the agent wants to take.
+    # The direction of the agent, of shape (). direction represents the direction the agent wants to take.
     direction: jnp.ndarray
 
 
@@ -520,8 +520,8 @@ class GridworldEnv(BaseEcoEnvironment):
                 jnp.ndarray: the new orientation of the agent, of shape ()
             """
             # Compute the new position and orientation of the agent
-            decision = action.direction
-            agent_orientation_new = (agent_orientation + decision) % 4
+            direction = action.direction
+            agent_orientation_new = (agent_orientation + direction) % 4
             angle_new = agent_orientation_new * jnp.pi / 2
             d_position = jnp.array([jnp.cos(angle_new), -jnp.sin(angle_new)]).astype(
                 jnp.int32

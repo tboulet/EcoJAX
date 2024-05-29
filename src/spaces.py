@@ -11,11 +11,11 @@ class Space(ABC):
     """The base class for any EcoJAX space. A space describes the valid domain of a variable."""
 
     @abstractmethod
-    def sample(self, key: jnp.ndarray) -> Any:
+    def sample(self, key_random: jnp.ndarray) -> Any:
         """Sample a value from the space.
 
         Args:
-            key (jnp.ndarray): the random key
+            key_random (jnp.ndarray): the random key_random
 
         Returns:
             Any: the sampled value
@@ -47,18 +47,19 @@ class Discrete(Space):
         Args:
             n (int): the number of possible values
         """
+        assert n > 0, "The number of possible values must be positive."
         self.n = n
 
-    def sample(self, key: jnp.ndarray) -> int:
+    def sample(self, key_random: jnp.ndarray) -> int:
         """Sample a value from the space.
 
         Args:
-            key (jnp.ndarray): the random key
+            key_random (jnp.ndarray): the random key_random
 
         Returns:
             int: the sampled value
         """
-        return random.randint(key, (), 0, self.n)
+        return random.randint(key_random, (), 0, self.n)
 
     def contains(self, x: int) -> bool:
         """Check if a value is in the space.
@@ -94,20 +95,22 @@ class Continuous(Space):
         self.low = low
         self.high = high
 
-    def sample(self, key: jnp.ndarray) -> float:
+    def sample(self, key_random: jnp.ndarray) -> float:
         """Sample a value from the space.
 
         Args:
-            key (jnp.ndarray): the random key
+            key_random (jnp.ndarray): the random key_random
 
         Returns:
             float: the sampled value
         """
+        minval=self.low if self.low is not None else -1
+        maxval=self.high if self.high is not None else 1
         return random.uniform(
-            key=key,
+            key=key_random,
             shape=self.shape,
-            minval=self.low,
-            maxval=self.high,
+            minval=minval,
+            maxval=maxval,
         )
 
     def contains(self, x: float) -> bool:
@@ -119,7 +122,16 @@ class Continuous(Space):
         Returns:
             bool: whether the value is in the space
         """
-        return jnp.logical_and(self.low <= x, x <= self.high)
-
+        # CHeck shape
+        if not jnp.shape(x) == self.shape:
+            return False
+        if self.low != None and jnp.any(x < self.low):
+            return False
+        if self.high != None and jnp.any(x > self.high):
+            return False
+        return True
+    
     def __repr__(self) -> str:
-        return f"Continuous({self.shape} in [{self.low}, {self.high}])"
+        minval=self.low if self.low is not None else "-inf"
+        maxval=self.high if self.high is not None else "inf"
+        return f"Continuous({self.shape} in [{minval}, {maxval}])"

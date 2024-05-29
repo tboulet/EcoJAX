@@ -76,6 +76,17 @@ def main(config: DictConfig):
     observation_class = env.get_class_observation_agent()
     action_class = env.get_class_action_agent()
 
+    # Create the model
+    model_name: str = config["model"]["name"]
+    ModelClass = model_name_to_ModelClass[model_name]
+    model = ModelClass(
+        config=config["model"],
+        observation_space_dict=observation_space_dict,
+        action_space_dict=action_space_dict,
+        observation_class=observation_class,
+        action_class=action_class,
+    )
+
     # Create the agent's species
     agent_species_name: str = config["agents"]["name"]
     AgentSpeciesClass = agent_name_to_AgentSpeciesClass[agent_species_name]
@@ -87,6 +98,7 @@ def main(config: DictConfig):
         action_space_dict=action_space_dict,
         observation_class=observation_class,
         action_class=action_class,
+        model=model,
     )
 
     # Initialize loggers
@@ -115,6 +127,10 @@ def main(config: DictConfig):
         done_env,
         info_env,
     ) = env.reset(key_random=subkey)
+
+    print("Starting agents...")
+    key_random, subkey = random.split(key_random)
+    agent_species.start(key_random=subkey)
 
     # ============== Simulation loop ===============
     print("Simulation started.")

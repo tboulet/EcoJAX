@@ -6,6 +6,8 @@ import jax
 from jax import random
 import jax.numpy as jnp
 import numpy as np
+from flax import struct
+import flax.linen as nn
 
 from src.agents import BaseAgentSpecies
 from src.types_base import ActionAgent, ObservationAgent
@@ -74,8 +76,8 @@ class RandomAgentSpecies(BaseAgentSpecies):
         # Generate a batch of random keys
         batch_keys = random.split(key_random, self.n_agents_max)
         # React to the observations
-        direction = self.react_to_obs_agent(
+        action = self.react_to_obs_agent(
             batch_keys,
             batch_observations,
         )
-        return direction
+        return action

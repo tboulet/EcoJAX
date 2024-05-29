@@ -6,6 +6,8 @@ import jax
 from jax import random
 import jax.numpy as jnp
 import numpy as np
+from flax import struct
+import flax.linen as nn
 
 from src.spaces import Space
 from src.types_base import ObservationAgent, ActionAgent
@@ -32,6 +34,7 @@ class BaseAgentSpecies(ABC):
         action_space_dict: Dict[str, Space],
         observation_class: Type[ObservationAgent],
         action_class: Type[ActionAgent],
+        model: nn.Module,
     ):
         """The constructor of the BaseAgentSpecies class. It initializes the species of agents with the configuration.
         Elements allowing the interactions with the environment are also given as input : the numbers of agents, and the observation and action spaces.
@@ -54,7 +57,8 @@ class BaseAgentSpecies(ABC):
         self.action_space_dict = action_space_dict
         self.observation_class = observation_class
         self.action_class = action_class
-
+        self.model = model
+        
     @abstractmethod
     def react(
         self,

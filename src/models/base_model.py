@@ -1,18 +1,37 @@
 from abc import ABC, abstractmethod
-from typing import Dict, List
+from typing import Any, Dict, List, Type
 
 import numpy as np
 
+import flax.linen as nn
+
+from src.spaces import Space
+from src.types_base import ActionAgent, ObservationAgent
 
 
+class BaseModel(nn.Module, ABC):
+    """The base class for all models. A model is a way to map observations and weights to actions.
+    This abstract class subclasses nn.Module, which is the base class for all Flax models.
+    """
 
-class BaseModel(ABC):
-    
-    def __init__(self, config : Dict):
-        self.config_solver = config
-        
+    config: Dict[str, Any]
+    observation_space_dict: Dict[str, Space]
+    action_space_dict: Dict[str, Space]
+    observation_class: Type[ObservationAgent]
+    action_class: Type[ActionAgent]
+
     @abstractmethod
-    def fit(self, x_data : np.ndarray) -> np.ndarray:
-        """Example of key methods for the solving process.
-        Here as an example we are trying to predict the y data from the x data.
+    def get_initialized_variables(self, key_random: np.ndarray) -> None:
+        """Initializes the model with the given configuration.
+
+        Args:
+            key_random (np.ndarray): the random key used for initialization
+
+        Returns:
+            None
         """
+        pass
+
+    @abstractmethod
+    def __call__(self, obs: ObservationAgent) -> ActionAgent:
+        pass

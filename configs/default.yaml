@@ -24,7 +24,7 @@ config_dirs_to_log :
 defaults:
   - _self_
   - env : gridworld
-  - agents : evo
+  - agents : ne
   - model : mlp
   - override hydra/hydra_logging: disabled  
   - override hydra/job_logging: disabled 

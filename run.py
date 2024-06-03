@@ -125,7 +125,8 @@ def main(config: DictConfig):
     for t in tqdm(range(n_timesteps), disable=not do_tqdm):
 
         # Render the environment
-        env.render()
+        if do_render:
+            env.render()
 
         # Agents step
         key_random, subkey = random.split(key_random)

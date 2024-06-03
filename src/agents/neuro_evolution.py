@@ -78,33 +78,35 @@ class NeuroEvolutionAgentSpecies(BaseAgentSpecies):
     ) -> jnp.ndarray:
 
         # Reproduction part
-        for idx_agent_newborn, list_idx_parents in dict_reproduction.items():
-            if len(list_idx_parents) == 0:
-                pass
-            elif len(list_idx_parents) == 1:
-                agent_state = self.create_mutated_agent(
-                    idx_parent=list_idx_parents[0],
-                    key_random=key_random,
-                )
-
-            elif len(list_idx_parents) == 2:
-                agent_state = self.create_crossover_agent(
-                    idx_parent1=list_idx_parents[0],
-                    idx_parent2=list_idx_parents[1],
-                    key_random=key_random,
-                )
-
-            else:
-                raise ValueError(
-                    f"list_idx_parents has length {len(list_idx_parents)}. Not supported."
-                )
+        # for idx_agent_newborn, list_idx_parents in dict_reproduction.items():
+        #     if len(list_idx_parents) == 0:
+        #         pass
+        #     elif len(list_idx_parents) == 1:
+        #         agent_state = self.create_mutated_agent(
+        #             idx_parent=list_idx_parents[0],
+        #             key_random=key_random,
+        #         )
                 
-            # Update the agent corresponding to the newborn with the new state
-            self.batch_state_agents = update_states(
-                batch_state_agents=self.batch_state_agents,
-                list_idx_agents=[idx_agent_newborn],
-                list_new_states=[agent_state],
-            )
+        #         # Update the agent corresponding to the newborn with the new state
+        #         self.batch_state_agents = update_states(
+        #             batch_state_agents=self.batch_state_agents,
+        #             list_idx_agents=[idx_agent_newborn],
+        #             list_new_states=[agent_state],
+        #         )
+
+        #     elif len(list_idx_parents) == 2:
+        #         agent_state = self.create_crossover_agent(
+        #             idx_parent1=list_idx_parents[0],
+        #             idx_parent2=list_idx_parents[1],
+        #             key_random=key_random,
+        #         )
+
+        #     else:
+        #         raise ValueError(
+        #             f"list_idx_parents has length {len(list_idx_parents)}. Not supported."
+        #         )
+                
+            
 
         # Agent-wise acting part
         batch_keys = random.split(key_random, self.n_agents_max)

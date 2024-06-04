@@ -122,7 +122,7 @@ def main(config: DictConfig):
     # ============== Simulation loop ===============
     print("Simulation started.")
     # Training loop
-    for t in tqdm(range(n_timesteps), disable=not do_tqdm):
+    for timestep_run in tqdm(range(n_timesteps), disable=not do_tqdm):
 
         # Render the environment
         if do_render:
@@ -147,6 +147,11 @@ def main(config: DictConfig):
             key_random=subkey,
             actions=actions,
         )
+        
+        # Log the measures
+        metrics = info_env["metrics"]
+        
+        # Finish the loop if the environment is done
         if done_env:
             print("Environment done.")
             break

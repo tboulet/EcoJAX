@@ -12,6 +12,23 @@ type_border : "wall"
 
 
 
+# ======================== Metrics ========================
+measures:
+  immediate:
+    - is_trying_eating
+    # - is_reproducing
+  state:
+    - energy
+    # - density_agents_observed
+    # - density_food_observed
+    # - coordinates
+
+functions_lifespan_agg:
+  - cumulative
+  - average
+  - variation
+
+
 # ======================== Video parameters ========================
 
 # The parameters for the video recording
@@ -96,6 +113,8 @@ energy_initial : 50
 energy_food : 10
 # The energy threshold under which an agent dies
 energy_thr_death : 0
+# Whether the agent has to activate the eating action to eat
+do_active_eating: true
 
 # The energy required to be able to reproduce
 energy_req_reprod : 80

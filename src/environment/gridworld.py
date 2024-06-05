@@ -12,10 +12,16 @@ from jax.scipy.signal import convolve2d
 from flax import struct
 
 from src.environment.base_env import BaseEcoEnvironment
+from src.metrics import AggregatorLifespan, name_lifespan_agg_to_AggregatorClass
 from src.spaces import Space, Discrete, Continuous
 from src.types_base import ActionAgent, ObservationAgent, StateEnv
 from src.utils import DICT_COLOR_TAG_TO_RGB, sigmoid, logit, try_get
 from src.video import VideoRecorder
+
+
+@struct.dataclass
+class MetricsLifespan:
+    metric_cumulative: jnp.ndarray
 
 
 @struct.dataclass
@@ -41,6 +47,9 @@ class StateEnvGridworld(StateEnv):
     # The energy level of the agents, of shape (n_max_agents,). energy_agents[i] represents the energy level of the i-th agent.
     energy_agents: jnp.ndarray  # (n_max_agents,) in [0, +inf)
 
+    # The lifespan aggregated metrics of the agents
+    metrics_lifespan: MetricsLifespan
+
 
 @struct.dataclass
 class ObservationAgentGridworld(ObservationAgent):
@@ -52,8 +61,12 @@ class ObservationAgentGridworld(ObservationAgent):
 @struct.dataclass
 class ActionAgentGridworld(ActionAgent):
 
-    # The direction of the agent, of shape (). direction represents the direction the agent wants to take.
+    # The direction of the agent, of shape () and in {0, 3}. direction represents the direction the agent wants to take.
     direction: jnp.ndarray
+
+    # Whether the agent wants to eat, of shape () and in {0, 1}. eat represents whether the agent wants to eat the plant on its cell.
+    # If an agent eats, it won't be able to move this turn.
+    do_eat: jnp.ndarray
 
 
 class GridworldEnv(BaseEcoEnvironment):
@@ -109,6 +122,10 @@ class GridworldEnv(BaseEcoEnvironment):
             for idx_channel, name_channel in enumerate(self.list_names_channels)
         }
         self.n_channels_map: int = len(self.dict_name_channel_to_idx)
+        # Metrics parameters
+        self.name_lifespan_agg_to_aggregator: Dict[str, Type[AggregatorLifespan]] = {
+            Agg() for name_lifespan_agg, Agg in name_lifespan_agg_to_AggregatorClass.items() if name_lifespan_agg in config["functions_lifespan_agg"]
+        }
         # Video parameters
         self.do_video: bool = config["do_video"]
         self.n_steps_between_videos: int = config["n_steps_between_videos"]
@@ -230,6 +247,11 @@ class GridworldEnv(BaseEcoEnvironment):
         )
         dict_reproduction = {}
         energy_agents = jnp.ones(self.n_agents_max) * self.energy_initial
+        # Initialize metrics_lifespan as an array of NaN
+        metrics_lifespan = MetricsLifespan(
+            metric_cumulative=jnp.full(self.n_agents_max, jnp.nan)
+        )
+
         # Return the information required by the agents
         self.state = StateEnvGridworld(
             timestep=0,
@@ -239,6 +261,7 @@ class GridworldEnv(BaseEcoEnvironment):
             orientation_agents=orientation_agents,
             are_existing_agents=are_existing_agents,
             energy_agents=energy_agents,
+            metrics_lifespan=metrics_lifespan,
         )
         observations_agents = self.get_observations_agents(state=self.state)
         return (
@@ -297,9 +320,6 @@ class GridworldEnv(BaseEcoEnvironment):
         # Apply the actions of the agents on the environment
         key_random, subkey = jax.random.split(key_random)
         state = self.step_action_agents(state=state, actions=actions, key_random=subkey)
-        # Manage the energy of the agents
-        key_random, subkey = jax.random.split(key_random)
-        state = self.step_manage_energy(state=state, key_random=subkey)
 
         # 2) Internal dynamics of the environment
         # Update the sun
@@ -328,6 +348,31 @@ class GridworldEnv(BaseEcoEnvironment):
         )
         # Extract the observations of the agents
         observations_agents = self.get_observations_agents(state=state)
+
+        # 5) Get the measures dictionary
+        # Get the measures
+        key_random, subkey = jax.random.split(key_random)
+        dict_measures = self.get_measures(
+            state=state, actions=actions, key_random=subkey
+        )  # dict_measures[measure type]["measure_name"][i] = m_t^(k,i)
+        # Compute on the run the lifespan metrics
+        # metrics_lifespan = state.metrics_lifespan
+        # for name_func in self.config["functions_lifespan_agg"]:
+            
+        #     new_metric_value = self.name_lifespan_agg_to_aggregator[name_func].get_new_metric_value(
+        #         current_metric_value=metrics_lifespan.metric_cumulative,
+        #         measure=dict_measures["measures_cumulative"]["energy"],
+        #         age=state.timestep,
+        #     )
+
+        # Format the metrics
+        dict_metrics = {}
+        for measure_type in dict_measures:
+            for measure_name in dict_measures[measure_type]:
+                dict_metrics[f"measures_{measure_type}/{measure_name}"] = dict_measures[
+                    measure_type
+                ][measure_name]
+
         # Return the new state and observations
         return (
             state,
@@ -335,7 +380,7 @@ class GridworldEnv(BaseEcoEnvironment):
             are_newborns_agents,
             indexes_parents_agents,
             False,
-            {},
+            {"metrics": dict_metrics},
         )
 
     def get_observation_space_dict(self) -> Dict[str, Space]:
@@ -355,6 +400,7 @@ class GridworldEnv(BaseEcoEnvironment):
     def get_action_space_dict(self) -> Dict[str, Space]:
         return {
             "direction": Discrete(n=4),
+            "do_eat": Discrete(n=2),
         }
 
     def get_class_observation_agent(self) -> Type[ObservationAgent]:
@@ -408,6 +454,50 @@ class GridworldEnv(BaseEcoEnvironment):
             method="nearest",
         )
         return RGB_image_upscaled
+
+    def blend_images(
+        self, images: jnp.ndarray, dict_idx_channel_to_color_tag: Dict[int, tuple]
+    ) -> jnp.ndarray:
+        """Apply a color to each channel of a list of grey images and blend them together
+
+        Args:
+            images (np.ndarray): the array of grey images, of shape (height, width, channels)
+            dict_idx_channel_to_color_tag (Dict[int, tuple]): a mapping from channel index to color tag.
+                A color tag is a tuple of 3 floats between 0 and 1
+
+        Returns:
+            np.ndarray: the blended image, of shape (height, width, 3), with the color applied to each channel,
+                with pixel values between 0 and 1
+        """
+        # Initialize an empty array to store the blended image
+        blended_image = jnp.zeros(images.shape[:2] + (3,), dtype=jnp.float32)
+
+        # Iterate over each channel and apply the corresponding color
+        for channel_idx, color_tag in dict_idx_channel_to_color_tag.items():
+            # Get the color components
+            color = jnp.array(DICT_COLOR_TAG_TO_RGB[color_tag], dtype=jnp.float32)
+
+            # Normalize the color components
+            # color /= jnp.max(color)
+
+            blended_image += color * images[:, :, channel_idx][:, :, None]
+
+        # Clip the pixel values to be between 0 and 1
+        blended_image = jnp.clip(blended_image, 0, 1)
+
+        # Turn black pixels (value of 0 in the 3 channels) to "color_background" pixels
+        tag_color_background = try_get(self.config, "color_background", default="gray")
+        assert (
+            tag_color_background in DICT_COLOR_TAG_TO_RGB
+        ), f"Unknown color tag: {tag_color_background}"
+        color_empty = DICT_COLOR_TAG_TO_RGB[tag_color_background]
+        blended_image = jnp.where(
+            jnp.sum(blended_image, axis=-1, keepdims=True) == 0,
+            jnp.array(color_empty, dtype=jnp.float32) * jnp.ones_like(blended_image),
+            blended_image,
+        )
+
+        return blended_image
 
     def step_grow_plants(
         self, state: StateEnvGridworld, key_random: jnp.ndarray
@@ -498,8 +588,10 @@ class GridworldEnv(BaseEcoEnvironment):
     ) -> StateEnvGridworld:
         """Modify the state of the environment by applying the actions of the agents."""
         H, W, C = state.map.shape
+        idx_plants = self.dict_name_channel_to_idx["plants"]
         idx_agents = self.dict_name_channel_to_idx["agents"]
-        # Apply the movements of the agents
+
+        # Compute the new positions and orientations of all the agents
 
         def get_single_agent_new_position_and_orientation(
             agent_position: jnp.ndarray,
@@ -526,52 +618,56 @@ class GridworldEnv(BaseEcoEnvironment):
             agent_position_new = agent_position + d_position
             agent_position_new = agent_position_new % jnp.array([H, W])
 
-            # Warning : if non-moving action are implemented, this would require a jnp.select here
+            # If agent is eating, it won't move
+            do_eat = action.do_eat
+            agent_position_new = jnp.where(do_eat, agent_position, agent_position_new)
+            agent_orientation_new = jnp.where(
+                do_eat, agent_orientation, agent_orientation_new
+            )
 
             # Return the new position and orientation of the agent
             return agent_position_new, agent_orientation_new
 
-        # Vectorize the function to get the new position and orientation of many agents
         get_many_agents_new_position_and_orientation = jax.vmap(
             get_single_agent_new_position_and_orientation, in_axes=(0, 0, 0)
         )
 
-        # Compute the new positions and orientations of all the agents
-        positions_agents = state.positions_agents
-        orientation_agents = state.orientation_agents
         positions_agents_new, orientation_agents_new = (
             get_many_agents_new_position_and_orientation(
-                positions_agents,
-                orientation_agents,
+                state.positions_agents,
+                state.orientation_agents,
                 actions,
             )
         )
 
-        # Update the state
-        return state.replace(
-            positions_agents=positions_agents_new,
-            orientation_agents=orientation_agents_new,
-        )
-
-    def step_manage_energy(
-        self, state: StateEnvGridworld, key_random: jnp.ndarray
-    ) -> StateEnvGridworld:
-        # Agents eats plants
-        H, W, C = state.map.shape
-        idx_plants = self.dict_name_channel_to_idx["plants"]
-        idx_agents = self.dict_name_channel_to_idx["agents"]
         map_plants = state.map[..., idx_plants]
         map_agents = state.map[..., idx_agents]
-        positions_agents = state.positions_agents
+
+        # Perform the eating action of the agents
+        map_agents_try_eating = jnp.zeros_like(map_agents)
+        map_agents_try_eating = map_agents_try_eating.at[
+            positions_agents_new[:, 0], positions_agents_new[:, 1]
+        ].add(
+            actions.do_eat
+        )  # map of the number of agents trying to eat at each cell
 
         # Compute the new energy level of the agents
-        map_energy_bonus_by_agent = (
-            self.energy_food * map_plants / jnp.maximum(1, map_agents)
-        )  # divide food if multiple agents on the same cell
-        energy_agents_new = (
+        map_energy_bonus_available = (
+            self.energy_food * map_plants
+        )  # map of the energy available at each cell
+        map_energy_bonus_available_per_agent = map_energy_bonus_available / jnp.maximum(
+            1, map_agents_try_eating
+        )  # map of the energy available at each cell per agent trying to eat
+
+        energy_agents_new = jnp.where(
+            actions.do_eat,
             state.energy_agents
-            + map_energy_bonus_by_agent[positions_agents[:, 0], positions_agents[:, 1]]
-        )
+            + map_energy_bonus_available_per_agent[
+                positions_agents_new[:, 0], positions_agents_new[:, 1]
+            ],
+            state.energy_agents,
+        )  # energy of the agents after eating
+
         # Consume energy and check if agents are dead
         energy_agents_new -= 1
         are_existing_agents_new = (
@@ -580,6 +676,8 @@ class GridworldEnv(BaseEcoEnvironment):
 
         # Update the state
         return state.replace(
+            positions_agents=positions_agents_new,
+            orientation_agents=orientation_agents_new,
             energy_agents=energy_agents_new,
             are_existing_agents=are_existing_agents_new,
         )
@@ -651,7 +749,6 @@ class GridworldEnv(BaseEcoEnvironment):
             indexes_parents_agents,
         )
 
-    @partial(jax.jit, static_argnums=(0,))
     def get_observations_agents(
         self, state: StateEnvGridworld
     ) -> ObservationAgentGridworld:
@@ -722,46 +819,51 @@ class GridworldEnv(BaseEcoEnvironment):
 
         return observations
 
-    def blend_images(
-        self, images: jnp.ndarray, dict_idx_channel_to_color_tag: Dict[int, tuple]
-    ) -> jnp.ndarray:
-        """Apply a color to each channel of a list of grey images and blend them together
+    def get_measures(
+        self,
+        state: StateEnvGridworld,
+        actions: ActionAgentGridworld,
+        key_random: jnp.ndarray,
+    ) -> Dict[str, jnp.ndarray]:
+        """Get the measures of the environment.
 
         Args:
-            images (np.ndarray): the array of grey images, of shape (height, width, channels)
-            dict_idx_channel_to_color_tag (Dict[int, tuple]): a mapping from channel index to color tag.
-                A color tag is a tuple of 3 floats between 0 and 1
+            state (StateEnvGridworld): the state of the environment
+            actions (ActionAgentGridworld): the actions of the agents
+            key_random (jnp.ndarray): the random key
 
         Returns:
-            np.ndarray: the blended image, of shape (height, width, 3), with the color applied to each channel,
-                with pixel values between 0 and 1
+            Dict[str, jnp.ndarray]: a dictionary of the measures of the environment
         """
-        # Initialize an empty array to store the blended image
-        blended_image = jnp.zeros(images.shape[:2] + (3,), dtype=jnp.float32)
+        dict_measures = {"immediate": {}, "state": {}}
 
-        # Iterate over each channel and apply the corresponding color
-        for channel_idx, color_tag in dict_idx_channel_to_color_tag.items():
-            # Get the color components
-            color = jnp.array(DICT_COLOR_TAG_TO_RGB[color_tag], dtype=jnp.float32)
+        # Compute immediate measures
+        list_names_immediate_measures = self.config["measures"]["immediate"]
+        for name_measure in list_names_immediate_measures:
+            if name_measure == "is_trying_eating":
+                measures = actions.do_eat
+            else:
+                raise ValueError(f"Unknown immediate measure: {name_measure}")
 
-            # Normalize the color components
-            # color /= jnp.max(color)
+            dict_measures["immediate"][name_measure] = jnp.where(
+                state.are_existing_agents,
+                measures,
+                jnp.nan,
+            )
 
-            blended_image += color * images[:, :, channel_idx][:, :, None]
+        # Compute state measures
+        list_names_state_measures = self.config["measures"]["state"]
+        for name_measure in list_names_state_measures:
+            if name_measure == "energy":
+                measures = state.energy_agents
+            else:
+                raise ValueError(f"Unknown state measure: {name_measure}")
 
-        # Clip the pixel values to be between 0 and 1
-        blended_image = jnp.clip(blended_image, 0, 1)
+            dict_measures["state"][name_measure] = jnp.where(
+                state.are_existing_agents,
+                measures,
+                jnp.nan,
+            )
 
-        # Turn black pixels (value of 0 in the 3 channels) to "color_background" pixels
-        tag_color_background = try_get(self.config, "color_background", default="gray")
-        assert (
-            tag_color_background in DICT_COLOR_TAG_TO_RGB
-        ), f"Unknown color tag: {tag_color_background}"
-        color_empty = DICT_COLOR_TAG_TO_RGB[tag_color_background]
-        blended_image = jnp.where(
-            jnp.sum(blended_image, axis=-1, keepdims=True) == 0,
-            jnp.array(color_empty, dtype=jnp.float32) * jnp.ones_like(blended_image),
-            blended_image,
-        )
-
-        return blended_image
+        # Return the dictionary of measures
+        return dict_measures

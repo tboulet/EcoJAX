@@ -10,8 +10,9 @@ from flax import struct
 import flax.linen as nn
 
 
-from src.agents import BaseAgentSpecies
+from src.agents.base_agent_species import BaseAgentSpecies, set_state
 from src.models.base_model import BaseModel
+from src.evolution.mutator import mutation_gaussian_noise
 from src.types_base import ActionAgent, ObservationAgent, StateAgent
 import src.spaces as spaces
 
@@ -23,29 +24,6 @@ class StateAgentEvolutionary(StateAgent):
 
     # The parameters of the neural network corresponding to the agent
     params: Dict[str, jnp.ndarray]
-
-
-def update_states(
-    batch_state_agents: StateAgent,  # Batched
-    list_idx_agents: List[int],
-    list_new_states: List[StateAgent],
-) -> StateAgent:  # Batched
-    """Update the state of a batch of agents with new values.
-
-    Args:
-        batch_state_agents (StateAgent): the state of the agents
-        list_idx_agents (List[int]): the list of indices of the agents to update
-        list_new_values (List[StateAgent]): the list of new values for the agents
-
-    Returns:
-        StateAgent: the updated state of the agents
-    """
-    for idx_agent, new_state in zip(list_idx_agents, list_new_states):
-        state = batch_state_agents[idx_agent]
-        for key in new_state.keys():
-            state = state.set(key, new_state[key])
-        batch_state_agents = batch_state_agents.at[idx_agent].set(state)
-    return batch_state_agents
 
 
 class NeuroEvolutionAgentSpecies(BaseAgentSpecies):
@@ -78,40 +56,17 @@ class NeuroEvolutionAgentSpecies(BaseAgentSpecies):
     ) -> jnp.ndarray:
 
         # Reproduction part
-        # for idx_agent_newborn, list_idx_parents in dict_reproduction.items():
-        #     if len(list_idx_parents) == 0:
-        #         pass
-        #     elif len(list_idx_parents) == 1:
-        #         agent_state = self.create_mutated_agent(
-        #             idx_parent=list_idx_parents[0],
-        #             key_random=key_random,
-        #         )
-                
-        #         # Update the agent corresponding to the newborn with the new state
-        #         self.batch_state_agents = update_states(
-        #             batch_state_agents=self.batch_state_agents,
-        #             list_idx_agents=[idx_agent_newborn],
-        #             list_new_states=[agent_state],
-        #         )
+        key_random, subkey = random.split(key_random)
+        self.batch_state_agents = self.manage_reproduction(
+            key_random=subkey,
+            batch_state_agents=self.batch_state_agents,
+            dict_reproduction=dict_reproduction,
+        )
 
-        #     elif len(list_idx_parents) == 2:
-        #         agent_state = self.create_crossover_agent(
-        #             idx_parent1=list_idx_parents[0],
-        #             idx_parent2=list_idx_parents[1],
-        #             key_random=key_random,
-        #         )
-
-        #     else:
-        #         raise ValueError(
-        #             f"list_idx_parents has length {len(list_idx_parents)}. Not supported."
-        #         )
-                
-            
-
-        # Agent-wise acting part
-        batch_keys = random.split(key_random, self.n_agents_max)
+        # Agent-wise reaction
+        key_random, subkey = random.split(key_random)
         self.batch_state_agents, batch_actions = self.react_agents(
-            batch_keys=batch_keys,
+            key_random=subkey,
             batch_observations=batch_observations,
             batch_state_agents=self.batch_state_agents,
         )
@@ -120,51 +75,52 @@ class NeuroEvolutionAgentSpecies(BaseAgentSpecies):
 
     # =============== Reproduction methods =================
 
-    def create_mutated_agent(
+    def manage_reproduction(
         self,
-        idx_parent: int,
         key_random: jnp.ndarray,
-    ) -> StateAgentEvolutionary:
-        # Copy the parent's params and mutate them
-        state_agent_parent = self.batch_state_agents[idx_parent]
-        params = state_agent_parent.params
-        return StateAgentEvolutionary(
-            age=0,
-            params=self.mutate_params(
-                params=state_agent_parent.weights,
-                key_random=key_random,
-            ),
-        )
-
-    def mutate_params(
-        self,
-        params: Dict[str, jnp.ndarray],
-        key_random: jnp.ndarray,
-        factor_mutation: float = 0.01,
-    ) -> Dict[str, jnp.ndarray]:
-        """Mutate the params of an NN model by adding a small amount of noise.
+        batch_state_agents: StateAgent,
+        dict_reproduction: Dict[int, List[int]],
+    ) -> StateAgent:
+        """Manage the reproduction of the agents.
 
         Args:
-            params (Dict[str, jnp.ndarray]): the params of the model
-            key_random (jnp.ndarray): the random key used for generating the noise
-            factor_mutation (float): the factor by which to scale the noise
+            key_random (jnp.ndarray): the random key, of shape (2,)
+            batch_state_agents (StateAgent): the state of the agents
+            dict_reproduction (Dict[int, List[int]]): the dictionary indicating the indexes of the parents of each newborn agent
 
         Returns:
-            Dict[str, jnp.ndarray]: the mutated params
+            StateAgent: the updated state of the agents, with the newborn agents added
         """
-        params_mutated = {}
-        for key, weight in params.items():
+        for idx_newborn, list_idx_parents in dict_reproduction.items():
+            # Get the parent's AgentState
+            idx_parent = list_idx_parents[0]
+            state_parent = jax.tree_map(
+                lambda x: x[idx_parent], batch_state_agents
+            )
+            # Mutate the parent's AgentState to create the newborn
             key_random, subkey = random.split(key_random)
-            noise = jax.random.normal(subkey, weight.shape) * factor_mutation
-            params_mutated[key] = weight + noise 
-        return params_mutated
+            state_mutated = self.mutate_agent(state_parent, key_random=subkey)
+            # Add the newborn to the batch
+            batch_state_agents = jax.tree_map(
+                lambda x, y: x.at[idx_newborn].set(y), batch_state_agents, state_mutated
+            )
+        return batch_state_agents
+
+    def mutate_agent(self, agent: StateAgentEvolutionary, key_random : jnp.ndarray) -> StateAgentEvolutionary:
+        return agent.replace(age=0, params=mutation_gaussian_noise(
+            arr=agent.params,
+            mutation_rate=0.1,
+            mutation_std=0.01,
+            key_random=key_random,
+        ))
+    
 
     # =============== Agent creation methods =================
 
     @partial(jax.jit, static_argnums=(0,))
     def react_agents(
         self,
-        batch_keys: jnp.ndarray,
+        key_random: jnp.ndarray,
         batch_observations: ObservationAgent,  # Batched
         batch_state_agents: StateAgentEvolutionary,  # Batched
     ) -> jnp.ndarray:
@@ -181,11 +137,12 @@ class NeuroEvolutionAgentSpecies(BaseAgentSpecies):
                 key_random=key_random,
             )
             # Learning part
-            pass
+            state_agent.replace(age=state_agent.age + 1)
             # Update the agent's state and act
             return state_agent, action
 
         react_many_agents = jax.vmap(react_single_agent, in_axes=(0, 0, 0))
+        batch_keys = random.split(key_random, self.n_agents_max)
         batch_state_agents, batch_actions = react_many_agents(
             batch_keys,
             batch_observations,

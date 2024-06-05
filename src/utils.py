@@ -1,8 +1,13 @@
 from typing import Any, Dict, List, Union
+from abc import ABC, abstractmethod
+from functools import partial
 
+import jax
+from jax import random
 import jax.numpy as jnp
 import numpy as np
-
+from flax import struct
+import flax.linen as nn
 
 def to_numeric(x: Union[int, float, str, None]) -> Union[int, float]:
     if isinstance(x, int) or isinstance(x, float):
@@ -83,3 +88,42 @@ DICT_COLOR_TAG_TO_RGB = {
 }
 
 
+def nest_for_array(func):
+    """Decorator to allow a function to be applied to nested arrays.
+
+    Args:
+        func (function): the function to decorate
+
+    Returns:
+        function: the decorated function
+    """
+
+    def wrapper(arr, *args, **kwargs):
+        if isinstance(arr, jnp.ndarray):
+            return func(arr, *args, **kwargs)
+        elif isinstance(arr, dict):
+            if "key_random" in kwargs:
+                key_random = kwargs["key_random"]
+                del kwargs["key_random"]
+                for key, value in arr.items():
+                    key_random, subkey = random.split(key_random)
+                    arr[key] = wrapper(value, *args, key_random=subkey, **kwargs)
+            else:
+                for key, value in arr.items():
+                    arr[key] = wrapper(value, *args, **kwargs)
+            return arr
+        elif isinstance(arr, list):
+            if "key_random" in kwargs:
+                key_random = kwargs["key_random"]
+                del kwargs["key_random"]
+                for idx, value in enumerate(arr):
+                    key_random, subkey = random.split(key_random)
+                    arr[idx] = wrapper(value, *args, key_random=subkey, **kwargs)
+            else:
+                for idx, value in enumerate(arr):
+                    arr[idx] = wrapper(value, *args, **kwargs)
+            return arr
+        else:
+            raise ValueError(f"Unknown type for array: {type(arr)}")
+
+    return wrapper

@@ -228,7 +228,7 @@ class GridworldEnv(BaseEcoEnvironment):
             minval=0,
             maxval=4,
         )
-        dict_reproduction = {i: [] for i in range(self.n_agents_max)}
+        dict_reproduction = {}
         energy_agents = jnp.ones(self.n_agents_max) * self.energy_initial
         # Return the information required by the agents
         self.state = StateEnvGridworld(
@@ -259,7 +259,7 @@ class GridworldEnv(BaseEcoEnvironment):
         Dict[str, Any],
     ]:
         (
-            state,
+            self.state,
             observations_agents,
             are_newborns_agents,
             indexes_parents_agents,
@@ -271,7 +271,7 @@ class GridworldEnv(BaseEcoEnvironment):
             actions=actions,
         )
         dict_reproduction = {
-            idx: list(indexes_parents_agents[idx])
+            int(idx): np.array(indexes_parents_agents[idx])
             for idx in are_newborns_agents.nonzero()[0]
         }  # TODO: check if this is correct
         return observations_agents, dict_reproduction, done, info
@@ -356,10 +356,10 @@ class GridworldEnv(BaseEcoEnvironment):
         return {
             "direction": Discrete(n=4),
         }
-    
+
     def get_class_observation_agent(self) -> Type[ObservationAgent]:
         return ObservationAgentGridworld
-    
+
     def get_class_action_agent(self) -> Type[ActionAgent]:
         return ActionAgentGridworld
 
@@ -614,7 +614,7 @@ class GridworldEnv(BaseEcoEnvironment):
 
         # Get the indices of the ghost agents that will become newborns and define the newborns
         ghost_agents_indices_with_filled_values = jnp.where(
-            self.n_agents_max < n_newborns,
+            jnp.arange(self.n_agents_max) < n_newborns,
             ghost_agents_indices_with_filled_values,
             fill_value,
         )
@@ -631,13 +631,22 @@ class GridworldEnv(BaseEcoEnvironment):
             ghost_agents_indices_with_filled_values, 0
         ].set(are_agents_reproducing)
 
-        # Pay the cost of reproduction
+        # Update the energy : set newborns energy to the initial energy and decrease the energy of the agents that are reproducing
         energy_agents_new = (
             state.energy_agents - are_agents_reproducing * self.energy_cost_reprod
         )
+        energy_agents_new = energy_agents_new.at[
+            ghost_agents_indices_with_filled_values
+        ].set(self.energy_initial)
+
+        # Update the existing agents
+        are_existing_agents_new = are_existing_agents | are_newborns_agents
 
         return (
-            state.replace(energy_agents=energy_agents_new),
+            state.replace(
+                energy_agents=energy_agents_new,
+                are_existing_agents=are_existing_agents_new,
+            ),
             are_newborns_agents,
             indexes_parents_agents,
         )

@@ -15,19 +15,26 @@ type_border : "wall"
 # ======================== Metrics ========================
 measures:
   immediate:
-    - is_trying_eating
-    # - is_reproducing
+    {}
+    # - amount_plant_eaten 
+    # - do_action_reproduce
   state:
+    - do_action_eat
     - energy
+    - age
     # - density_agents_observed
-    # - density_food_observed
+    # - density_plants_observed
     # - coordinates
 
-functions_lifespan_agg:
-  - cumulative
-  - average
-  - variation
+names_lifespan_aggregator:
+  - cum
+  - avg
+  - var
 
+names_population_aggregator:
+  - mean
+  # - equality
+  - std
 
 # ======================== Video parameters ========================
 

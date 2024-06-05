@@ -148,8 +148,11 @@ def main(config: DictConfig):
             actions=actions,
         )
         
-        # Log the measures
+        # Log the metrics
         metrics = info_env["metrics"]
+        if do_tb:
+            for key, value in metrics["population"].items():
+                tb_writer.add_scalar(key, value, timestep_run)
         
         # Finish the loop if the environment is done
         if done_env:

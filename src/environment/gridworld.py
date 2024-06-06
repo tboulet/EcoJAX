@@ -266,7 +266,7 @@ class GridworldEnv(BaseEcoEnvironment):
         )
         dict_reproduction = {}
         energy_agents = jnp.ones(self.n_agents_max) * self.energy_initial
-        age_agents = jnp.zeros(self.n_agents_max)
+        age_agents = jnp.ones(self.n_agents_max)
         # Initialize dict_metrics_lifespan as an array of NaN
         # dict_metrics_lifespan = MetricsLifespan(
         #     metric_cumulative=jnp.full(self.n_agents_max, jnp.nan)
@@ -773,9 +773,9 @@ class GridworldEnv(BaseEcoEnvironment):
 
         # Update the existing agents
         are_existing_agents_new = are_existing_agents | are_newborns_agents
-        age_agents_new = state.age_agents.at[ghost_agents_indices_with_filled_values].set(
-            0
-        )
+        age_agents_new = state.age_agents.at[
+            ghost_agents_indices_with_filled_values
+        ].set(0)
 
         return (
             state.replace(
@@ -879,7 +879,9 @@ class GridworldEnv(BaseEcoEnvironment):
         list_names_immediate_measures = self.config["measures"]["immediate"]
         for name_measure in list_names_immediate_measures:
             if name_measure == "amount_plant_eaten":
-                raise NotImplementedError("Amount of plant eaten is not implemented yet")
+                raise NotImplementedError(
+                    "Amount of plant eaten is not implemented yet"
+                )
             elif name_measure == "do_action_reproduce":
                 raise NotImplementedError("Do action reproduce is not implemented yet")
             else:
@@ -903,9 +905,13 @@ class GridworldEnv(BaseEcoEnvironment):
             elif name_measure == "do_action_reproduce":
                 raise NotImplementedError("Do action reproduce is not implemented yet")
             elif name_measure == "density_agents_observed":
-                raise NotImplementedError("Density of agents observed is not implemented yet")
+                raise NotImplementedError(
+                    "Density of agents observed is not implemented yet"
+                )
             elif name_measure == "density_plants_observed":
-                raise NotImplementedError("Density of plants observed is not implemented yet")
+                raise NotImplementedError(
+                    "Density of plants observed is not implemented yet"
+                )
             elif name_measure == "x":
                 measures = state.positions_agents[:, 0]
             elif name_measure == "y":
@@ -946,7 +952,8 @@ class GridworldEnv(BaseEcoEnvironment):
                         ]
                         new_metric_value = agg.get_new_metric_value(
                             current_metric_value=current_metric_value,
-                            measure=dict_measures[name_measure_type][name_measure],
+                            new_measure=dict_measures[name_measure_type][name_measure],
+                            last_measure=0,
                             age=state.timestep,
                         )
                         new_dict_metrics_lifespan[

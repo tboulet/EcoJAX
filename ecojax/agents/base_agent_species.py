@@ -9,8 +9,8 @@ import numpy as np
 from flax import struct
 import flax.linen as nn
 
-from src.spaces import Space
-from src.types_base import ObservationAgent, ActionAgent, StateAgent
+from ecojax.spaces import Space
+from ecojax.types import ObservationAgent, ActionAgent, StateAgent
 
 
 class BaseAgentSpecies(ABC):
@@ -95,7 +95,7 @@ def set_state(
     StateAgent: the updated state of the agents
     """
     state = batch_state_agents[idx_agent]
-    
+
     for key in new_state.keys():
         state = state.set(key, new_state[key])
     batch_state_agents = batch_state_agents.at[idx_agent].set(state)

@@ -6,13 +6,13 @@ import jax.numpy as jnp
 import numpy as np
 from jax import random
 
-from src.environment.gridworld import (
+from ecojax.environment.gridworld import (
     ActionAgentGridworld,
     ObservationAgentGridworld,
     StateEnvGridworld,
     GridworldEnv,
 )
-from src.types_base import ObservationAgent, StateEnv
+from ecojax.types import ObservationAgent, StateEnv
 
 
 class TestGridworldEnv:
@@ -69,7 +69,9 @@ class TestGridworldEnv:
             ),
             orientation_agents=jnp.array([0, 0, 2, 3, 0, 1, 2, 3, 0, 1]),
         )
-        actions = ActionAgentGridworld(direction=jnp.array([1, 1, 3, 0, 1, 2, 3, 0, 1, 2]))
+        actions = ActionAgentGridworld(
+            direction=jnp.array([1, 1, 3, 0, 1, 2, 3, 0, 1, 2])
+        )
 
         state, *_ = self.env.step(
             key_random=subkey,

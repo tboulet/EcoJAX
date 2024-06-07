@@ -9,10 +9,7 @@ import numpy as np
 from flax import struct
 import flax.linen as nn
 
-from src.utils import nest_for_array
-
-
-
+from ecojax.utils import nest_for_array
 
 
 @nest_for_array

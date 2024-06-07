@@ -7,8 +7,8 @@ import flax.linen as nn
 from jax import random
 import jax.numpy as jnp
 
-from src.spaces import Space
-from src.types_base import ActionAgent, ObservationAgent
+from ecojax.spaces import Space
+from ecojax.types import ActionAgent, ObservationAgent
 
 
 class BaseModel(nn.Module, ABC):
@@ -22,7 +22,9 @@ class BaseModel(nn.Module, ABC):
     observation_class: Type[ObservationAgent]
     action_class: Type[ActionAgent]
 
-    def get_initialized_variables(self, key_random: jnp.ndarray) -> Dict[str, jnp.ndarray]:
+    def get_initialized_variables(
+        self, key_random: jnp.ndarray
+    ) -> Dict[str, jnp.ndarray]:
         """Initializes the model's variables and returns them as a dictionary.
         This is a wrapper around the init method of nn.Module, which creates an observation for initializing the model.
         """
@@ -43,7 +45,9 @@ class BaseModel(nn.Module, ABC):
         )
 
     @abstractmethod
-    def __call__(self, obs: ObservationAgent, key_random: jnp.ndarray) -> Tuple[ActionAgent, jnp.ndarray]:
+    def __call__(
+        self, obs: ObservationAgent, key_random: jnp.ndarray
+    ) -> Tuple[ActionAgent, jnp.ndarray]:
         """The forward pass of the model. Maps observations to actions. Also returns the probability of the sampled action
         since it is useful for some algorithms.
 

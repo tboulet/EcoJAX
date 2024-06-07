@@ -11,20 +11,19 @@ from jax import random
 from jax.scipy.signal import convolve2d
 from flax import struct
 
-from src.metrics.aggregators_lifespan import (
-    AggregatorLifespan,
-    name_lifespan_agg_to_AggregatorLifespanClass,
-)
-from src.metrics.aggregators_population import (
-    AggregatorPopulation,
-    name_population_agg_to_AggregatorPopulationClass,
-)
-from src.environment.base_env import BaseEcoEnvironment
 
-from src.spaces import Space, Discrete, Continuous
-from src.types_base import ActionAgent, ObservationAgent, StateEnv
-from src.utils import DICT_COLOR_TAG_TO_RGB, instantiate_class, sigmoid, logit, try_get
-from src.video import VideoRecorder
+from ecojax.environment.base_env import BaseEcoEnvironment
+from ecojax.metrics.aggregators import Aggregator
+from ecojax.spaces import Space, Discrete, Continuous
+from ecojax.types import ActionAgent, ObservationAgent, StateEnv
+from ecojax.utils import (
+    DICT_COLOR_TAG_TO_RGB,
+    instantiate_class,
+    sigmoid,
+    logit,
+    try_get,
+)
+from ecojax.video import VideoRecorder
 
 
 @struct.dataclass
@@ -133,13 +132,6 @@ class GridworldEnv(BaseEcoEnvironment):
         self.names_measures: List[str] = sum(
             [names for type_measure, names in config["measures"].items()], []
         )
-        self.name_population_agg_to_aggregator: Dict[
-            str, Type[AggregatorPopulation]
-        ] = {
-            name_population_agg: Agg()
-            for name_population_agg, Agg in name_population_agg_to_AggregatorPopulationClass.items()
-            if name_population_agg in config["names_population_aggregator"]
-        }
         # Video parameters
         self.do_video: bool = config["do_video"]
         self.n_steps_between_videos: int = config["n_steps_between_videos"]
@@ -280,13 +272,17 @@ class GridworldEnv(BaseEcoEnvironment):
         )
 
         # Initialize the metrics
-        self.aggregators_lifespan: List[Type[AggregatorLifespan]] = []
+        self.aggregators_lifespan: List[Aggregator] = []
         for config_agg in self.config["aggregators_lifespan"]:
             agg = instantiate_class(**config_agg)
             self.aggregators_lifespan.append(agg)
+        self.aggregators_population: List[Aggregator] = []
+        for config_agg in self.config["aggregators_population"]:
+            agg = instantiate_class(**config_agg)
+            self.aggregators_population.append(agg)
 
         # Return the information required by the agents
-        observations_agents = self.get_observations_agents(state=self.state)
+        observations_agents, _ = self.get_observations_agents(state=self.state)
         return (
             observations_agents,
             dict_reproduction,
@@ -304,6 +300,7 @@ class GridworldEnv(BaseEcoEnvironment):
         bool,
         Dict[str, Any],
     ]:
+        # Apply the step function to the environment
         (
             self.state,
             observations_agents,
@@ -311,15 +308,26 @@ class GridworldEnv(BaseEcoEnvironment):
             indexes_parents_agents,
             done,
             info,
+            self.aggregators_lifespan,
+            self.aggregators_population,
         ) = self.step_to_jit(
             key_random=key_random,
             state=self.state,
             actions=actions,
+            aggregators_lifespan=self.aggregators_lifespan,
+            aggregators_population=self.aggregators_population,
         )
+
+        # Extract the indexes of the newborns and their parents
         dict_reproduction = {
             int(idx): np.array(indexes_parents_agents[idx])
             for idx in are_newborns_agents.nonzero()[0]
         }  # TODO: check if this is correct
+
+        # Set metrics to numpy arrays for logging
+        info["metrics"] = {
+            key: np.array(value) for key, value in info["metrics"].items()
+        }
         return observations_agents, dict_reproduction, done, info
 
     @partial(jax.jit, static_argnums=(0,))
@@ -328,6 +336,8 @@ class GridworldEnv(BaseEcoEnvironment):
         key_random: jnp.ndarray,
         state: StateEnvGridworld,
         actions: jnp.ndarray,
+        aggregators_lifespan: List[Aggregator],
+        aggregators_population: List[Aggregator],
     ) -> Tuple[
         StateEnvGridworld,
         ObservationAgentGridworld,
@@ -335,63 +345,107 @@ class GridworldEnv(BaseEcoEnvironment):
         jnp.ndarray,
         bool,
         Dict[str, Any],
+        List[Aggregator],
+        List[Aggregator],
     ]:
+
+        # Initialize the measures dictionnary. This will be used to store the measures of the environment at this step.
+        dict_measures_all: Dict[str, jnp.ndarray] = {}
 
         # 1) Interaction with the agents
         # Apply the actions of the agents on the environment
         key_random, subkey = jax.random.split(key_random)
-        state, dict_metrics = self.step_action_agents(
+        state_new, dict_measures = self.step_action_agents(
             state=state, actions=actions, key_random=subkey
         )
+        dict_measures_all.update(dict_measures)
 
         # 3) Reproduction of the agents
         key_random, subkey = jax.random.split(key_random)
-        state, are_newborns_agents, indexes_parents_agents = self.step_reproduce_agents(
-            state=state, key_random=subkey
+        state_new, are_newborns_agents, indexes_parents_agents, dict_measures = (
+            self.step_reproduce_agents(state=state_new, key_random=subkey)
         )
+        dict_measures_all.update(dict_measures)
 
         # 4) Update the state and extract the observations
         # Make some last updates to the state
-        map_agents_new = jnp.zeros(state.map.shape[:2])
+        map_agents_new = jnp.zeros(state_new.map.shape[:2])
         map_agents_new = map_agents_new.at[
-            state.positions_agents[:, 0], state.positions_agents[:, 1]
-        ].add(state.are_existing_agents)
-        state = state.replace(
-            map=state.map.at[:, :, self.dict_name_channel_to_idx["agents"]].set(
+            state_new.positions_agents[:, 0], state_new.positions_agents[:, 1]
+        ].add(state_new.are_existing_agents)
+        state_new = state_new.replace(
+            map=state_new.map.at[:, :, self.dict_name_channel_to_idx["agents"]].set(
                 map_agents_new
             )
         )
         # Extract the observations of the agents
-        observations_agents = self.get_observations_agents(state=state)
-
-        # 5) Compute the metrics at this step
-        # Get the measures
-        raise
-        key_random, subkey = jax.random.split(key_random)
-        dict_metrics = self.get_measures(
-            state=state,
-            actions=actions,
-            key_random=subkey,
-            dict_metrics=dict_metrics,
+        observations_agents, dict_measures = self.get_observations_agents(
+            state=state_new
         )
-
-        # Format the metrics
-        # dict_metrics = self.get_formatted_metrics(dict_measures=dict_metrics)
+        dict_measures_all.update(dict_measures)
 
         # Update the time
-        state = state.replace(
-            timestep=state.timestep + 1,
-            age_agents=state.age_agents + 1,
+        state_new = state_new.replace(
+            timestep=state_new.timestep + 1,
+            age_agents=state_new.age_agents + 1,
         )
+        
+        # Get the termination criterion : if all agents are dead
+        done = ~jnp.any(state_new.are_existing_agents)
+
+        # Compute some measures
+        key_random, subkey = jax.random.split(key_random)
+        dict_measures = self.compute_measures(
+            state=state, actions=actions, state_new=state_new, key_random=subkey
+        )
+        dict_measures_all.update(dict_measures)
+
+        # Set the measures to NaN for the agents that are not existing
+        for name_measure, measures in dict_measures_all.items():
+            dict_measures_all[name_measure] = jnp.where(
+                state.are_existing_agents,
+                measures,
+                jnp.nan,
+            )
+
+        # 5) Metrics aggregation
+
+        # Aggregate the measures over the lifespan
+        dict_metrics_lifespan = {}
+        for agg in aggregators_lifespan:
+            dict_metrics_lifespan.update(
+                agg.aggregate(
+                    dict_measures=dict_measures_all,
+                    are_alive=state.are_existing_agents,
+                    ages=state.age_agents,
+                )
+            )
+
+        # Aggregate the measures over the population
+        dict_metrics_population = {}
+        for agg in aggregators_population:
+            dict_metrics_population.update(
+                agg.aggregate(
+                    dict_metrics=dict_metrics_lifespan,
+                )
+            )
+
+        dict_metrics = {
+            **dict_measures_all,
+            **dict_metrics_lifespan,
+            **dict_metrics_population,
+        }
 
         # Return the new state and observations
         return (
-            state,
+            state_new,
             observations_agents,
             are_newborns_agents,
             indexes_parents_agents,
-            False,
+            done,
             {"metrics": dict_metrics},
+            aggregators_lifespan,
+            aggregators_population,
         )
 
     def get_observation_space_dict(self) -> Dict[str, Space]:
@@ -633,7 +687,7 @@ class GridworldEnv(BaseEcoEnvironment):
         state: StateEnvGridworld,
         actions: ActionAgentGridworld,
         key_random: jnp.ndarray,
-    ) -> StateEnvGridworld:
+    ) -> Tuple[StateEnvGridworld, Dict[str, jnp.ndarray]]:
         """Modify the state of the environment by applying the actions of the agents."""
 
         H, W, C = state.map.shape
@@ -641,7 +695,7 @@ class GridworldEnv(BaseEcoEnvironment):
         idx_agents = self.dict_name_channel_to_idx["agents"]
         map_plants = state.map[..., idx_plants]
         map_agents = state.map[..., idx_agents]
-        dict_metrics: Dict[str, jnp.ndarray] = {}
+        dict_measures: Dict[str, jnp.ndarray] = {}
 
         # ====== Compute the new positions and orientations of all the agents ======
         get_many_agents_new_position_and_orientation = jax.vmap(
@@ -669,7 +723,7 @@ class GridworldEnv(BaseEcoEnvironment):
             positions_agents_new[:, 0], positions_agents_new[:, 1]
         ]
         if "amount_food_eaten" in self.names_measures:
-            dict_metrics["amount_food_eaten"] = food_energy_bonus
+            dict_measures["amount_food_eaten"] = food_energy_bonus
         energy_agents_new = state.energy_agents + food_energy_bonus
 
         # Remove plants that have been eaten
@@ -698,7 +752,7 @@ class GridworldEnv(BaseEcoEnvironment):
         state = self.step_grow_plants(state=state, key_random=subkey)
 
         # Return the new state, as well as some metrics
-        return state, dict_metrics
+        return state, dict_measures
 
     def step_reproduce_agents(
         self, state: StateEnvGridworld, key_random: jnp.ndarray
@@ -761,6 +815,8 @@ class GridworldEnv(BaseEcoEnvironment):
             ghost_agents_indices_with_filled_values
         ].set(0)
 
+        # Update the state
+        dict_measures = {}
         return (
             state.replace(
                 energy_agents=energy_agents_new,
@@ -769,6 +825,7 @@ class GridworldEnv(BaseEcoEnvironment):
             ),
             are_newborns_agents,
             indexes_parents_agents,
+            dict_measures,
         )
 
     def get_observations_agents(
@@ -833,18 +890,21 @@ class GridworldEnv(BaseEcoEnvironment):
             state.orientation_agents,
         )
 
+        dict_measures = {}
+
         # print(f"Map : {state.map[..., 0]}")
         # print(f"Agents positions : {state.positions_agents}")
         # print(f"Agents orientations : {state.orientation_agents}")
         # print(f"First agent obs : {observations.visual_field[0, ..., 2]}, shape : {observations.visual_field[0, ...].shape}")
         # raise ValueError("Stop")
 
-        return observations
+        return observations, dict_measures
 
-    def get_measures(
+    def compute_measures(
         self,
         state: StateEnvGridworld,
         actions: ActionAgentGridworld,
+        state_new: StateEnvGridworld,
         key_random: jnp.ndarray,
     ) -> Dict[str, jnp.ndarray]:
         """Get the measures of the environment.
@@ -852,42 +912,26 @@ class GridworldEnv(BaseEcoEnvironment):
         Args:
             state (StateEnvGridworld): the state of the environment
             actions (ActionAgentGridworld): the actions of the agents
+            state_new (StateEnvGridworld): the new state of the environment
             key_random (jnp.ndarray): the random key
 
         Returns:
             Dict[str, jnp.ndarray]: a dictionary of the measures of the environment
         """
-        dict_measures = {"immediate": {}, "state": {}}
-
-        # Compute immediate measures
-        list_names_immediate_measures = self.config["measures"]["immediate"]
-        for name_measure in list_names_immediate_measures:
-            if name_measure == "amount_plant_eaten":
-                raise NotImplementedError(
-                    "Amount of plant eaten is not implemented yet"
-                )
-            elif name_measure == "do_action_reproduce":
-                raise NotImplementedError("Do action reproduce is not implemented yet")
-            else:
-                raise ValueError(f"Unknown immediate measure: {name_measure}")
-
-            dict_measures["immediate"][name_measure] = jnp.where(
-                state.are_existing_agents,
-                measures,
-                jnp.nan,
-            )
-
-        # Compute state measures
-        list_names_state_measures = self.config["measures"]["state"]
-        for name_measure in list_names_state_measures:
-            if name_measure == "energy":
-                measures = state.energy_agents
-            elif name_measure == "age":
-                measures = state.age_agents
-            elif name_measure == "do_action_eat":
+        dict_measures = {}
+        for name_measure in self.names_measures:
+            if name_measure == "do_action_eat":
                 measures = actions.do_eat
             elif name_measure == "do_action_reproduce":
                 raise NotImplementedError("Do action reproduce is not implemented yet")
+            elif name_measure == "energy":
+                measures = state.energy_agents
+            elif name_measure == "age":
+                measures = state.age_agents
+            elif name_measure == "x":
+                measures = state.positions_agents[:, 0]
+            elif name_measure == "y":
+                measures = state.positions_agents[:, 1]
             elif name_measure == "density_agents_observed":
                 raise NotImplementedError(
                     "Density of agents observed is not implemented yet"
@@ -896,55 +940,13 @@ class GridworldEnv(BaseEcoEnvironment):
                 raise NotImplementedError(
                     "Density of plants observed is not implemented yet"
                 )
-            elif name_measure == "x":
-                measures = state.positions_agents[:, 0]
-            elif name_measure == "y":
-                measures = state.positions_agents[:, 1]
             else:
-                raise ValueError(f"Unknown state measure: {name_measure}")
+                continue
 
-            dict_measures["state"][name_measure] = jnp.where(
-                state.are_existing_agents,
-                measures,
-                jnp.nan,
-            )
+            dict_measures[name_measure] = measures
 
         # Return the dictionary of measures
         return dict_measures
-
-    def update_metrics_lifespan(
-        self,
-        state: StateEnvGridworld,
-        dict_measures: Dict[str, Dict[str, jnp.ndarray]],
-    ) -> StateEnvGridworld:
-        """This function updates the metrics of the lifespan of the agents, by receiving the current state of the environment and the measures of the environment.
-
-        Args:
-            state (StateEnvGridworld): the current state of the environment
-            dict_measures (Dict[str, Dict[str, jnp.ndarray]]): the measures of the environment, mapping from measure type to measure name to measure value
-
-        Returns:
-            StateEnvGridworld: the new state of the environment, with the updated metrics of the lifespan of the agents
-        """
-        new_dict_metrics_lifespan = {}
-        for name_lifespan_agg, agg in self.aggregators_lifespan.items():
-            for name_measure_type in self.config["measures"]:
-                if name_measure_type in agg.names_metrics_type:
-                    for name_measure in self.config["measures"][name_measure_type]:
-                        current_metric_value = state.dict_metrics_lifespan[
-                            f"{name_lifespan_agg}_{name_measure}"
-                        ]
-                        new_metric_value = agg.get_new_metric_value(
-                            current_metric_value=current_metric_value,
-                            new_measure=dict_measures[name_measure_type][name_measure],
-                            last_measure=0,
-                            age=state.timestep,
-                        )
-                        new_dict_metrics_lifespan[
-                            f"{name_lifespan_agg}_{name_measure}"
-                        ] = new_metric_value
-
-        return state.replace(dict_metrics_lifespan=new_dict_metrics_lifespan)
 
     def get_metrics_population(
         self,

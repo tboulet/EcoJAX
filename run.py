@@ -6,6 +6,8 @@ from tensorboardX import SummaryWriter
 # Config system
 import hydra
 from omegaconf import OmegaConf, DictConfig
+from ecojax.register_hydra import register_hydra_resolvers
+register_hydra_resolvers()
 
 # Utils
 from tqdm import tqdm
@@ -15,16 +17,18 @@ from typing import Dict, Type
 import cProfile
 
 # ML libraries
-import numpy as np
+import jax
 from jax import random
+import jax.numpy as jnp
+import numpy as np
 
 # Project imports
-from src.environment import env_name_to_EnvClass
-from src.agents import agent_name_to_AgentSpeciesClass
-from src.models import model_name_to_ModelClass
-from src.video import VideoRecorder
-from src.time_measure import RuntimeMeter
-from src.utils import try_get_seed
+from ecojax.environment import env_name_to_EnvClass
+from ecojax.agents import agent_name_to_AgentSpeciesClass
+from ecojax.models import model_name_to_ModelClass
+from ecojax.video import VideoRecorder
+from ecojax.time_measure import RuntimeMeter
+from ecojax.utils import is_scalar, try_get_seed
 
 
 @hydra.main(config_path="configs", config_name="default.yaml")
@@ -149,13 +153,14 @@ def main(config: DictConfig):
             key_random=subkey,
             actions=actions,
         )
-        
+
         # Log the metrics
         metrics = info_env["metrics"]
         if do_tb:
-            for key, value in metrics["population"].items():
-                tb_writer.add_scalar(key, value, timestep_run)
-        
+            for key, value in metrics.items():
+                if is_scalar(value):
+                    tb_writer.add_scalar(key, value, timestep_run)
+    
         # Finish the loop if the environment is done
         if done_env:
             print("Environment done.")

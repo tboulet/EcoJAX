@@ -10,11 +10,11 @@ from flax import struct
 import flax.linen as nn
 
 
-from src.agents.base_agent_species import BaseAgentSpecies, set_state
-from src.models.base_model import BaseModel
-from src.evolution.mutator import mutation_gaussian_noise
-from src.types_base import ActionAgent, ObservationAgent, StateAgent
-import src.spaces as spaces
+from ecojax.agents.base_agent_species import BaseAgentSpecies, set_state
+from ecojax.models.base_model import BaseModel
+from ecojax.evolution.mutator import mutation_gaussian_noise
+from ecojax.types import ActionAgent, ObservationAgent, StateAgent
+import ecojax.spaces as spaces
 
 
 @struct.dataclass
@@ -94,9 +94,7 @@ class NeuroEvolutionAgentSpecies(BaseAgentSpecies):
         for idx_newborn, list_idx_parents in dict_reproduction.items():
             # Get the parent's AgentState
             idx_parent = list_idx_parents[0]
-            state_parent = jax.tree_map(
-                lambda x: x[idx_parent], batch_state_agents
-            )
+            state_parent = jax.tree_map(lambda x: x[idx_parent], batch_state_agents)
             # Mutate the parent's AgentState to create the newborn
             key_random, subkey = random.split(key_random)
             state_mutated = self.mutate_agent(state_parent, key_random=subkey)
@@ -106,14 +104,18 @@ class NeuroEvolutionAgentSpecies(BaseAgentSpecies):
             )
         return batch_state_agents
 
-    def mutate_agent(self, agent: StateAgentEvolutionary, key_random : jnp.ndarray) -> StateAgentEvolutionary:
-        return agent.replace(age=0, params=mutation_gaussian_noise(
-            arr=agent.params,
-            mutation_rate=0.1,
-            mutation_std=0.01,
-            key_random=key_random,
-        ))
-    
+    def mutate_agent(
+        self, agent: StateAgentEvolutionary, key_random: jnp.ndarray
+    ) -> StateAgentEvolutionary:
+        return agent.replace(
+            age=0,
+            params=mutation_gaussian_noise(
+                arr=agent.params,
+                mutation_rate=0.1,
+                mutation_std=0.01,
+                key_random=key_random,
+            ),
+        )
 
     # =============== Agent creation methods =================
 

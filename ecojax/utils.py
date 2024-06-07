@@ -25,6 +25,28 @@ def to_numeric(x: Union[int, float, str, None]) -> Union[int, float]:
         raise ValueError(f"Cannot convert {x} to numeric")
 
 
+def is_scalar(data):
+    """
+    Detect if the given data is a scalar.
+
+    Parameters:
+    data : any type
+        The data to be checked.
+
+    Returns:
+    bool
+        True if data is a scalar, False otherwise.
+    """
+    if isinstance(data, (int, float, bool)):
+        return True
+    elif np.isscalar(data):
+        return True
+    elif isinstance(data, np.ndarray) and data.shape == ():  # numpy array with a single element
+        return True
+    else:
+        return False
+    
+    
 def try_get_seed(config: Dict) -> int:
     """Will try to extract the seed from the config, or return a random one if not found
 

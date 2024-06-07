@@ -8,9 +8,10 @@ import jax.numpy as jnp
 from flax import struct
 import flax.linen as nn
 
-from src.models.base_model import BaseModel
-from src.types_base import ObservationAgent, ActionAgent
-from src.spaces import Continuous, Discrete
+from ecojax.models.base_model import BaseModel
+from ecojax.types import ObservationAgent, ActionAgent
+from ecojax.spaces import Continuous, Discrete
+
 
 class MLP_Model(BaseModel):
 
@@ -43,17 +44,23 @@ class MLP_Model(BaseModel):
             if isinstance(space, Discrete):
                 action_component_logits = nn.Dense(features=space.n)(concatenated_input)
                 action_component_probs = nn.softmax(action_component_logits)
-                action_component_sampled = jax.random.categorical(subkey, action_component_logits)
+                action_component_sampled = jax.random.categorical(
+                    subkey, action_component_logits
+                )
                 kwargs_action[name_action_component] = action_component_sampled
                 prob_action_sampled *= action_component_probs[action_component_sampled]
             elif isinstance(space, Continuous):
                 mean = nn.Dense(features=np.prod(space.shape))(concatenated_input)
                 log_std = nn.Dense(features=np.prod(space.shape))(concatenated_input)
                 std = jnp.exp(log_std)
-                action_component_sampled = mean + std * random.normal(subkey, shape=mean.shape)
+                action_component_sampled = mean + std * random.normal(
+                    subkey, shape=mean.shape
+                )
                 kwargs_action[name_action_component] = action_component_sampled
                 # Assuming a standard normal distribution for the purpose of the probability
-                action_component_prob = (1.0 / jnp.sqrt(2.0 * jnp.pi * std**2)) * jnp.exp(-0.5 * ((action_component_sampled - mean) / std)**2)
+                action_component_prob = (
+                    1.0 / jnp.sqrt(2.0 * jnp.pi * std**2)
+                ) * jnp.exp(-0.5 * ((action_component_sampled - mean) / std) ** 2)
                 prob_action_sampled *= jnp.prod(action_component_prob)
             else:
                 raise ValueError(f"Unknown space type for action: {type(space)}")

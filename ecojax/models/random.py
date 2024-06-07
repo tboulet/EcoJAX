@@ -7,9 +7,9 @@ from jax import random
 import jax.numpy as jnp
 from flax import struct
 
-from src.models.base_model import BaseModel
-from src.types_base import ObservationAgent, ActionAgent
-from src.spaces import Continuous, Discrete
+from ecojax.models.base_model import BaseModel
+from ecojax.types import ObservationAgent, ActionAgent
+from ecojax.spaces import Continuous, Discrete
 
 
 class RandomModel(BaseModel):
@@ -35,10 +35,12 @@ class RandomModel(BaseModel):
                     minval=space.low,
                     maxval=space.high,
                 )
-                action_component_prob = 1 / (np.prod(space.shape) * (space.high - space.low))
+                action_component_prob = 1 / (
+                    np.prod(space.shape) * (space.high - space.low)
+                )
             else:
                 raise ValueError(f"Unknown space type for action: {type(space)}")
-            
+
             kwargs_action[name_action_component] = action_component_sampled
             prob_action_sampled *= action_component_prob
 

@@ -3,8 +3,8 @@ from typing import Dict, List, Tuple, Type, Union, Any
 import numpy as np
 import jax.numpy as jnp
 
-from src.spaces import Space
-from src.types_base import ActionAgent, StateEnv, ObservationAgent
+from ecojax.spaces import Space
+from ecojax.types import ActionAgent, StateEnv, ObservationAgent
 
 
 class BaseEcoEnvironment(ABC):
@@ -151,6 +151,5 @@ class BaseEcoEnvironment(ABC):
 
     @abstractmethod
     def render(self) -> None:
-        """Do the rendering of the environment. This can be a visual rendering or a logging of the state of any kind.
-        """
+        """Do the rendering of the environment. This can be a visual rendering or a logging of the state of any kind."""
         return

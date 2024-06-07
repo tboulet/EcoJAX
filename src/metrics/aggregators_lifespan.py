@@ -10,8 +10,16 @@ from jax import random
 class AggregatorLifespan(ABC):
     """The base class for all aggregators of a certain measure over the lifespan of an agent.
     At age t, the metric represented by any instance of this class is an aggregation of the measures of the agent from age 0 to t.
+    To do that, an aggregator apply the function get_new_metric_value() at each timestep on the current metric value, the last measure, the new measure, and the age of the agent.
     
-    By convention, the input metrics of newborn agents should be NaN.
+    Rules:
+        1: When the input new_measure is NaN, it means the agent is dead. The aggregator should consequentially return NaN.
+        2: By convention, the input new_measure of newborn agents (age=0) should be NaN, which will be outputted as NaN. 
+            This is because the measure is computed before the newborn was born most of the times, so it is a wrong measure.
+            The few cases where it is not the case, it will only remove one timestep of data, which is not significant.
+            Also, measures of the newborn will ov
+        3: When the age of the agent is 1, this is the first active timestep of the agent. The aggregator should initialize at that point and start aggregating the measures from there.
+    
     
     Each class has an attribute names_metrics_type, which is a list of strings representing the types of metrics over which the aggregator can be applied.
     This is done to specify on which measures it makes sense to apply the aggregator. For example, it doesn't make sense to compute the sum of a state metric over the lifespan of an agent.
@@ -20,7 +28,7 @@ class AggregatorLifespan(ABC):
     # The types of metrics over which the aggregator can be applied
     names_metrics_type: List[str]
 
-    @abstractmethod
+    # @abstractmethod
     def get_new_metric_value(
         self,
         current_metric_value: float,
@@ -43,33 +51,52 @@ class AggregatorLifespan(ABC):
 
 
 class AggregatorLifespanCumulative(AggregatorLifespan):
+    
+    def __init__(self, keys_measures: List[str], n_agents: int, dict_cum_values: Dict[str, jnp.ndarray] = None):
+        self.keys_measures = keys_measures
+        self.n_agents = n_agents
+        if dict_cum_values is not None:
+            self.dict_cum_values = dict_cum_values
+        else:
+            self.dict_cum_values = {key: jnp.zeros(n_agents) for key in keys_measures}
+        
+        
+from jax.tree_util import register_pytree_node
 
-    names_metrics_type = ["immediate"]
+register_pytree_node(
+    nodetype=AggregatorLifespanCumulative,
+    flatten_func=lambda agg: (agg.dict_cum_values, (agg.keys_measures, agg.n_agents)),
+    unflatten_func=lambda aux_data, childrens: AggregatorLifespanCumulative(keys_measures=childrens[0], n_agents=childrens[1], dict_cum_values=aux_data),
+)
 
-    def get_new_metric_value(
-        self,
-        current_metric_value: float,
-        last_measure: float,
-        new_measure: float,
-        age: float,
-    ) -> float:
-        """The function that aggregates a certain measure over the lifespan of an agent with the method 'cumulative'.
-        It simply sums the values of the measure over the lifespan of the agent.
+# class AggregatorLifespanCumulative(AggregatorLifespan):
 
-        If this is the agent's first active timestep (age=1), we initialize the metric with the measure.
-        Elif this agent is dead ()
-        """
-        return jnp.select(
-            [
-                age == 1,
-                jnp.isnan(new_measure),
-            ],
-            [
-                new_measure,
-                jnp.nan,
-            ],
-            default=current_metric_value + new_measure,
-        )
+#     names_metrics_type = ["immediate"]
+
+#     def get_new_metric_value(
+#         self,
+#         current_metric_value: float,
+#         last_measure: float,
+#         new_measure: float,
+#         age: float,
+#     ) -> float:
+#         """The function that aggregates a certain measure over the lifespan of an agent with the method 'cumulative'.
+#         It simply sums the values of the measure over the lifespan of the agent.
+
+#         If this is the agent's first active timestep (age=1), we initialize the metric with the measure.
+#         Elif this agent is dead ()
+#         """
+#         return jnp.select(
+#             [
+#                 age == 1,
+#                 jnp.isnan(new_measure),
+#             ],
+#             [
+#                 new_measure,
+#                 jnp.nan,
+#             ],
+#             default=current_metric_value + new_measure,
+#         )
 
 
 class AggregatorLifespanTimeAverage(AggregatorLifespan):

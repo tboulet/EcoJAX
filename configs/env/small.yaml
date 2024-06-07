@@ -15,26 +15,28 @@ type_border : "wall"
 # ======================== Metrics ========================
 measures:
   immediate:
-    {}
+    - do_action_eat
     # - amount_plant_eaten 
     # - do_action_reproduce
   state:
-    - do_action_eat
+    # - do_action_eat
     - energy
     - age
     # - density_agents_observed
     # - density_plants_observed
     # - coordinates
 
-names_lifespan_aggregator:
-  - cum
-  - avg
-  - var
+aggregators_lifespan:
+  - class_string : src.metrics.aggregators_lifespan:AggregatorLifespanCumulative
+    keys_measures : ${env.measures.immediate}
+    n_agents : ${n_agents_max}
+  # - avg
+  # - var
 
 names_population_aggregator:
   - mean
   # - equality
-  - std
+  # - std
 
 # ======================== Video parameters ========================
 

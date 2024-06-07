@@ -1,3 +1,4 @@
+import importlib
 from typing import Any, Dict, List, Union
 from abc import ABC, abstractmethod
 from functools import partial
@@ -127,3 +128,26 @@ def nest_for_array(func):
             raise ValueError(f"Unknown type for array: {type(arr)}")
 
     return wrapper
+
+
+def instantiate_class(**kwargs) -> Any:
+    """Instantiate a class from a dictionnary that contains a key "class_string" with the format "path.to.module:ClassName"
+    and that contains other keys that will be passed as arguments to the class constructor
+
+    Args:
+        config (dict): the configuration dictionnary
+        **kwargs: additional arguments to pass to the class constructor
+
+    Returns:
+        Any: the instantiated class
+    """
+    assert (
+        "class_string" in kwargs
+    ), "The class_string should be specified in the config"
+    class_string: str = kwargs["class_string"]
+    module_name, class_name = class_string.split(":")
+    module = importlib.import_module(module_name)
+    Class = getattr(module, class_name)
+    object_config = kwargs.copy()
+    object_config.pop("class_string")
+    return Class(**object_config)

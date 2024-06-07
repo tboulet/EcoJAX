@@ -11,11 +11,11 @@ from jax import random
 from jax.scipy.signal import convolve2d
 from flax import struct
 
-from src.metrics.metrics_lifespan import (
+from src.metrics.aggregators_lifespan import (
     AggregatorLifespan,
     name_lifespan_agg_to_AggregatorLifespanClass,
 )
-from src.metrics.metrics_population import (
+from src.metrics.aggregators_population import (
     AggregatorPopulation,
     name_population_agg_to_AggregatorPopulationClass,
 )
@@ -23,7 +23,7 @@ from src.environment.base_env import BaseEcoEnvironment
 
 from src.spaces import Space, Discrete, Continuous
 from src.types_base import ActionAgent, ObservationAgent, StateEnv
-from src.utils import DICT_COLOR_TAG_TO_RGB, sigmoid, logit, try_get
+from src.utils import DICT_COLOR_TAG_TO_RGB, instantiate_class, sigmoid, logit, try_get
 from src.video import VideoRecorder
 
 
@@ -56,9 +56,6 @@ class StateEnvGridworld(StateEnv):
     energy_agents: jnp.ndarray  # (n_max_agents,) in [0, +inf)
     # The age of the agents
     age_agents: jnp.ndarray  # (n_max_agents,) in [0, +inf)
-
-    # The lifespan aggregated metrics of the agents
-    dict_metrics_lifespan: MetricsLifespan
 
 
 @struct.dataclass
@@ -133,11 +130,9 @@ class GridworldEnv(BaseEcoEnvironment):
         }
         self.n_channels_map: int = len(self.dict_name_channel_to_idx)
         # Metrics parameters
-        self.name_lifespan_agg_to_aggregator: Dict[str, Type[AggregatorLifespan]] = {
-            name_lifespan_agg: Agg()
-            for name_lifespan_agg, Agg in name_lifespan_agg_to_AggregatorLifespanClass.items()
-            if name_lifespan_agg in config["names_lifespan_aggregator"]
-        }
+        self.names_measures: List[str] = sum(
+            [names for type_measure, names in config["measures"].items()], []
+        )
         self.name_population_agg_to_aggregator: Dict[
             str, Type[AggregatorPopulation]
         ] = {
@@ -271,16 +266,8 @@ class GridworldEnv(BaseEcoEnvironment):
         # dict_metrics_lifespan = MetricsLifespan(
         #     metric_cumulative=jnp.full(self.n_agents_max, jnp.nan)
         # )
-        dict_metrics_lifespan = {}
-        for name_lifespan_agg, agg in self.name_lifespan_agg_to_aggregator.items():
-            for name_measure_type in self.config["measures"]:
-                if name_measure_type in agg.names_metrics_type:
-                    for name_measure in self.config["measures"][name_measure_type]:
-                        dict_metrics_lifespan[f"{name_lifespan_agg}_{name_measure}"] = (
-                            jnp.full(self.n_agents_max, jnp.nan)
-                        )
 
-        # Return the information required by the agents
+        # Initialize the state
         self.state = StateEnvGridworld(
             timestep=0,
             map=map,
@@ -290,8 +277,15 @@ class GridworldEnv(BaseEcoEnvironment):
             are_existing_agents=are_existing_agents,
             energy_agents=energy_agents,
             age_agents=age_agents,
-            dict_metrics_lifespan=dict_metrics_lifespan,
         )
+
+        # Initialize the metrics
+        self.aggregators_lifespan: List[Type[AggregatorLifespan]] = []
+        for config_agg in self.config["aggregators_lifespan"]:
+            agg = instantiate_class(**config_agg)
+            self.aggregators_lifespan.append(agg)
+
+        # Return the information required by the agents
         observations_agents = self.get_observations_agents(state=self.state)
         return (
             observations_agents,
@@ -346,15 +340,9 @@ class GridworldEnv(BaseEcoEnvironment):
         # 1) Interaction with the agents
         # Apply the actions of the agents on the environment
         key_random, subkey = jax.random.split(key_random)
-        state = self.step_action_agents(state=state, actions=actions, key_random=subkey)
-
-        # 2) Internal dynamics of the environment
-        # Update the sun
-        key_random, subkey = jax.random.split(key_random)
-        state = self.step_update_sun(state=state, key_random=subkey)
-        # Grow plants
-        key_random, subkey = jax.random.split(key_random)
-        state = self.step_grow_plants(state=state, key_random=subkey)
+        state, dict_metrics = self.step_action_agents(
+            state=state, actions=actions, key_random=subkey
+        )
 
         # 3) Reproduction of the agents
         key_random, subkey = jax.random.split(key_random)
@@ -378,20 +366,12 @@ class GridworldEnv(BaseEcoEnvironment):
 
         # 5) Compute the metrics at this step
         # Get the measures
+        raise
         key_random, subkey = jax.random.split(key_random)
         dict_metrics = self.get_measures(
-            state=state, actions=actions, key_random=subkey
-        )  # dict_metrics[measure_type]["measure_name"][i] = m_t^(k,i)
-
-        # Compute on the fly the lifespan-aggregated metrics
-        state = self.update_metrics_lifespan(
             state=state,
-            dict_measures=dict_metrics,
-        )
-        dict_metrics["lifespan"] = state.dict_metrics_lifespan
-
-        # Compute the population-averaged metrics
-        dict_metrics["population"] = self.get_metrics_population(
+            actions=actions,
+            key_random=subkey,
             dict_metrics=dict_metrics,
         )
 
@@ -611,6 +591,43 @@ class GridworldEnv(BaseEcoEnvironment):
             ),
         )
 
+    def get_single_agent_new_position_and_orientation(
+        self,
+        agent_position: jnp.ndarray,
+        agent_orientation: jnp.ndarray,
+        action: ActionAgentGridworld,
+    ) -> Tuple[jnp.ndarray, jnp.ndarray]:
+        """Get the new position and orientation of a single agent.
+        Args:
+            agent_position (jnp.ndarray): the position of the agent, of shape (2,)
+            agent_orientation (jnp.ndarray): the orientation of the agent, of shape ()
+            action (ActionAgentGridworld): the action of the agent, as a ActionAgentGridworld of components of shape ()
+
+        Returns:
+            jnp.ndarray: the new position of the agent, of shape (2,)
+            jnp.ndarray: the new orientation of the agent, of shape ()
+        """
+        # Compute the new position and orientation of the agent
+        H, W, c = self.state.map.shape
+        direction = action.direction
+        agent_orientation_new = (agent_orientation + direction) % 4
+        angle_new = agent_orientation_new * jnp.pi / 2
+        d_position = jnp.array([jnp.cos(angle_new), -jnp.sin(angle_new)]).astype(
+            jnp.int32
+        )
+        agent_position_new = agent_position + d_position
+        agent_position_new = agent_position_new % jnp.array([H, W])
+
+        # If agent is eating, it won't move
+        do_eat = action.do_eat
+        agent_position_new = jnp.where(do_eat, agent_position, agent_position_new)
+        agent_orientation_new = jnp.where(
+            do_eat, agent_orientation, agent_orientation_new
+        )
+
+        # Return the new position and orientation of the agent
+        return agent_position_new, agent_orientation_new
+
     def step_action_agents(
         self,
         state: StateEnvGridworld,
@@ -618,51 +635,18 @@ class GridworldEnv(BaseEcoEnvironment):
         key_random: jnp.ndarray,
     ) -> StateEnvGridworld:
         """Modify the state of the environment by applying the actions of the agents."""
+
         H, W, C = state.map.shape
         idx_plants = self.dict_name_channel_to_idx["plants"]
         idx_agents = self.dict_name_channel_to_idx["agents"]
+        map_plants = state.map[..., idx_plants]
+        map_agents = state.map[..., idx_agents]
+        dict_metrics: Dict[str, jnp.ndarray] = {}
 
-        # Compute the new positions and orientations of all the agents
-
-        def get_single_agent_new_position_and_orientation(
-            agent_position: jnp.ndarray,
-            agent_orientation: jnp.ndarray,
-            action: ActionAgentGridworld,
-        ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-            """Get the new position and orientation of a single agent.
-            Args:
-                agent_position (jnp.ndarray): the position of the agent, of shape (2,)
-                agent_orientation (jnp.ndarray): the orientation of the agent, of shape ()
-                action (ActionAgentGridworld): the action of the agent, as a ActionAgentGridworld of components of shape ()
-
-            Returns:
-                jnp.ndarray: the new position of the agent, of shape (2,)
-                jnp.ndarray: the new orientation of the agent, of shape ()
-            """
-            # Compute the new position and orientation of the agent
-            direction = action.direction
-            agent_orientation_new = (agent_orientation + direction) % 4
-            angle_new = agent_orientation_new * jnp.pi / 2
-            d_position = jnp.array([jnp.cos(angle_new), -jnp.sin(angle_new)]).astype(
-                jnp.int32
-            )
-            agent_position_new = agent_position + d_position
-            agent_position_new = agent_position_new % jnp.array([H, W])
-
-            # If agent is eating, it won't move
-            do_eat = action.do_eat
-            agent_position_new = jnp.where(do_eat, agent_position, agent_position_new)
-            agent_orientation_new = jnp.where(
-                do_eat, agent_orientation, agent_orientation_new
-            )
-
-            # Return the new position and orientation of the agent
-            return agent_position_new, agent_orientation_new
-
+        # ====== Compute the new positions and orientations of all the agents ======
         get_many_agents_new_position_and_orientation = jax.vmap(
-            get_single_agent_new_position_and_orientation, in_axes=(0, 0, 0)
+            self.get_single_agent_new_position_and_orientation, in_axes=(0, 0, 0)
         )
-
         positions_agents_new, orientation_agents_new = (
             get_many_agents_new_position_and_orientation(
                 state.positions_agents,
@@ -671,32 +655,22 @@ class GridworldEnv(BaseEcoEnvironment):
             )
         )
 
-        map_plants = state.map[..., idx_plants]
-        map_agents = state.map[..., idx_agents]
+        # ====== Perform the eating action of the agents ======
+        map_agents_try_eating = (
+            jnp.zeros_like(map_agents)
+            .at[positions_agents_new[:, 0], positions_agents_new[:, 1]]
+            .add(actions.do_eat & state.are_existing_agents)
+        )  # map of the number of (existing) agents trying to eat at each cell
 
-        # Perform the eating action of the agents
-        map_agents_try_eating = jnp.zeros_like(map_agents)
-        map_agents_try_eating = map_agents_try_eating.at[
+        map_food_energy_bonus_available_per_agent = (
+            self.energy_food * map_plants / jnp.maximum(1, map_agents_try_eating)
+        )  # map of the energy available at each cell per (existing) agent trying to eat
+        food_energy_bonus = map_food_energy_bonus_available_per_agent[
             positions_agents_new[:, 0], positions_agents_new[:, 1]
-        ].add(
-            actions.do_eat
-        )  # map of the number of agents trying to eat at each cell
-
-        # Compute the new energy level of the agents
-        map_energy_bonus_available = (
-            self.energy_food * map_plants
-        )  # map of the energy available at each cell
-        map_energy_bonus_available_per_agent = map_energy_bonus_available / jnp.maximum(
-            1, map_agents_try_eating
-        )  # map of the energy available at each cell per agent trying to eat
-        energy_agents_new = jnp.where(
-            actions.do_eat,
-            state.energy_agents
-            + map_energy_bonus_available_per_agent[
-                positions_agents_new[:, 0], positions_agents_new[:, 1]
-            ],
-            state.energy_agents,
-        )  # energy of the agents after eating
+        ]
+        if "amount_food_eaten" in self.names_measures:
+            dict_metrics["amount_food_eaten"] = food_energy_bonus
+        energy_agents_new = state.energy_agents + food_energy_bonus
 
         # Remove plants that have been eaten
         map_plants -= map_agents_try_eating * map_plants
@@ -706,15 +680,25 @@ class GridworldEnv(BaseEcoEnvironment):
         energy_agents_new -= 1
         are_existing_agents_new = (
             energy_agents_new > self.energy_thr_death
-        ) * state.are_existing_agents
+        ) & state.are_existing_agents
 
         # Update the state
-        return state.replace(
+        state = state.replace(
             positions_agents=positions_agents_new,
             orientation_agents=orientation_agents_new,
             energy_agents=energy_agents_new,
             are_existing_agents=are_existing_agents_new,
         )
+
+        # Update the sun
+        key_random, subkey = jax.random.split(key_random)
+        state = self.step_update_sun(state=state, key_random=subkey)
+        # Grow plants
+        key_random, subkey = jax.random.split(key_random)
+        state = self.step_grow_plants(state=state, key_random=subkey)
+
+        # Return the new state, as well as some metrics
+        return state, dict_metrics
 
     def step_reproduce_agents(
         self, state: StateEnvGridworld, key_random: jnp.ndarray
@@ -943,7 +927,7 @@ class GridworldEnv(BaseEcoEnvironment):
             StateEnvGridworld: the new state of the environment, with the updated metrics of the lifespan of the agents
         """
         new_dict_metrics_lifespan = {}
-        for name_lifespan_agg, agg in self.name_lifespan_agg_to_aggregator.items():
+        for name_lifespan_agg, agg in self.aggregators_lifespan.items():
             for name_measure_type in self.config["measures"]:
                 if name_measure_type in agg.names_metrics_type:
                     for name_measure in self.config["measures"][name_measure_type]:

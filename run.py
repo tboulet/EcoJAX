@@ -90,6 +90,8 @@ def main(config: DictConfig):
     )
 
     # Initialize loggers
+    # Print pwd
+    print(f"Current working directory: {os.getcwd()}")
     run_name = f"[{agent_species_name}_{model_name}_{env_name}]_{datetime.datetime.now().strftime('%dth%mmo_%Hh%Mmin%Ss')}_seed{seed}"
     os.makedirs(f"logs/runs/{run_name}", exist_ok=True)
     print(f"\nStarting run {run_name}")

@@ -9,6 +9,7 @@ import csv
 import hydra
 from omegaconf import OmegaConf, DictConfig
 from ecojax.register_hydra import register_hydra_resolvers
+
 register_hydra_resolvers()
 
 # Utils
@@ -41,6 +42,11 @@ def main(config: DictConfig):
 
     # ================ Configuration ================
 
+    # Main run's components
+    env_name = config["env"]["name"]
+    agent_species_name = config["agents"]["name"]
+    model_name = config["model"]["name"]
+    
     # Hyperparameters
     n_timesteps: int = config["n_timesteps"]
 
@@ -52,55 +58,29 @@ def main(config: DictConfig):
     do_tqdm: bool = config["do_tqdm"]
     do_snakeviz: bool = config["do_snakeviz"]
     do_render: bool = config["do_render"]
-    config_dirs_to_log: Dict[str, bool] = config["config_dirs_to_log"]
+    do_global_log: bool = config["do_global_log"]
 
-    # ================ Initialization ================
-
-    # Set the seeds
+    # Seed
     seed = try_get_seed(config)
     print(f"Using seed: {seed}")
     np.random.seed(seed)
     key_random = random.PRNGKey(seed)
-
-    # Create the env
-    env_name: str = config["env"]["name"]
-    EnvClass = env_name_to_EnvClass[env_name]
-    env = EnvClass(
-        config=config["env"],
-        n_agents_max=config["n_agents_max"],
-        n_agents_initial=config["n_agents_initial"],
-    )
-    observation_space_dict = env.get_observation_space_dict()
-    action_space_dict = env.get_action_space_dict()
-    observation_class = env.get_class_observation_agent()
-    action_class = env.get_class_action_agent()
-
-    # Create the model
-    model_name: str = config["model"]["name"]
-    ModelClass = model_name_to_ModelClass[model_name]
-    model = ModelClass(
-        config=config["model"],
-        observation_space_dict=observation_space_dict,
-        action_space_dict=action_space_dict,
-        observation_class=observation_class,
-        action_class=action_class,
-    )
-
-    # Create the agent's species
-    agent_species_name: str = config["agents"]["name"]
-    AgentSpeciesClass = agent_name_to_AgentSpeciesClass[agent_species_name]
-    agent_species = AgentSpeciesClass(
-        config=config["agents"],
-        n_agents_max=config["n_agents_max"],
-        n_agents_initial=config["n_agents_initial"],
-        model=model,
-    )
+    
+    # ================ Initialization ================
 
     # Initialize loggers
-    # Print pwd
     print(f"Current working directory: {os.getcwd()}")
     run_name = f"[{agent_species_name}_{model_name}_{env_name}]_{datetime.datetime.now().strftime('%dth%mmo_%Hh%Mmin%Ss')}_seed{seed}"
-    os.makedirs(f"logs/runs/{run_name}", exist_ok=True)
+    if do_global_log:
+        dir_videos = f"logs/videos/{run_name}"
+        path_csv = f"logs/metrics/{run_name}.csv"
+        os.makedirs(dir_videos, exist_ok=True)
+        os.makedirs(f"logs/metrics", exist_ok=True)
+    else:
+        dir_videos = "logs/videos"
+        path_csv = "logs/metrics/metrics.csv"
+        os.makedirs(f"logs/videos", exist_ok=True)
+        os.makedirs(f"logs/metrics", exist_ok=True)
     print(f"\nStarting run {run_name}")
     if do_snakeviz:
         pr = cProfile.Profile()
@@ -114,9 +94,44 @@ def main(config: DictConfig):
     if do_tb:
         tb_writer = SummaryWriter(log_dir=f"tensorboard/{run_name}")
     if do_csv:
-        os.makedirs(f"logs/{run_name}", exist_ok=True)
-        file_csv = open(f"logs/{run_name}/metrics.csv", "w")
+        file_csv = open(path_csv, "w", newline="", encoding="utf-8")
         csv_writer = csv.writer(file_csv)
+        
+        
+
+    # Create the env
+    EnvClass = env_name_to_EnvClass[env_name]
+    config["env"]["dir_videos"] = dir_videos
+    env = EnvClass(
+        config=config["env"],
+        n_agents_max=config["n_agents_max"],
+        n_agents_initial=config["n_agents_initial"],
+    )
+    observation_space_dict = env.get_observation_space_dict()
+    action_space_dict = env.get_action_space_dict()
+    observation_class = env.get_class_observation_agent()
+    action_class = env.get_class_action_agent()
+
+    # Create the model
+    ModelClass = model_name_to_ModelClass[model_name]
+    model = ModelClass(
+        config=config["model"],
+        observation_space_dict=observation_space_dict,
+        action_space_dict=action_space_dict,
+        observation_class=observation_class,
+        action_class=action_class,
+    )
+
+    # Create the agent's species
+    AgentSpeciesClass = agent_name_to_AgentSpeciesClass[agent_species_name]
+    agent_species = AgentSpeciesClass(
+        config=config["agents"],
+        n_agents_max=config["n_agents_max"],
+        n_agents_initial=config["n_agents_initial"],
+        model=model,
+    )
+
+    
     # =============== Start simulation ===============
     print("Starting simulation...")
     key_random, subkey = random.split(key_random)
@@ -162,9 +177,9 @@ def main(config: DictConfig):
 
         # Log the metrics
         if timestep_run % 100 == 0:
-            metrics : Dict[str, jax.Array] = info_env["metrics"]
+            metrics: Dict[str, jax.Array] = info_env["metrics"]
             if do_wandb:
-                wandb.log(metrics, step=timestep_run) # TODO : check if that works
+                wandb.log(metrics, step=timestep_run)  # TODO : check if that works
             if do_tb:
                 for metric_name, metric_value in metrics.items():
                     if is_scalar(metric_value):
@@ -172,7 +187,9 @@ def main(config: DictConfig):
                     elif is_array(metric_value):
                         metric_value = metric_value[~np.isnan(metric_value)]
                         if len(metric_value) > 0:
-                            tb_writer.add_histogram(metric_name, metric_value, timestep_run)
+                            tb_writer.add_histogram(
+                                metric_name, metric_value, timestep_run
+                            )
                     else:
                         raise NotImplementedError
             if do_cli:
@@ -180,12 +197,27 @@ def main(config: DictConfig):
             if do_csv:
                 for metric_name, metric_value in metrics.items():
                     if is_scalar(metric_value):
-                        csv_writer.writerow([timestep_run, metric_name, "", metric_value])
+                        csv_writer.writerow(
+                            [
+                                timestep_run,
+                                metric_name,
+                                "",
+                                float(metric_value),
+                            ]
+                        )
                     elif is_array(metric_value):
                         for agent_id in range(len(metric_value)):
-                            csv_writer.writerow([timestep_run, metric_name, agent_id, metric_value[agent_id]])
+                            csv_writer.writerow(
+                                [
+                                    timestep_run,
+                                    metric_name,
+                                    agent_id,
+                                    float(metric_value[agent_id]),
+                                ]
+                            )
                     else:
                         raise NotImplementedError
+
         # Finish the loop if the environment is done
         if done_env:
             print("Environment done.")

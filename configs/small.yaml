@@ -15,11 +15,7 @@ do_csv : True
 do_tqdm : True
 do_snakeviz : False
 do_render : True
-config_dirs_to_log :
-  run : True
-  last_of_all : True
-  last_of_agents : True
-  last_of_day : False
+do_global_log : False
 
 
 

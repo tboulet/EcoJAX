@@ -436,11 +436,19 @@ class GridworldEnv(BaseEcoEnvironment):
                 )
             )
 
+        # Get the final metrics
         dict_metrics = {
             **dict_measures_all,
             **dict_metrics_lifespan,
             **dict_metrics_population,
         }
+        
+        # Arrange metrics in right format
+        for name_metric in list(dict_metrics.keys()):
+            names = name_metric.split("/")
+            names = [names[-1]] + names[:-1]
+            name_metric_new = "/".join(names)
+            dict_metrics[name_metric_new] = dict_metrics.pop(name_metric)
 
         # Return the new state and observations
         return (

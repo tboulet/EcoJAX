@@ -19,3 +19,4 @@ def register_hydra_resolvers():
     """Register the custom Hydra resolvers.
     """
     OmegaConf.register_new_resolver("merge", merge_container)
+    OmegaConf.register_new_resolver("eval", eval) 

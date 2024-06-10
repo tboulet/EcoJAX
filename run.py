@@ -2,6 +2,8 @@
 import os
 import wandb
 from tensorboardX import SummaryWriter
+import csv
+
 
 # Config system
 import hydra
@@ -28,7 +30,7 @@ from ecojax.agents import agent_name_to_AgentSpeciesClass
 from ecojax.models import model_name_to_ModelClass
 from ecojax.video import VideoRecorder
 from ecojax.time_measure import RuntimeMeter
-from ecojax.utils import is_scalar, try_get_seed
+from ecojax.utils import is_array, is_scalar, try_get_seed
 
 
 @hydra.main(config_path="configs", config_name="default.yaml")
@@ -46,6 +48,7 @@ def main(config: DictConfig):
     do_wandb: bool = config["do_wandb"]
     do_tb: bool = config["do_tb"]
     do_cli: bool = config["do_cli"]
+    do_csv: bool = config["do_csv"]
     do_tqdm: bool = config["do_tqdm"]
     do_snakeviz: bool = config["do_snakeviz"]
     do_render: bool = config["do_render"]
@@ -110,7 +113,10 @@ def main(config: DictConfig):
         )
     if do_tb:
         tb_writer = SummaryWriter(log_dir=f"tensorboard/{run_name}")
-
+    if do_csv:
+        os.makedirs(f"logs/{run_name}", exist_ok=True)
+        file_csv = open(f"logs/{run_name}/metrics.csv", "w")
+        csv_writer = csv.writer(file_csv)
     # =============== Start simulation ===============
     print("Starting simulation...")
     key_random, subkey = random.split(key_random)
@@ -155,12 +161,31 @@ def main(config: DictConfig):
         )
 
         # Log the metrics
-        metrics = info_env["metrics"]
-        if do_tb:
-            for key, value in metrics.items():
-                if is_scalar(value):
-                    tb_writer.add_scalar(key, value, timestep_run)
-    
+        if timestep_run % 100 == 0:
+            metrics : Dict[str, jax.Array] = info_env["metrics"]
+            if do_wandb:
+                wandb.log(metrics, step=timestep_run) # TODO : check if that works
+            if do_tb:
+                for metric_name, metric_value in metrics.items():
+                    if is_scalar(metric_value):
+                        tb_writer.add_scalar(metric_name, metric_value, timestep_run)
+                    elif is_array(metric_value):
+                        metric_value = metric_value[~np.isnan(metric_value)]
+                        if len(metric_value) > 0:
+                            tb_writer.add_histogram(metric_name, metric_value, timestep_run)
+                    else:
+                        raise NotImplementedError
+            if do_cli:
+                print(f"Metrics at step {timestep_run}:\n{metrics}")
+            if do_csv:
+                for metric_name, metric_value in metrics.items():
+                    if is_scalar(metric_value):
+                        csv_writer.writerow([timestep_run, metric_name, "", metric_value])
+                    elif is_array(metric_value):
+                        for agent_id in range(len(metric_value)):
+                            csv_writer.writerow([timestep_run, metric_name, agent_id, metric_value[agent_id]])
+                    else:
+                        raise NotImplementedError
         # Finish the loop if the environment is done
         if done_env:
             print("Environment done.")
@@ -171,6 +196,10 @@ def main(config: DictConfig):
         run.finish()
     if do_tb:
         tb_writer.close()
+    if do_cli:
+        print("Simulation done.")
+    if do_csv:
+        file_csv.close()
     if do_snakeviz:
         pr.disable()
         pr.dump_stats("logs/profile_stats.prof")

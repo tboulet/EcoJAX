@@ -46,6 +46,20 @@ def is_scalar(data):
     else:
         return False
     
+
+def is_array(data):
+    """
+    Detect if the given data is an array.
+
+    Parameters:
+    data : any type
+        The data to be checked.
+
+    Returns:
+    bool
+        True if data is an array, False otherwise.
+    """
+    return isinstance(data, np.ndarray)
     
 def try_get_seed(config: Dict) -> int:
     """Will try to extract the seed from the config, or return a random one if not found

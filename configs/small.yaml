@@ -11,6 +11,7 @@ wandb_config:
   project : EcoJAX
 do_tb : True
 do_cli : True
+do_csv : True
 do_tqdm : True
 do_snakeviz : False
 do_render : True

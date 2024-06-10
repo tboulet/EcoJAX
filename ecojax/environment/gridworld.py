@@ -12,8 +12,8 @@ from jax.scipy.signal import convolve2d
 from flax import struct
 
 
-from ecojax.environment.base_env import BaseEcoEnvironment
-from ecojax.metrics.aggregators import Aggregator
+from ecojax.environment import BaseEcoEnvironment
+from ecojax.metrics import Aggregator
 from ecojax.spaces import Space, Discrete, Continuous
 from ecojax.types import ActionAgent, ObservationAgent, StateEnv
 from ecojax.utils import (
@@ -63,6 +63,8 @@ class ObservationAgentGridworld(ObservationAgent):
     # The visual field of the agent, of shape (2v+1, 2v+1, n_channels_map) where n_channels_map is the number of channels used to represent the environment.
     visual_field: jnp.ndarray  # (2v+1, 2v+1, n_channels_map) in R
 
+    # The energy level of an agent, of shape () and in [0, +inf).
+    energy: jnp.ndarray
 
 @struct.dataclass
 class ActionAgentGridworld(ActionAgent):
@@ -254,10 +256,6 @@ class GridworldEnv(BaseEcoEnvironment):
         dict_reproduction = {}
         energy_agents = jnp.ones(self.n_agents_max) * self.energy_initial
         age_agents = jnp.ones(self.n_agents_max)
-        # Initialize dict_metrics_lifespan as an array of NaN
-        # dict_metrics_lifespan = MetricsLifespan(
-        #     metric_cumulative=jnp.full(self.n_agents_max, jnp.nan)
-        # )
 
         # Initialize the state
         self.state = StateEnvGridworld(
@@ -330,7 +328,7 @@ class GridworldEnv(BaseEcoEnvironment):
         }
         return observations_agents, dict_reproduction, done, info
 
-    @partial(jax.jit, static_argnums=(0,))
+    # @partial(jax.jit, static_argnums=(0,))
     def step_to_jit(
         self,
         key_random: jnp.ndarray,
@@ -373,7 +371,7 @@ class GridworldEnv(BaseEcoEnvironment):
         map_agents_new = map_agents_new.at[
             state_new.positions_agents[:, 0], state_new.positions_agents[:, 1]
         ].add(state_new.are_existing_agents)
-        state_new = state_new.replace(
+        state_new : StateEnvGridworld = state_new.replace(
             map=state_new.map.at[:, :, self.dict_name_channel_to_idx["agents"]].set(
                 map_agents_new
             )
@@ -402,21 +400,26 @@ class GridworldEnv(BaseEcoEnvironment):
 
         # Set the measures to NaN for the agents that are not existing
         for name_measure, measures in dict_measures_all.items():
-            dict_measures_all[name_measure] = jnp.where(
-                state.are_existing_agents,
-                measures,
-                jnp.nan,
-            )
+            if name_measure not in self.config["measures"]["environmental"]:
+                dict_measures_all[name_measure] = jnp.where(
+                    state.are_existing_agents,
+                    measures,
+                    jnp.nan,
+                )
 
         # 5) Metrics aggregation
 
-        # Aggregate the measures over the lifespan
+        # Aggregate the measures over the lifespan        
+        are_just_dead_agents = state.are_existing_agents & (
+            ~state_new.are_existing_agents | (state_new.age_agents < state.age_agents)
+        )
         dict_metrics_lifespan = {}
         for agg in aggregators_lifespan:
             dict_metrics_lifespan.update(
                 agg.aggregate(
                     dict_measures=dict_measures_all,
                     are_alive=state.are_existing_agents,
+                    are_just_dead=are_just_dead_agents,
                     ages=state.age_agents,
                 )
             )
@@ -426,7 +429,10 @@ class GridworldEnv(BaseEcoEnvironment):
         for agg in aggregators_population:
             dict_metrics_population.update(
                 agg.aggregate(
-                    dict_metrics=dict_metrics_lifespan,
+                    dict_measures=dict_metrics_lifespan,
+                    are_alive=state.are_existing_agents,
+                    are_just_dead=are_just_dead_agents,
+                    ages=state.age_agents,
                 )
             )
 
@@ -459,7 +465,7 @@ class GridworldEnv(BaseEcoEnvironment):
                 low=None,
                 high=None,
             ),
-            # "energy" : Continuous(shape=(), low=0, high=None),
+            "energy" : Continuous(shape=(), low=0, high=None),
         }
 
     def get_action_space_dict(self) -> Dict[str, Space]:
@@ -844,6 +850,7 @@ class GridworldEnv(BaseEcoEnvironment):
         def get_single_agent_obs(
             agent_position: jnp.ndarray,
             agent_orientation: jnp.ndarray,
+            energy_agent: jnp.ndarray,
         ) -> ObservationAgentGridworld:
             """Get the observation of a single agent.
 
@@ -879,15 +886,16 @@ class GridworldEnv(BaseEcoEnvironment):
                 ],
             )
             # Return the observation
-            return ObservationAgentGridworld(visual_field=obs)
+            return ObservationAgentGridworld(visual_field=obs, energy=energy_agent)
 
         # Vectorize the function to get the observation of many agents
-        get_many_agents_obs = jax.vmap(get_single_agent_obs, in_axes=(0, 0))
+        get_many_agents_obs = jax.vmap(get_single_agent_obs, in_axes=0)
 
         # Compute the observations of all the agents
         observations = get_many_agents_obs(
             state.positions_agents,
             state.orientation_agents,
+            state.energy_agents,
         )
 
         dict_measures = {}
@@ -919,11 +927,27 @@ class GridworldEnv(BaseEcoEnvironment):
             Dict[str, jnp.ndarray]: a dictionary of the measures of the environment
         """
         dict_measures = {}
+        idx_plants = self.dict_name_channel_to_idx["plants"]
         for name_measure in self.names_measures:
-            if name_measure == "do_action_eat":
+            # Environment measures
+            if name_measure == "n_agents":
+                measures = jnp.sum(state.are_existing_agents)
+            elif name_measure == "n_plants":
+                measures = jnp.sum(state.map[..., idx_plants])
+            # Immediate measures
+            elif name_measure == "do_action_eat":
                 measures = actions.do_eat
             elif name_measure == "do_action_reproduce":
                 raise NotImplementedError("Do action reproduce is not implemented yet")
+            elif name_measure == "do_action_forward":
+                measures = (actions.direction == 0)
+            elif name_measure == "do_action_left":
+                measures = (actions.direction == 1)
+            elif name_measure == "do_action_right":
+                measures = (actions.direction == 3)
+            elif name_measure == "do_action_backward":
+                measures = (actions.direction == 2)
+            # State measures
             elif name_measure == "energy":
                 measures = state.energy_agents
             elif name_measure == "age":
@@ -942,58 +966,11 @@ class GridworldEnv(BaseEcoEnvironment):
                 )
             else:
                 continue
-
+            # Behavior measures
+            pass
+        
             dict_measures[name_measure] = measures
 
         # Return the dictionary of measures
         return dict_measures
 
-    def get_metrics_population(
-        self,
-        dict_metrics: Dict[str, jnp.ndarray],
-    ) -> Dict[str, jnp.ndarray]:
-        """This function computes the population-averaged metrics.
-        It receives as input a dictionnary of metric, of format dict_metrics[measure_type][measure_name][i] = m_t^(k,i),
-        and returns a dictionnary of population-averaged metrics, of format dict_metrics_population[population_agg_name/measure_name] = E_i[m_t^(k)].
-
-        Args:
-            dict_metrics (Dict[str, jnp.ndarray]): the metrics of the environment, mapping from measure type to measure name to measure value
-
-        Returns:
-            Dict[str, jnp.ndarray]: the population-averaged metrics
-        """
-        dict_metrics_population = {}
-        for name_lifespan_agg, agg in self.name_population_agg_to_aggregator.items():
-            for name_measure_type in dict_metrics:
-                if name_measure_type in agg.names_metrics_type:
-                    for name_metric in dict_metrics[name_measure_type]:
-                        metric_pop_aggregated = agg.get_aggregated_metric(
-                            list_metrics=dict_metrics[name_measure_type][name_metric]
-                        )
-                        dict_metrics_population[
-                            f"population_{name_lifespan_agg}/{name_metric}"
-                        ] = metric_pop_aggregated
-
-        return dict_metrics_population
-
-    def get_formatted_metrics(
-        dict_measures: Dict[str, Dict[str, jnp.ndarray]],
-        dict_metrics_lifespan: Dict[str, jnp.ndarray],
-    ) -> Dict[str, jnp.ndarray]:
-        """Return the metrics in an adequate format.
-
-        Args:
-            dict_measures (Dict[str, Dict[str, jnp.ndarray]]): the measures of the environment, mapping from measure type to measure name to measure value
-            dict_metrics_lifespan (Dict[str, jnp.ndarray]): the metrics of the lifespan of the agents, mapping from metric name to metric value
-
-        Returns:
-            Dict[str, jnp.ndarray]: the metrics in an adequate format
-        """
-        dict_metrics = {}
-        for measure_type in dict_measures:
-            for measure_name in dict_measures[measure_type]:
-                agents_values = dict_measures[measure_type][measure_name]
-                dict_metrics[f"measures_{measure_type}/{measure_name}"] = agents_values
-
-        for name_metric, metric_value in dict_metrics_lifespan.items():
-            dict_metrics[name_metric] = metric_value

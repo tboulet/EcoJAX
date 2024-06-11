@@ -71,7 +71,7 @@ def main(config: DictConfig):
     # Initialize loggers
     print(f"Current working directory: {os.getcwd()}")
     run_name = f"[{agent_species_name}_{model_name}_{env_name}]_{datetime.datetime.now().strftime('%dth%mmo_%Hh%Mmin%Ss')}_seed{seed}"
-    if do_global_log:
+    if not do_global_log:
         dir_videos = f"logs/videos/{run_name}"
         path_csv = f"logs/metrics/{run_name}.csv"
         os.makedirs(dir_videos, exist_ok=True)

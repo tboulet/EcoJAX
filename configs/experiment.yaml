@@ -1,16 +1,17 @@
 # Hyperparameters
+seed : 1234
 n_timesteps : 5000
-n_agents_max : 500
-n_agents_initial : 10
+n_agents_max : 5000
+n_agents_initial : 1000
 
 
 # Logging
-do_wandb : False
+do_wandb : True
 wandb_config:
   project : EcoJAX
 do_tb : True
 do_cli : False
-do_csv : False
+do_csv : True
 do_tqdm : True
 do_snakeviz : False
 do_render : True
@@ -30,7 +31,7 @@ dir_video : logs/videos
 # Defaults sub-configs and other Hydra config.
 defaults:
   - _self_
-  - env : small
+  - env : gridworld
   - agents : ne
   - model : mlp
   - override hydra/hydra_logging: disabled  

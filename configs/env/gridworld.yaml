@@ -12,6 +12,82 @@ type_border : "wall"
 
 
 
+# ======================== Metrics ========================
+measures:
+  environmental:
+    - n_agents
+    - n_plants
+  immediate:
+    - do_action_eat
+    # - do_action_reproduce
+    - do_action_forward
+    - do_action_left
+    - do_action_right
+    - do_action_backward
+    - amount_food_eaten
+    # - amout_children
+  state:
+    - energy
+    - age
+    - x
+    - y
+    # - density_agents_observed
+    # - density_plants_observed
+  behavior: []
+
+aggregators_lifespan:
+  - class_string : ecojax.metrics.aggregators:AggregatorLifespanCumulative
+    config:
+      keys_measures : ${env.measures.immediate}
+      n_agents : ${n_agents_max}
+      prefix_metric : life_cum
+      log_final : true
+  - class_string : ecojax.metrics.aggregators:AggregatorLifespanAverage
+    config:
+      keys_measures : ${merge:${env.measures.immediate}, ${env.measures.state}, ${env.measures.behavior}}
+      n_agents : ${n_agents_max}
+      prefix_metric : life_avg
+      log_final : true
+  - class_string : ecojax.metrics.aggregators:AggregatorLifespanIncrementalChange
+    config:
+      keys_measures : ${merge:${env.measures.state}, ${env.measures.behavior}}
+      n_agents : ${n_agents_max}
+      prefix_metric : inc
+  - class_string : ecojax.metrics.aggregators:AggregatorLifespanAbsoluteChange
+    config:
+      keys_measures : ${merge:${env.measures.state}, ${env.measures.behavior}}
+      n_agents : ${n_agents_max}
+      prefix_metric : life_var
+      log_final : true
+  - class_string : ecojax.metrics.aggregators:AggregatorLifespanFinal
+    config:
+      keys_measures : ${merge:${env.measures.state}, ${env.measures.behavior}}
+      n_agents : ${n_agents_max}
+      prefix_metric : final
+
+aggregators_population:
+  - class_string : ecojax.metrics.aggregators:AggregatorPopulationMean
+    config:
+      keys_measures : ${merge:${env.measures.immediate}, ${env.measures.state}, ${env.measures.behavior}}
+      keys_measures_prefix : [life, final]
+      n_agents : ${n_agents_max}
+      prefix_metric : pop_mean
+  - class_string : ecojax.metrics.aggregators:AggregatorPopulationMovingMean
+    config:
+      keys_measures : ${merge:${env.measures.behavior}, ${env.measures.state}}
+      keys_measures_prefix : [final]
+      n_agents : ${n_agents_max}
+      prefix_metric : pop_moving_mean
+      learning_rate : 0.05
+  - class_string : ecojax.metrics.aggregators:AggregatorPopulationStd
+    config:
+      keys_measures : ${merge:${env.measures.behavior}, ${env.measures.state}}
+      keys_measures_prefix : [life, final]
+      n_agents : ${n_agents_max}
+      prefix_metric : pop_std
+
+
+
 # ======================== Video parameters ========================
 
 # The parameters for the video recording
@@ -96,6 +172,8 @@ energy_initial : 50
 energy_food : 10
 # The energy threshold under which an agent dies
 energy_thr_death : 0
+# Whether the agent has to activate the eating action to eat
+do_active_eating: true
 
 # The energy required to be able to reproduce
 energy_req_reprod : 80

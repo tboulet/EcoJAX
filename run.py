@@ -1,8 +1,11 @@
 # Logging
 import os
-import wandb
-from tensorboardX import SummaryWriter
-import csv
+from ecojax.loggers import BaseLogger
+from ecojax.loggers.cli import LoggerCLI
+from ecojax.loggers.csv import LoggerCSV
+from ecojax.loggers.snakeviz import LoggerSnakeviz
+from ecojax.loggers.tensorboard import LoggerTensorboard
+from ecojax.loggers.wandb import LoggerWandB
 
 
 # Config system
@@ -16,8 +19,7 @@ register_hydra_resolvers()
 from tqdm import tqdm
 import datetime
 from time import time, sleep
-from typing import Dict, Type
-import cProfile
+from typing import Any, Dict, List, Type
 
 # ML libraries
 import jax
@@ -46,7 +48,7 @@ def main(config: DictConfig):
     env_name = config["env"]["name"]
     agent_species_name = config["agents"]["name"]
     model_name = config["model"]["name"]
-    
+
     # Hyperparameters
     n_timesteps: int = config["n_timesteps"]
 
@@ -65,7 +67,7 @@ def main(config: DictConfig):
     print(f"Using seed: {seed}")
     np.random.seed(seed)
     key_random = random.PRNGKey(seed)
-    
+
     # ================ Initialization ================
 
     # Initialize loggers
@@ -74,30 +76,28 @@ def main(config: DictConfig):
     if not do_global_log:
         dir_videos = f"logs/videos/{run_name}"
         path_csv = f"logs/metrics/{run_name}.csv"
-        os.makedirs(dir_videos, exist_ok=True)
-        os.makedirs(f"logs/metrics", exist_ok=True)
     else:
         dir_videos = "logs/videos"
         path_csv = "logs/metrics/metrics.csv"
-        os.makedirs(f"logs/videos", exist_ok=True)
-        os.makedirs(f"logs/metrics", exist_ok=True)
     print(f"\nStarting run {run_name}")
-    if do_snakeviz:
-        pr = cProfile.Profile()
-        pr.enable()
+
+    list_loggers : List[Type[BaseLogger]] = []
     if do_wandb:
-        run = wandb.init(
-            name=run_name,
-            config=config,
-            **config["wandb_config"],
+        list_loggers.append(
+            LoggerWandB(
+                name_run=run_name,
+                config_run=config["wandb_config"],
+                **config["wandb_config"],
+            )
         )
     if do_tb:
-        tb_writer = SummaryWriter(log_dir=f"tensorboard/{run_name}")
+        list_loggers.append(LoggerTensorboard(log_dir=f"tensorboard/{run_name}"))
+    if do_cli:
+        list_loggers.append(LoggerCLI())
     if do_csv:
-        file_csv = open(path_csv, "w", newline="", encoding="utf-8")
-        csv_writer = csv.writer(file_csv)
-        
-        
+        list_loggers.append(LoggerCSV(path_csv=path_csv))
+    if do_snakeviz:
+        list_loggers.append(LoggerSnakeviz())
 
     # Create the env
     EnvClass = env_name_to_EnvClass[env_name]
@@ -131,7 +131,6 @@ def main(config: DictConfig):
         model=model,
     )
 
-    
     # =============== Start simulation ===============
     print("Starting simulation...")
     key_random, subkey = random.split(key_random)
@@ -177,46 +176,19 @@ def main(config: DictConfig):
 
         # Log the metrics
         if timestep_run % 100 == 0:
-            metrics: Dict[str, jax.Array] = info_env["metrics"]
-            if do_wandb:
-                wandb.log(metrics, step=timestep_run)  # TODO : check if that works
-            if do_tb:
-                for metric_name, metric_value in metrics.items():
-                    if is_scalar(metric_value):
-                        tb_writer.add_scalar(metric_name, metric_value, timestep_run)
-                    elif is_array(metric_value):
-                        metric_value = metric_value[~np.isnan(metric_value)]
-                        if len(metric_value) > 0:
-                            tb_writer.add_histogram(
-                                metric_name, metric_value, timestep_run
-                            )
-                    else:
-                        raise NotImplementedError
-            if do_cli:
-                print(f"Metrics at step {timestep_run}:\n{metrics}")
-            if do_csv:
-                for metric_name, metric_value in metrics.items():
-                    if is_scalar(metric_value):
-                        csv_writer.writerow(
-                            [
-                                timestep_run,
-                                metric_name,
-                                "",
-                                float(metric_value),
-                            ]
-                        )
-                    elif is_array(metric_value):
-                        for agent_id in range(len(metric_value)):
-                            csv_writer.writerow(
-                                [
-                                    timestep_run,
-                                    metric_name,
-                                    agent_id,
-                                    float(metric_value[agent_id]),
-                                ]
-                            )
-                    else:
-                        raise NotImplementedError
+            metrics: Dict[str, Any] = info_env["metrics"]
+            metric_scalar = {}
+            metric_histogram = {}
+            for key, value in metrics.items():
+                if is_scalar(value):
+                    metric_scalar[key] = value
+                elif is_array(value):
+                    value_non_nan = value[~np.isnan(value)]
+                    if len(value_non_nan) > 0:
+                        metric_histogram[key] = value_non_nan
+            for logger in list_loggers:
+                logger.log_scalars(metric_scalar, timestep_run)
+                logger.log_histograms(metric_histogram, timestep_run)
 
         # Finish the loop if the environment is done
         if done_env:
@@ -224,18 +196,8 @@ def main(config: DictConfig):
             break
 
     # Finish the WandB run.
-    if do_wandb:
-        run.finish()
-    if do_tb:
-        tb_writer.close()
-    if do_cli:
-        print("Simulation done.")
-    if do_csv:
-        file_csv.close()
-    if do_snakeviz:
-        pr.disable()
-        pr.dump_stats("logs/profile_stats.prof")
-        print("Profile stats dumped to logs/profile_stats.prof")
+    for logger in list_loggers:
+        logger.close()
 
 
 if __name__ == "__main__":

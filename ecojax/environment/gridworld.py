@@ -1,6 +1,7 @@
 # Gridworld EcoJAX environment
 
 from functools import partial
+import os
 from time import sleep
 from typing import Any, Dict, List, Tuple, Type, TypeVar
 
@@ -144,6 +145,7 @@ class GridworldEnv(BaseEcoEnvironment):
         ) or not self.do_video, "len_video must be less than or equal to freq_video"
         self.fps_video: int = config["fps_video"]
         self.dir_videos: str = config["dir_videos"]
+        os.makedirs(self.dir_videos, exist_ok=True)
         self.height_max_video: int = config["height_max_video"]
         self.width_max_video: int = config["width_max_video"]
         self.dict_name_channel_to_color_tag: Dict[str, str] = config[
@@ -444,10 +446,12 @@ class GridworldEnv(BaseEcoEnvironment):
         }
         
         # Arrange metrics in right format
-        for name_metric in list(dict_metrics.keys()):
-            names = name_metric.split("/")
-            names = [names[-1]] + names[:-1]
-            name_metric_new = "/".join(names)
+        for name_metric in list(dict_metrics.keys()):            
+            *names, name_measure = name_metric.split("/")
+            if len(names) == 0:
+                name_metric_new = name_measure
+            else:
+                name_metric_new = f"{name_measure}/{' '.join(names[::-1])}"
             dict_metrics[name_metric_new] = dict_metrics.pop(name_metric)
 
         # Return the new state and observations

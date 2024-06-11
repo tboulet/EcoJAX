@@ -10,7 +10,7 @@ from flax import struct
 import flax.linen as nn
 
 
-from ecojax.agents.base_agent_species import BaseAgentSpecies, set_state
+from ecojax.agents.base_agent_species import BaseAgentSpecies
 from ecojax.models.base_model import BaseModel
 from ecojax.evolution.mutator import mutation_gaussian_noise
 from ecojax.types import ActionAgent, ObservationAgent, StateAgent

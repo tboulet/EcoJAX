@@ -83,20 +83,3 @@ class BaseAgentSpecies(ABC):
         actions = ...
         # Return the actions
         return actions
-
-
-def set_state(
-    batch_state_agents: StateAgent,  # Batched
-    idx_agent: int,
-    new_state: StateAgent,
-) -> StateAgent:  # Batched
-    """Update the state of a batch of agents with new values.
-
-    StateAgent: the updated state of the agents
-    """
-    state = batch_state_agents[idx_agent]
-
-    for key in new_state.keys():
-        state = state.set(key, new_state[key])
-    batch_state_agents = batch_state_agents.at[idx_agent].set(state)
-    return batch_state_agents

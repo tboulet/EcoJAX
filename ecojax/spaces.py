@@ -61,11 +61,11 @@ class Discrete(Space):
         """
         return random.randint(key_random, (), 0, self.n)
 
-    def contains(self, x: int) -> bool:
+    def contains(self, x: jax.Array) -> bool:
         """Check if a value is in the space.
 
         Args:
-            x (int): the value to check
+            x (jax.Array): the value to check
 
         Returns:
             bool: whether the value is in the space

@@ -9,6 +9,7 @@ import jax.numpy as jnp
 import numpy as np
 from flax import struct
 import flax.linen as nn
+from jax.lib import xla_bridge
 
 def to_numeric(x: Union[int, float, str, None]) -> Union[int, float]:
     if isinstance(x, int) or isinstance(x, float):
@@ -187,3 +188,13 @@ def instantiate_class(**kwargs) -> Any:
     object_config = kwargs.copy()
     object_config.pop("class_string")
     return Class(**object_config)
+
+
+
+def check_jax_device():
+    try:
+        print("Checking device used by JAX:")
+        print(f"\tAvailable devices: {jax.devices()}")
+        print(f"\tPlatform: {xla_bridge.get_backend().platform}")
+    except Exception as e:
+        print(f"Error while checking JAX device: {e}")

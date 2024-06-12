@@ -18,15 +18,6 @@ do_global_log : False
 
 
 
-# Video recording
-do_video : True
-n_steps_between_videos : 10000
-n_steps_per_video : 1000
-n_steps_between_frames : 1
-dir_video : logs/videos
-
-
-
 # Defaults sub-configs and other Hydra config.
 defaults:
   - _self_

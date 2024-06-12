@@ -776,15 +776,30 @@ class GridworldEnv(BaseEcoEnvironment):
         self, state: StateEnvGridworld, key_random: jnp.ndarray
     ) -> Tuple[StateEnvGridworld, jnp.ndarray, jnp.ndarray]:
         """Reproduce the agents in the environment."""
+        dict_measures = {}
+        
         if self.do_active_reprod:
             raise NotImplementedError("Active reproduction is not implemented yet")
 
         # Detect which agents are reproducing
         are_existing_agents = state.are_existing_agents
-        are_agents_reproducing = (
+        are_agents_trying_reprod = (
             state.energy_agents > self.energy_req_reprod
         ) & are_existing_agents
 
+        # Compute the number of newborns. If there are more agents trying to reproduce than there are ghost agents, only the first n_ghost_agents agents will be able to reproduce.
+        n_agents_trying_reprod = jnp.sum(are_agents_trying_reprod)
+        n_ghost_agents = jnp.sum(~are_existing_agents)
+        n_newborns = jnp.minimum(n_agents_trying_reprod, n_ghost_agents)
+
+        # Compute which agents are actually reproducing using are_agents_trying_reprod
+        are_agents_reproducing = jnp.zeros_like(are_existing_agents, dtype=jnp.bool_)
+        are_agents_reproducing = are_agents_reproducing.at[
+            jnp.where(are_agents_trying_reprod)[0][:n_newborns]
+        ].set(True)
+        if "amount_children" in self.names_measures:
+            dict_measures["amount_children"] = are_agents_reproducing
+        
         # Get the indices of the ghost agents. To have constant (n_max_agents,) shape, we fill the remaining indices with the value self.n_agents_max (which will have no effect as an index of (n_agents_max,) array)
         fill_value = self.n_agents_max
         ghost_agents_indices_with_filled_values = jnp.where(
@@ -794,20 +809,14 @@ class GridworldEnv(BaseEcoEnvironment):
         )[
             0
         ]  # placeholder_indices = [i1, i2, ..., i(n_ghost_agents), f, f, ..., f] of shape (n_max_agents,)
-
-        # Compute the number of newborns. If there are more agents trying to reproduce than there are ghost agents, only the first n_ghost_agents agents will be able to reproduce.
-        n_agents_trying_reprod = jnp.sum(are_agents_reproducing)
-        n_ghost_agents = jnp.sum(~are_existing_agents)
-        n_newborns = jnp.minimum(n_agents_trying_reprod, n_ghost_agents)
-
+        
         # Get the indices of the ghost agents that will become newborns and define the newborns
         ghost_agents_indices_with_filled_values = jnp.where(
             jnp.arange(self.n_agents_max) < n_newborns,
             ghost_agents_indices_with_filled_values,
             fill_value,
         )
-        are_newborns_agents = jnp.zeros_like(are_existing_agents, dtype=jnp.bool_)
-        are_newborns_agents = are_newborns_agents.at[
+        are_newborns_agents = jnp.zeros_like(are_existing_agents, dtype=jnp.bool_).at[
             ghost_agents_indices_with_filled_values
         ].set(True)
 
@@ -816,8 +825,10 @@ class GridworldEnv(BaseEcoEnvironment):
             shape=(self.n_agents_max, 1), fill_value=-1, dtype=jnp.int32
         )
         indexes_parents_agents = indexes_parents_agents.at[
-            ghost_agents_indices_with_filled_values, 0
-        ].set(are_agents_reproducing)
+            are_agents_reproducing
+        ].set(
+            jnp.where(are_agents_reproducing)[0][:, None]
+        )
 
         # Update the energy : set newborns energy to the initial energy and decrease the energy of the agents that are reproducing
         energy_agents_new = (
@@ -834,7 +845,6 @@ class GridworldEnv(BaseEcoEnvironment):
         ].set(0)
 
         # Update the state
-        dict_measures = {}
         return (
             state.replace(
                 energy_agents=energy_agents_new,
@@ -848,15 +858,15 @@ class GridworldEnv(BaseEcoEnvironment):
 
     def get_observations_agents(
         self, state: StateEnvGridworld
-    ) -> ObservationAgentGridworld:
+    ) -> Tuple[ObservationAgentGridworld, Dict[str, jnp.ndarray]]:
         """Extract the observations of the agents from the state of the environment.
 
         Args:
             state (StateEnvGridworld): the state of the environment
 
         Returns:
-            jnp.ndarray: the observations of the agents, of shape (n_max_agents, dim_observation)
-            with dim_observation = (2v+1, 2v+1, n_channels_map)
+            observation_agents (ObservationAgentGridworld): the observations of the agents
+            dict_measures (Dict[str, jnp.ndarray]): a dictionary of the measures of the environment
         """
 
         def get_single_agent_obs(

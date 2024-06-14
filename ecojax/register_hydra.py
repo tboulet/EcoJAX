@@ -17,6 +17,13 @@ def merge_container(*containers):
 
 def register_hydra_resolvers():
     """Register the custom Hydra resolvers.
+    
+    Example usage :
+    ```yaml
+    # config.yaml
+    key1: value1
+    key2: ${eval:'${key1} /2'}
+    ```
     """
     OmegaConf.register_new_resolver("merge", merge_container)
     OmegaConf.register_new_resolver("eval", eval) 

@@ -69,14 +69,14 @@ class Runner:
 
         # Hyperparameters
         n_timesteps: int = self.config["n_timesteps"]
-
+        period_eval: int = int(max(1, self.config["period_eval"]))
+        
         # Logging
         do_wandb: bool = self.config["do_wandb"]
         do_tb: bool = self.config["do_tb"]
         do_cli: bool = self.config["do_cli"]
         do_csv: bool = self.config["do_csv"]
         do_tqdm: bool = self.config["do_tqdm"]
-        do_snakeviz: bool = self.config["do_snakeviz"]
         do_render: bool = self.config["do_render"]
         do_global_log: bool = self.config["do_global_log"]
 
@@ -191,7 +191,7 @@ class Runner:
             )
 
             # Log the metrics
-            if timestep_run % 100 == 0:
+            if timestep_run % period_eval == 0:
                 metrics: Dict[str, Any] = info_env["metrics"]
                 metric_scalar = {}
                 metric_histogram = {}

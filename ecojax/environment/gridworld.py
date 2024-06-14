@@ -20,6 +20,7 @@ from ecojax.types import ActionAgent, ObservationAgent, StateEnv
 from ecojax.utils import (
     DICT_COLOR_TAG_TO_RGB,
     instantiate_class,
+    jprint,
     sigmoid,
     logit,
     try_get,
@@ -320,6 +321,8 @@ class GridworldEnv(BaseEcoEnvironment):
         )
 
         # Extract the indexes of the newborns and their parents
+        # print(np.array(indexes_parents_agents))
+        # print(are_newborns_agents.nonzero())
         dict_reproduction = {
             int(idx): np.array(indexes_parents_agents[idx])
             for idx in are_newborns_agents.nonzero()[0]
@@ -331,7 +334,7 @@ class GridworldEnv(BaseEcoEnvironment):
         }
         return observations_agents, dict_reproduction, done, info
 
-    # @partial(jax.jit, static_argnums=(0,))
+    @partial(jax.jit, static_argnums=(0,))
     def step_to_jit(
         self,
         key_random: jnp.ndarray,
@@ -364,7 +367,9 @@ class GridworldEnv(BaseEcoEnvironment):
         # 3) Reproduction of the agents
         key_random, subkey = jax.random.split(key_random)
         state_new, are_newborns_agents, indexes_parents_agents, dict_measures = (
-            self.step_reproduce_agents(state=state_new, key_random=subkey)
+            self.step_reproduce_agents(
+                state=state_new, actions=actions, key_random=subkey
+            )
         )
         dict_measures_all.update(dict_measures)
 
@@ -746,8 +751,12 @@ class GridworldEnv(BaseEcoEnvironment):
         energy_agents_new = state.energy_agents + food_energy_bonus
 
         # Remove plants that have been eaten
+        # jax.debug.print(
+        #     "{map_agents_try_eating}", map_agents_try_eating=map_agents_try_eating
+        # )
         map_plants -= map_agents_try_eating * map_plants
         map_plants = jnp.clip(map_plants, 0, 1)
+        # jax.debug.print("{map_plants}", map_plants=map_plants)
 
         # Consume energy and check if agents are dead
         energy_agents_new -= 1
@@ -774,76 +783,94 @@ class GridworldEnv(BaseEcoEnvironment):
         return state, dict_measures
 
     def step_reproduce_agents(
-        self, state: StateEnvGridworld, key_random: jnp.ndarray
+        self,
+        state: StateEnvGridworld,
+        actions: ActionAgentGridworld,
+        key_random: jnp.ndarray,
     ) -> Tuple[StateEnvGridworld, jnp.ndarray, jnp.ndarray]:
         """Reproduce the agents in the environment."""
         dict_measures = {}
 
-        if self.do_active_reprod:
-            raise NotImplementedError("Active reproduction is not implemented yet")
-
-        # Detect which agents are reproducing
+        # Detect which agents are trying to reproduce
         are_existing_agents = state.are_existing_agents
         are_agents_trying_reprod = (
             state.energy_agents > self.energy_req_reprod
         ) & are_existing_agents
+        if self.do_active_reprod:
+            are_agents_trying_reprod &= actions.do_reproduce
+
+        # # For test
+        # are_existing_agents = jnp.array([False, False, False, False, True, True, True, True, True, False])
+        # are_agents_trying_reprod = jnp.array([False, False, False, False, False, False, False, False, False, False])
 
         # Compute the number of newborns. If there are more agents trying to reproduce than there are ghost agents, only the first n_ghost_agents agents will be able to reproduce.
         n_agents_trying_reprod = jnp.sum(are_agents_trying_reprod)
         n_ghost_agents = jnp.sum(~are_existing_agents)
         n_newborns = jnp.minimum(n_agents_trying_reprod, n_ghost_agents)
 
-        # Compute which agents are actually reproducing using are_agents_trying_reprod
-        are_agents_reproducing = jnp.zeros_like(are_existing_agents, dtype=jnp.bool_)
-        are_agents_reproducing = are_agents_reproducing.at[
-            jnp.where(are_agents_trying_reprod)[0][:n_newborns]
-        ].set(True)
+        # Compute which agents are actually reproducing
+        try_reprod_mask = are_agents_trying_reprod.astype(
+            jnp.int32
+        )  # 1_(agent i tries to reproduce) for i
+        cumsum_repro_attempts = jnp.cumsum(
+            try_reprod_mask
+        )  # number of agents that tried to reproduce before agent i
+        are_agents_reproducing = (
+            cumsum_repro_attempts <= n_newborns
+        ) & are_agents_trying_reprod  # whether i tried to reproduce and is allowed to reproduce
+
         if "amount_children" in self.names_measures:
             dict_measures["amount_children"] = are_agents_reproducing
 
         # Get the indices of the ghost agents. To have constant (n_max_agents,) shape, we fill the remaining indices with the value self.n_agents_max (which will have no effect as an index of (n_agents_max,) array)
-        fill_value = self.n_agents_max
-        ghost_agents_indices_with_filled_values = jnp.where(
+        indices_ghost_agents_FILLED = jnp.where(
             ~are_existing_agents,
             size=self.n_agents_max,
-            fill_value=fill_value,
+            fill_value=self.n_agents_max,
         )[
             0
         ]  # placeholder_indices = [i1, i2, ..., i(n_ghost_agents), f, f, ..., f] of shape (n_max_agents,)
 
         # Get the indices of the ghost agents that will become newborns and define the newborns
-        ghost_agents_indices_with_filled_values = jnp.where(
+        indices_newborn_agents_FILLED = jnp.where(
             jnp.arange(self.n_agents_max) < n_newborns,
-            ghost_agents_indices_with_filled_values,
-            fill_value,
-        )
-        are_newborns_agents = (
-            jnp.zeros_like(are_existing_agents, dtype=jnp.bool_)
-            .at[ghost_agents_indices_with_filled_values]
-            .set(True)
-        )
+            indices_ghost_agents_FILLED,
+            self.n_agents_max,
+        )  # placeholder_indices = [i1, i2, ..., i(n_newborns), f, f, ..., f] of shape (n_max_agents,), with n_newborns <= n_ghost_agents
 
-        # Construct the indexes of the parents of each newborn agent
-        indexes_parents_agents = jnp.full(
+        are_newborns_agents = (
+            indices_newborn_agents_FILLED < self.n_agents_max
+        )  # whether agent i is a newborn
+
+        # Get the indices of are_reproducing agents
+        indices_had_reproduced_FILLED = jnp.where(
+            are_agents_reproducing,
+            size=self.n_agents_max,
+            fill_value=self.n_agents_max,
+        )[0]
+
+        agents_parents = jnp.full(
             shape=(self.n_agents_max, 1), fill_value=-1, dtype=jnp.int32
         )
-        indexes_parents_agents = indexes_parents_agents.at[are_newborns_agents].set(
-            jnp.where(are_agents_reproducing)[0][:, None]
+        agents_parents = agents_parents.at[indices_newborn_agents_FILLED].set(
+            indices_had_reproduced_FILLED[:, None]
         )
 
-        # Update the energy : set newborns energy to the initial energy and decrease the energy of the agents that are reproducing
+
+        # Decrease the energy of the agents that are reproducing
         energy_agents_new = (
             state.energy_agents - are_agents_reproducing * self.energy_cost_reprod
         )
-        energy_agents_new = energy_agents_new.at[
-            ghost_agents_indices_with_filled_values
-        ].set(self.energy_initial)
 
-        # Update the existing agents
+        # Initialize the newborn agents
         are_existing_agents_new = are_existing_agents | are_newborns_agents
-        age_agents_new = state.age_agents.at[
-            ghost_agents_indices_with_filled_values
-        ].set(0)
+        energy_agents_new = energy_agents_new.at[indices_newborn_agents_FILLED].set(
+            self.energy_initial
+        )
+        age_agents_new = state.age_agents.at[indices_newborn_agents_FILLED].set(0)
+        positions_agents_new = state.positions_agents.at[
+            indices_newborn_agents_FILLED
+        ].set(state.positions_agents[indices_had_reproduced_FILLED])
 
         # Update the state
         return (
@@ -851,9 +878,10 @@ class GridworldEnv(BaseEcoEnvironment):
                 energy_agents=energy_agents_new,
                 are_existing_agents=are_existing_agents_new,
                 age_agents=age_agents_new,
+                positions_agents=positions_agents_new,
             ),
             are_newborns_agents,
-            indexes_parents_agents,
+            agents_parents,
             dict_measures,
         )
 

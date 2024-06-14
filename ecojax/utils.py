@@ -198,3 +198,8 @@ def check_jax_device():
         print(f"\tPlatform: {xla_bridge.get_backend().platform}")
     except Exception as e:
         print(f"Error while checking JAX device: {e}")
+        
+
+def jprint(x):
+    """Print the value of x using JAX's print function, even inside of a JAX jit function"""
+    jax.debug.print("{x}", x=x)

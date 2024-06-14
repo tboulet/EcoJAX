@@ -104,7 +104,8 @@ def sigmoid(x):
     return 1 / (1 + jnp.exp(-x))
 
 
-def logit(x):
+def logit(x, eps=1e-8):
+    x = jnp.clip(x, eps, 1 - eps)
     return jnp.log(x / (1 - x))
 
 
@@ -203,3 +204,12 @@ def check_jax_device():
 def jprint(x):
     """Print the value of x using JAX's print function, even inside of a JAX jit function"""
     jax.debug.print("{x}", x=x)
+    
+def jbreakpoint():
+    """Breakpoint inside a JAX jit function"""
+    jax.debug.breakpoint()
+    
+def jprint_and_breakpoint(x):
+    """Print the value of x using JAX's print function, even inside of a JAX jit function"""
+    jax.debug.print("{x}", x=x)
+    jax.debug.breakpoint()

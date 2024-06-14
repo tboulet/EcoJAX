@@ -1,8 +1,8 @@
 name : Gridworld
 
 # The dimensions of the gridworld
-height : 20
-width : 20
+height : 40
+width : 40
 
 # The type of border of the gridworld, among :
 # - "torus" : the gridworld is a torus
@@ -93,7 +93,7 @@ aggregators_population:
 # The parameters for the video recording
 do_video : True
 n_steps_between_videos : 10000
-n_steps_per_video : 1000
+n_steps_per_video : 500
 n_steps_between_frames : 1
 fps_video : 20
 dir_video : logs/videos
@@ -142,12 +142,12 @@ proportion_plant_initial : 0.2
 # - logit(p_base_die_food) * 1_if_tile_is_food
 
 # The base probability of a non-food tile to grow spontaneously
-p_base_plant_growth : 0.001
+p_base_plant_growth : 0.1
 # The base probability of a food tile to die spontaneously
 p_base_plant_death : 0.0
 
 # The factor of the sun's effect on the growth of food
-factor_sun_effect : 5
+factor_sun_effect : 0
 
 # The factor of the effect of the presence of food on the growth of food
 factor_plant_reproduction : 0

@@ -1,6 +1,6 @@
 # Hyperparameters
-seed: 800
-n_timesteps : 100
+seed: 
+n_timesteps : 1000
 period_eval : ${eval:'${n_timesteps} // 200'}
 n_agents_max : 10
 n_agents_initial : 6

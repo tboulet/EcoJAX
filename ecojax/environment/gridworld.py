@@ -11,7 +11,7 @@ import numpy as np
 from jax import random
 from jax.scipy.signal import convolve2d
 from flax import struct
-
+from jax.debug import breakpoint as jbreakpoint
 
 from ecojax.environment import BaseEcoEnvironment
 from ecojax.metrics import Aggregator
@@ -21,6 +21,7 @@ from ecojax.utils import (
     DICT_COLOR_TAG_TO_RGB,
     instantiate_class,
     jprint,
+    jprint_and_breakpoint,
     sigmoid,
     logit,
     try_get,
@@ -606,13 +607,15 @@ class GridworldEnv(BaseEcoEnvironment):
             mode="same",
         )
         map_sun = state.map[:, :, idx_sun]
-        map_plants_probs = sigmoid(
-            x=self.logit_p_base_plant_growth * (1 - map_plants)
+        logits_plants = (
+            self.logit_p_base_plant_growth * (1 - map_plants)
             + (1 - self.logit_p_base_plant_death) * map_plants
             + self.factor_sun_effect * map_sun
             + self.factor_plant_reproduction * map_n_plant_in_radius_plant_reproduction
             - self.factor_plant_asphyxia * map_n_plant_in_radius_plant_asphyxia
         )
+        logits_plants = jnp.clip(logits_plants, -10, 10)
+        map_plants_probs = sigmoid(x=logits_plants)
         key_random, subkey = jax.random.split(key_random)
         map_plants = jax.random.bernoulli(
             key=subkey,
@@ -751,12 +754,8 @@ class GridworldEnv(BaseEcoEnvironment):
         energy_agents_new = state.energy_agents + food_energy_bonus
 
         # Remove plants that have been eaten
-        # jax.debug.print(
-        #     "{map_agents_try_eating}", map_agents_try_eating=map_agents_try_eating
-        # )
         map_plants -= map_agents_try_eating * map_plants
         map_plants = jnp.clip(map_plants, 0, 1)
-        # jax.debug.print("{map_plants}", map_plants=map_plants)
 
         # Consume energy and check if agents are dead
         energy_agents_new -= 1
@@ -766,6 +765,7 @@ class GridworldEnv(BaseEcoEnvironment):
 
         # Update the state
         state = state.replace(
+            map=state.map.at[:, :, idx_plants].set(map_plants),
             positions_agents=positions_agents_new,
             orientation_agents=orientation_agents_new,
             energy_agents=energy_agents_new,
@@ -855,7 +855,6 @@ class GridworldEnv(BaseEcoEnvironment):
         agents_parents = agents_parents.at[indices_newborn_agents_FILLED].set(
             indices_had_reproduced_FILLED[:, None]
         )
-
 
         # Decrease the energy of the agents that are reproducing
         energy_agents_new = (

@@ -67,6 +67,7 @@ class ObservationAgentGridworld(ObservationAgent):
     # The energy level of an agent, of shape () and in [0, +inf).
     energy: jnp.ndarray
 
+
 @struct.dataclass
 class ActionAgentGridworld(ActionAgent):
 
@@ -373,7 +374,7 @@ class GridworldEnv(BaseEcoEnvironment):
         map_agents_new = map_agents_new.at[
             state_new.positions_agents[:, 0], state_new.positions_agents[:, 1]
         ].add(state_new.are_existing_agents)
-        state_new : StateEnvGridworld = state_new.replace(
+        state_new: StateEnvGridworld = state_new.replace(
             map=state_new.map.at[:, :, self.dict_name_channel_to_idx["agents"]].set(
                 map_agents_new
             )
@@ -389,7 +390,7 @@ class GridworldEnv(BaseEcoEnvironment):
             timestep=state_new.timestep + 1,
             age_agents=state_new.age_agents + 1,
         )
-        
+
         # Get the termination criterion : if all agents are dead
         done = ~jnp.any(state_new.are_existing_agents)
 
@@ -411,7 +412,7 @@ class GridworldEnv(BaseEcoEnvironment):
 
         # 5) Metrics aggregation
 
-        # Aggregate the measures over the lifespan        
+        # Aggregate the measures over the lifespan
         are_just_dead_agents = state.are_existing_agents & (
             ~state_new.are_existing_agents | (state_new.age_agents < state.age_agents)
         )
@@ -444,9 +445,9 @@ class GridworldEnv(BaseEcoEnvironment):
             **dict_metrics_lifespan,
             **dict_metrics_population,
         }
-        
+
         # Arrange metrics in right format
-        for name_metric in list(dict_metrics.keys()):            
+        for name_metric in list(dict_metrics.keys()):
             *names, name_measure = name_metric.split("/")
             if len(names) == 0:
                 name_metric_new = name_measure
@@ -477,7 +478,7 @@ class GridworldEnv(BaseEcoEnvironment):
                 low=None,
                 high=None,
             ),
-            "energy" : Continuous(shape=(), low=0, high=None),
+            "energy": Continuous(shape=(), low=0, high=None),
         }
 
     def get_action_space_dict(self) -> Dict[str, Space]:
@@ -777,7 +778,7 @@ class GridworldEnv(BaseEcoEnvironment):
     ) -> Tuple[StateEnvGridworld, jnp.ndarray, jnp.ndarray]:
         """Reproduce the agents in the environment."""
         dict_measures = {}
-        
+
         if self.do_active_reprod:
             raise NotImplementedError("Active reproduction is not implemented yet")
 
@@ -799,7 +800,7 @@ class GridworldEnv(BaseEcoEnvironment):
         ].set(True)
         if "amount_children" in self.names_measures:
             dict_measures["amount_children"] = are_agents_reproducing
-        
+
         # Get the indices of the ghost agents. To have constant (n_max_agents,) shape, we fill the remaining indices with the value self.n_agents_max (which will have no effect as an index of (n_agents_max,) array)
         fill_value = self.n_agents_max
         ghost_agents_indices_with_filled_values = jnp.where(
@@ -809,24 +810,24 @@ class GridworldEnv(BaseEcoEnvironment):
         )[
             0
         ]  # placeholder_indices = [i1, i2, ..., i(n_ghost_agents), f, f, ..., f] of shape (n_max_agents,)
-        
+
         # Get the indices of the ghost agents that will become newborns and define the newborns
         ghost_agents_indices_with_filled_values = jnp.where(
             jnp.arange(self.n_agents_max) < n_newborns,
             ghost_agents_indices_with_filled_values,
             fill_value,
         )
-        are_newborns_agents = jnp.zeros_like(are_existing_agents, dtype=jnp.bool_).at[
-            ghost_agents_indices_with_filled_values
-        ].set(True)
+        are_newborns_agents = (
+            jnp.zeros_like(are_existing_agents, dtype=jnp.bool_)
+            .at[ghost_agents_indices_with_filled_values]
+            .set(True)
+        )
 
         # Construct the indexes of the parents of each newborn agent
         indexes_parents_agents = jnp.full(
             shape=(self.n_agents_max, 1), fill_value=-1, dtype=jnp.int32
         )
-        indexes_parents_agents = indexes_parents_agents.at[
-            are_agents_reproducing
-        ].set(
+        indexes_parents_agents = indexes_parents_agents.at[are_newborns_agents].set(
             jnp.where(are_agents_reproducing)[0][:, None]
         )
 
@@ -962,13 +963,13 @@ class GridworldEnv(BaseEcoEnvironment):
             elif name_measure == "do_action_reproduce":
                 raise NotImplementedError("Do action reproduce is not implemented yet")
             elif name_measure == "do_action_forward":
-                measures = (actions.direction == 0)
+                measures = actions.direction == 0
             elif name_measure == "do_action_left":
-                measures = (actions.direction == 1)
+                measures = actions.direction == 1
             elif name_measure == "do_action_right":
-                measures = (actions.direction == 3)
+                measures = actions.direction == 3
             elif name_measure == "do_action_backward":
-                measures = (actions.direction == 2)
+                measures = actions.direction == 2
             # State measures
             elif name_measure == "energy":
                 measures = state.energy_agents
@@ -990,9 +991,8 @@ class GridworldEnv(BaseEcoEnvironment):
                 continue
             # Behavior measures
             pass
-        
+
             dict_measures[name_measure] = measures
 
         # Return the dictionary of measures
         return dict_measures
-

@@ -94,14 +94,16 @@ class NeuroEvolutionAgentSpecies(BaseAgentSpecies):
         for idx_newborn, list_idx_parents in dict_reproduction.items():
             # Get the parent's AgentState
             idx_parent = list_idx_parents[0]
-            state_parent = jax.tree_map(lambda x: x[idx_parent], batch_state_agents)
-            # Mutate the parent's AgentState to create the newborn
-            key_random, subkey = random.split(key_random)
-            state_mutated = self.mutate_agent(state_parent, key_random=subkey)
-            # Add the newborn to the batch
-            batch_state_agents = jax.tree_map(
-                lambda x, y: x.at[idx_newborn].set(y), batch_state_agents, state_mutated
-            )
+            if idx_parent != -1:
+                print("Reproducing agent", idx_newborn, "from agent", idx_parent)
+                state_parent = jax.tree_map(lambda x: x[idx_parent], batch_state_agents)
+                # Mutate the parent's AgentState to create the newborn
+                key_random, subkey = random.split(key_random)
+                state_mutated = self.mutate_agent(state_parent, key_random=subkey)
+                # Add the newborn to the batch
+                batch_state_agents = jax.tree_map(
+                    lambda x, y: x.at[idx_newborn].set(y), batch_state_agents, state_mutated
+                )
         return batch_state_agents
 
     def mutate_agent(

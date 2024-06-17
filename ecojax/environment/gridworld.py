@@ -123,7 +123,7 @@ class GridworldEnv(BaseEcoEnvironment):
         # Environment Parameters
         self.width: int = config["width"]
         self.height: int = config["height"]
-        self.type_border: str = config["type_border"]
+        self.is_terminal : bool = config["is_terminal"]
         self.list_names_channels: List[str] = [
             "sun",
             "plants",
@@ -398,8 +398,11 @@ class GridworldEnv(BaseEcoEnvironment):
         )
 
         # Get the termination criterion : if all agents are dead
-        done = ~jnp.any(state_new.are_existing_agents)
-
+        if self.is_terminal:
+            done = ~jnp.any(state_new.are_existing_agents)
+        else:
+            done = False
+            
         # Compute some measures
         key_random, subkey = jax.random.split(key_random)
         dict_measures = self.compute_measures(
@@ -432,7 +435,9 @@ class GridworldEnv(BaseEcoEnvironment):
                     ages=state.age_agents,
                 )
             )
-
+        # jprint_and_breakpoint(dict_measures_all)
+        # jprint_and_breakpoint(dict_metrics_lifespan)
+        
         # Aggregate the measures over the population
         dict_metrics_population = {}
         for agg in aggregators_population:
@@ -444,7 +449,7 @@ class GridworldEnv(BaseEcoEnvironment):
                     ages=state.age_agents,
                 )
             )
-
+                    
         # Get the final metrics
         dict_metrics = {
             **dict_measures_all,
@@ -762,7 +767,7 @@ class GridworldEnv(BaseEcoEnvironment):
         are_existing_agents_new = (
             energy_agents_new > self.energy_thr_death
         ) & state.are_existing_agents
-
+                    
         # Update the state
         state = state.replace(
             map=state.map.at[:, :, idx_plants].set(map_plants),
@@ -838,9 +843,9 @@ class GridworldEnv(BaseEcoEnvironment):
             self.n_agents_max,
         )  # placeholder_indices = [i1, i2, ..., i(n_newborns), f, f, ..., f] of shape (n_max_agents,), with n_newborns <= n_ghost_agents
 
-        are_newborns_agents = (
-            indices_newborn_agents_FILLED < self.n_agents_max
-        )  # whether agent i is a newborn
+        are_newborns_agents = jnp.zeros(self.n_agents_max, dtype=jnp.bool_).at[
+            indices_newborn_agents_FILLED
+        ].set(True) # whether agent i is a newborn
 
         # Get the indices of are_reproducing agents
         indices_had_reproduced_FILLED = jnp.where(

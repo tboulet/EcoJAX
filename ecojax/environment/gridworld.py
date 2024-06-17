@@ -123,7 +123,7 @@ class GridworldEnv(BaseEcoEnvironment):
         # Environment Parameters
         self.width: int = config["width"]
         self.height: int = config["height"]
-        self.is_terminal : bool = config["is_terminal"]
+        self.is_terminal: bool = config["is_terminal"]
         self.list_names_channels: List[str] = [
             "sun",
             "plants",
@@ -188,6 +188,7 @@ class GridworldEnv(BaseEcoEnvironment):
             jnp.arange(-self.vision_range_agent, self.vision_range_agent + 1),
             indexing="ij",
         )
+        self.age_max: int = config["age_max"]
         self.energy_initial: float = config["energy_initial"]
         self.energy_food: float = config["energy_food"]
         self.energy_thr_death: float = config["energy_thr_death"]
@@ -322,8 +323,6 @@ class GridworldEnv(BaseEcoEnvironment):
         )
 
         # Extract the indexes of the newborns and their parents
-        # print(np.array(indexes_parents_agents))
-        # print(are_newborns_agents.nonzero())
         dict_reproduction = {
             int(idx): np.array(indexes_parents_agents[idx])
             for idx in are_newborns_agents.nonzero()[0]
@@ -402,7 +401,7 @@ class GridworldEnv(BaseEcoEnvironment):
             done = ~jnp.any(state_new.are_existing_agents)
         else:
             done = False
-            
+
         # Compute some measures
         key_random, subkey = jax.random.split(key_random)
         dict_measures = self.compute_measures(
@@ -435,9 +434,7 @@ class GridworldEnv(BaseEcoEnvironment):
                     ages=state.age_agents,
                 )
             )
-        # jprint_and_breakpoint(dict_measures_all)
-        # jprint_and_breakpoint(dict_metrics_lifespan)
-        
+
         # Aggregate the measures over the population
         dict_metrics_population = {}
         for agg in aggregators_population:
@@ -449,7 +446,7 @@ class GridworldEnv(BaseEcoEnvironment):
                     ages=state.age_agents,
                 )
             )
-                    
+
         # Get the final metrics
         dict_metrics = {
             **dict_measures_all,
@@ -762,12 +759,12 @@ class GridworldEnv(BaseEcoEnvironment):
         map_plants -= map_agents_try_eating * map_plants
         map_plants = jnp.clip(map_plants, 0, 1)
 
-        # Consume energy and check if agents are dead
+        # ====== Update the physical status of the agents ======
         energy_agents_new -= 1
         are_existing_agents_new = (
             energy_agents_new > self.energy_thr_death
-        ) & state.are_existing_agents
-                    
+        ) & state.are_existing_agents & (state.age_agents < self.age_max)
+
         # Update the state
         state = state.replace(
             map=state.map.at[:, :, idx_plants].set(map_plants),
@@ -843,9 +840,11 @@ class GridworldEnv(BaseEcoEnvironment):
             self.n_agents_max,
         )  # placeholder_indices = [i1, i2, ..., i(n_newborns), f, f, ..., f] of shape (n_max_agents,), with n_newborns <= n_ghost_agents
 
-        are_newborns_agents = jnp.zeros(self.n_agents_max, dtype=jnp.bool_).at[
-            indices_newborn_agents_FILLED
-        ].set(True) # whether agent i is a newborn
+        are_newborns_agents = (
+            jnp.zeros(self.n_agents_max, dtype=jnp.bool_)
+            .at[indices_newborn_agents_FILLED]
+            .set(True)
+        )  # whether agent i is a newborn
 
         # Get the indices of are_reproducing agents
         indices_had_reproduced_FILLED = jnp.where(
@@ -877,13 +876,14 @@ class GridworldEnv(BaseEcoEnvironment):
         ].set(state.positions_agents[indices_had_reproduced_FILLED])
 
         # Update the state
+        state = state.replace(
+            energy_agents=energy_agents_new,
+            are_existing_agents=are_existing_agents_new,
+            age_agents=age_agents_new,
+            positions_agents=positions_agents_new,
+        )
         return (
-            state.replace(
-                energy_agents=energy_agents_new,
-                are_existing_agents=are_existing_agents_new,
-                age_agents=age_agents_new,
-                positions_agents=positions_agents_new,
-            ),
+            state,
             are_newborns_agents,
             agents_parents,
             dict_measures,

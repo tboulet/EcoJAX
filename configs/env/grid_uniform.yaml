@@ -1,14 +1,11 @@
 name : Gridworld
 
 # The dimensions of the gridworld
-height : 40
-width : 40
+height : 400
+width : 400
 
-# The type of border of the gridworld, among :
-# - "torus" : the gridworld is a torus
-# - "wall" : the gridworld has walls
-# - "wall_kill" : the gridworld has walls that kill agents
-type_border : "wall"
+# Whether the env is terminal, i.e. the simulation stops when all agents are dead
+is_terminal : True
 
 
 
@@ -26,6 +23,7 @@ measures:
     - do_action_backward
     - amount_food_eaten
     - amount_children
+    - died
   state:
     - energy
     - age
@@ -47,7 +45,6 @@ aggregators_lifespan:
       keys_measures : ${merge:${env.measures.immediate}, ${env.measures.state}, ${env.measures.behavior}}
       n_agents : ${n_agents_max}
       prefix_metric : life_avg
-      log_final : true
   - class_string : ecojax.metrics.aggregators:AggregatorLifespanIncrementalChange
     config:
       keys_measures : ${merge:${env.measures.state}, ${env.measures.behavior}}
@@ -58,31 +55,30 @@ aggregators_lifespan:
       keys_measures : ${merge:${env.measures.state}, ${env.measures.behavior}}
       n_agents : ${n_agents_max}
       prefix_metric : life_var
-      log_final : true
   - class_string : ecojax.metrics.aggregators:AggregatorLifespanFinal
     config:
       keys_measures : ${merge:${env.measures.state}, ${env.measures.behavior}}
       n_agents : ${n_agents_max}
-      prefix_metric : final
+      prefix_metric : last_final
 
 aggregators_population:
   - class_string : ecojax.metrics.aggregators:AggregatorPopulationMean
     config:
       keys_measures : ${merge:${env.measures.immediate}, ${env.measures.state}, ${env.measures.behavior}}
-      keys_measures_prefix : [life, final]
+      keys_measures_prefix : [life, last_final]
       n_agents : ${n_agents_max}
       prefix_metric : pop_mean
   - class_string : ecojax.metrics.aggregators:AggregatorPopulationMovingMean
     config:
       keys_measures : ${merge:${env.measures.behavior}, ${env.measures.state}}
-      keys_measures_prefix : [final]
+      keys_measures_prefix : []
       n_agents : ${n_agents_max}
       prefix_metric : pop_moving_mean
       learning_rate : 0.05
   - class_string : ecojax.metrics.aggregators:AggregatorPopulationStd
     config:
       keys_measures : ${merge:${env.measures.behavior}, ${env.measures.state}}
-      keys_measures_prefix : [life, final]
+      keys_measures_prefix : [life, last_final]
       n_agents : ${n_agents_max}
       prefix_metric : pop_std
 
@@ -92,8 +88,8 @@ aggregators_population:
 
 # The parameters for the video recording
 do_video : True
-n_steps_between_videos : 10000
-n_steps_per_video : 500
+n_steps_between_videos : 1000
+n_steps_per_video : 1000
 n_steps_between_frames : 1
 fps_video : 20
 dir_video : logs/videos
@@ -142,7 +138,7 @@ proportion_plant_initial : 0.2
 # - logit(p_base_die_food) * 1_if_tile_is_food
 
 # The base probability of a non-food tile to grow spontaneously
-p_base_plant_growth : 0.1
+p_base_plant_growth : 0.0005
 # The base probability of a food tile to die spontaneously
 p_base_plant_death : 0.0
 
@@ -150,12 +146,12 @@ p_base_plant_death : 0.0
 factor_sun_effect : 0
 
 # The factor of the effect of the presence of food on the growth of food
-factor_plant_reproduction : 0
+factor_plant_reproduction : 2
 # The radius of the effect of the presence of food on the growth of food
 radius_plant_reproduction : 10
 
 # The factor of the effect of the presence of food on the death of food
-factor_plant_asphyxia : 0
+factor_plant_asphyxia : 5
 # The radius of the effect of the presence of food on the death of food
 radius_plant_asphyxia : 15
 
@@ -164,7 +160,10 @@ radius_plant_asphyxia : 15
 # ======================== Agent Parameters ========================
 
 # The vision range of an agent. If of value v, the agent will receive the information v tiles around it, so a (2v+1)*(2v+1) grid
-vision_range_agent : 10
+vision_range_agent : 5
+
+# The maximum age of an agent
+age_max : 500
 
 # The initial energy of an agent
 energy_initial : 50

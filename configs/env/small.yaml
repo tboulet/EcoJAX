@@ -4,11 +4,8 @@ name : Gridworld
 height : 40
 width : 40
 
-# The type of border of the gridworld, among :
-# - "torus" : the gridworld is a torus
-# - "wall" : the gridworld has walls
-# - "wall_kill" : the gridworld has walls that kill agents
-type_border : "wall"
+# Whether the env is terminal, i.e. the simulation stops when all agents are dead
+is_terminal : False
 
 
 

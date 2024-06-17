@@ -8,6 +8,7 @@ from jax import random
 from jax.tree_util import register_pytree_node
 
 from ecojax.types import PytreeLike
+from ecojax.utils import jprint_and_breakpoint
 
 
 class Aggregator(PytreeLike):
@@ -117,7 +118,7 @@ class AggregatorMeasureByMeasure(Aggregator):
                     for prefix_measure in self.keys_measures_prefix
                 ]
             ):
-
+                # Add the aggregated metrics to the dictionnary using the method aggregate_from_single_measure
                 dict_metrics_aggregated_from_measure = (
                     self.aggregate_from_single_measure(
                         name_measure=name_measure,
@@ -128,13 +129,6 @@ class AggregatorMeasureByMeasure(Aggregator):
                     )
                 )
                 dict_metrics_aggregated.update(dict_metrics_aggregated_from_measure)
-                if self.log_final:
-                    dict_metrics_final = {f"{key}_final" : jnp.where(
-                        are_just_dead,
-                        value_measure,
-                        jnp.nan
-                    ) for key, value_measure in dict_metrics_aggregated_from_measure.items()}
-                    dict_metrics_aggregated.update(dict_metrics_final)
         return dict_metrics_aggregated
 
 

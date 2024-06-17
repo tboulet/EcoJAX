@@ -27,9 +27,13 @@ class AggregatorLifespanCumulative(AggregatorMeasureByMeasure):
     ):
         super().__init__(config=config)
         self.dict_cum_values = {
-            f"{self.prefix_metric}/{key}": jnp.full((self.n_agents,), jnp.nan)
-            for key in self.keys_measures
+            f"{self.prefix_metric}/{name_measure}": jnp.full((self.n_agents,), jnp.nan)
+            for name_measure in self.keys_measures
         }
+        if self.log_final:
+            self.dict_last_final_cum_values = {
+                name_measure: jnp.full((self.n_agents,), jnp.nan) for name_measure in config["keys_measures"]
+            }  # Dictionnary of final values of the last agents to have died, initially set to NaN, then updated when the agents die
 
     def aggregate_from_single_measure(
         self,
@@ -40,6 +44,8 @@ class AggregatorLifespanCumulative(AggregatorMeasureByMeasure):
         ages: jax.Array,
     ) -> Dict[str, jax.Array]:
         name_metric = f"{self.prefix_metric}/{name_measure}"
+        dict_metrics = {}
+        # Update the cumulative value and return it
         value_metric_last = self.dict_cum_values[name_metric]
         value_metric_new = jnp.select(
             condlist=[
@@ -53,7 +59,15 @@ class AggregatorLifespanCumulative(AggregatorMeasureByMeasure):
             default=value_metric_last + value_measure,
         )
         self.dict_cum_values[name_metric] = value_metric_new
-        return {name_metric: value_metric_new}
+        dict_metrics[name_metric] = value_metric_new
+        # Update the final value of the last agents to have died
+        if self.log_final:
+            self.dict_last_final_cum_values[name_measure] = jnp.where(
+                are_just_dead, value_metric_new, self.dict_last_final_cum_values[name_measure]
+            )
+            dict_metrics[f"last_final/{self.prefix_metric}/{name_measure}"] = self.dict_last_final_cum_values[name_measure]
+        # Return the cumulative value
+        return dict_metrics
 
     def tree_flatten(self):
         leaves = list(self.dict_cum_values.values())
@@ -252,7 +266,7 @@ class AggregatorLifespanAbsoluteChange(AggregatorMeasureByMeasure):
         return agg
 
 
-class AggregatorLifespanFinal(AggregatorMeasureByMeasure, AggregatorNoMemory):
+class AggregatorLifespanFinal(AggregatorMeasureByMeasure):
     """Final value of the measures over the lifespan of the agents.
 
     f(m)_t = {
@@ -268,6 +282,9 @@ class AggregatorLifespanFinal(AggregatorMeasureByMeasure, AggregatorNoMemory):
             not config["log_final"]
         ), "log_final should be false, as this aggregator already log the final value"
         super().__init__(config)
+        self.dict_last_final_values = {
+            key: jnp.full((self.n_agents,), jnp.nan) for key in config["keys_measures"]
+        }  # Dictionnary of final values of the last agents to have died, initially set to NaN, then updated when the agents die
 
     def aggregate_from_single_measure(
         self,
@@ -277,7 +294,27 @@ class AggregatorLifespanFinal(AggregatorMeasureByMeasure, AggregatorNoMemory):
         are_just_dead: jax.Array,
         ages: jax.Array,
     ) -> Dict[str, jax.Array]:
-        return {name_measure: jnp.where(are_just_dead, value_measure, jnp.nan)}
+        name_metric = f"{self.prefix_metric}/{name_measure}"
+        # Update the final value of the last agents to have died
+        self.dict_last_final_values[name_measure] = jnp.where(
+            are_just_dead, value_measure, self.dict_last_final_values[name_measure]
+        )
+        # Return the final value of the last agents to have died
+        return {name_metric: self.dict_last_final_values[name_measure]}
+
+    def tree_flatten(self):
+        leaves = list(self.dict_last_final_values.values())
+        aux_data = self.config
+        return leaves, aux_data
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        config = aux_data
+        agg = cls(config=config)
+        agg.dict_last_final_values = {
+            key: children[i] for i, key in enumerate(config["keys_measures"])
+        }
+        return agg
 
 
 # ================================ Population metrics ================================
@@ -339,7 +376,7 @@ class AggregatorPopulationMovingMean(AggregatorMeasureByMeasure):
     def aggregate_from_single_measure(
         self,
         name_measure: str,
-        value_measure: jax.Array, # (n,) shape
+        value_measure: jax.Array,  # (n,) shape
         are_alive: jax.Array,
         are_just_dead: jax.Array,
         ages: jax.Array,
@@ -349,8 +386,9 @@ class AggregatorPopulationMovingMean(AggregatorMeasureByMeasure):
         value_metric_new = jnp.where(
             value_metric_last == jnp.nan,
             value_measure,
-            value_metric_last + self.learning_rate * (value_measure - value_metric_last),
-            )
+            value_metric_last
+            + self.learning_rate * (value_measure - value_metric_last),
+        )
         self.dict_moving_average[name_metric] = value_metric_new
         return {name_metric: value_metric_new}
 

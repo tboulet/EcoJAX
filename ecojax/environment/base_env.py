@@ -3,7 +3,7 @@ from typing import Dict, List, Tuple, Type, Union, Any
 import numpy as np
 import jax.numpy as jnp
 
-from ecojax.spaces import Space
+from ecojax.spaces import EcojaxSpace
 from ecojax.types import ActionAgent, StateEnv, ObservationAgent
 
 
@@ -98,7 +98,7 @@ class BaseEcoEnvironment(ABC):
         )
 
     @abstractmethod
-    def get_observation_space_dict(self) -> Dict[str, Space]:
+    def get_observation_space_dict(self) -> Dict[str, EcojaxSpace]:
         """Return a dictionnary describing the observation space of the environment.
 
         The keys of the dictionnary are the names of the observation components.
@@ -115,7 +115,7 @@ class BaseEcoEnvironment(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def get_action_space_dict(self) -> Dict[str, Space]:
+    def get_action_space_dict(self) -> Dict[str, EcojaxSpace]:
         """Return a dictionnary describing the action space of the environment.
 
         The keys of the dictionnary are the names of the action components.

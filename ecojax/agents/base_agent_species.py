@@ -9,7 +9,7 @@ import numpy as np
 from flax import struct
 import flax.linen as nn
 
-from ecojax.spaces import Space
+from ecojax.spaces import EcojaxSpace
 from ecojax.types import ObservationAgent, ActionAgent, StateAgent
 
 

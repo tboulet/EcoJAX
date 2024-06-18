@@ -25,7 +25,7 @@ tensorboardX
 tensorboard
 
 # Utils
-matplotlib 
+matplotlib
 tqdm
 
 # Common libraries

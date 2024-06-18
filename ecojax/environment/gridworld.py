@@ -15,7 +15,7 @@ from jax.debug import breakpoint as jbreakpoint
 
 from ecojax.environment import BaseEcoEnvironment
 from ecojax.metrics import Aggregator
-from ecojax.spaces import Space, Discrete, Continuous
+from ecojax.spaces import EcojaxSpace, Discrete, Continuous
 from ecojax.types import ActionAgent, ObservationAgent, StateEnv
 from ecojax.utils import (
     DICT_COLOR_TAG_TO_RGB,
@@ -124,6 +124,7 @@ class GridworldEnv(BaseEcoEnvironment):
         self.width: int = config["width"]
         self.height: int = config["height"]
         self.is_terminal: bool = config["is_terminal"]
+        self.period_logging: int = int(max(1, self.config["period_logging"]))
         self.list_names_channels: List[str] = [
             "sun",
             "plants",
@@ -259,7 +260,8 @@ class GridworldEnv(BaseEcoEnvironment):
             minval=0,
             maxval=4,
         )
-        dict_reproduction = {}
+        dict_reproduction = {i: [] for i in range(self.n_agents_initial)}
+        list_deaths = []
         energy_agents = jnp.ones(self.n_agents_max) * self.energy_initial
         age_agents = jnp.ones(self.n_agents_max)
 
@@ -290,6 +292,7 @@ class GridworldEnv(BaseEcoEnvironment):
         return (
             observations_agents,
             dict_reproduction,
+            list_deaths,
             False,
             {},
         )
@@ -301,20 +304,23 @@ class GridworldEnv(BaseEcoEnvironment):
     ) -> Tuple[
         ObservationAgentGridworld,
         Dict[int, List[int]],
+        List[int],
         bool,
         Dict[str, Any],
     ]:
+        timestep = self.state.timestep
         # Apply the step function to the environment
         (
             self.state,
             observations_agents,
             are_newborns_agents,
             indexes_parents_agents,
+            are_dead_agents,
             done,
             info,
             self.aggregators_lifespan,
             self.aggregators_population,
-        ) = self.step_to_jit(
+        ) = self.step_jitted(
             key_random=key_random,
             state=self.state,
             actions=actions,
@@ -326,16 +332,29 @@ class GridworldEnv(BaseEcoEnvironment):
         dict_reproduction = {
             int(idx): np.array(indexes_parents_agents[idx])
             for idx in are_newborns_agents.nonzero()[0]
-        }  # TODO: check if this is correct
+        }  # TODO: check if this is a bottleneck
+
+        # Extract the indexes of the dead agents
+        list_deaths = are_dead_agents.nonzero()[0]
+        list_deaths = np.array(list_deaths).tolist()
 
         # Set metrics to numpy arrays for logging
-        info["metrics"] = {
-            key: np.array(value) for key, value in info["metrics"].items()
-        }
-        return observations_agents, dict_reproduction, done, info
+        if timestep % self.period_logging == 0:
+            info["metrics"] = {
+                key: np.array(value) for key, value in info["metrics"].items()
+            }
+        else:
+            info["metrics"] = {}
+        return (
+            observations_agents,
+            dict_reproduction,
+            list_deaths,
+            done,
+            info,
+        )
 
     @partial(jax.jit, static_argnums=(0,))
-    def step_to_jit(
+    def step_jitted(
         self,
         key_random: jnp.ndarray,
         state: StateEnvGridworld,
@@ -352,6 +371,27 @@ class GridworldEnv(BaseEcoEnvironment):
         List[Aggregator],
         List[Aggregator],
     ]:
+        """The jitted part of the step function, that takes constant-shaped inputs and outputs.
+
+        Args:
+            key_random (jnp.ndarray): the random key used to generate random numbers
+            state (StateEnvGridworld): the state of the environment at timestep t
+            actions (jnp.ndarray): the actions of the agents reacting to the environment at timestep t
+            aggregators_lifespan (List[Aggregator]): the aggregators for the lifespan metrics at timestep t
+            aggregators_population (List[Aggregator]): the aggregators for the population metrics at timestep t
+
+        Returns:
+            state_new (StateEnvGridworld): the new state of the environment at timestep t+1
+            observations_agents (ObservationAgentGridworld): the observations of the agents at timestep t+1
+            are_newborns_agents (jnp.ndarray): a boolean array indicating which agents are newborns at this step
+            indexes_parents_agents (jnp.ndarray): an array indicating the indexes of the parents of the newborns at this step
+            are_dead_agents (jnp.ndarray): a boolean array indicating which agents are dead at this step (i.e. they were alive at t but not at t+1)
+                Note that an agent index could see its are_dead_agents value be False while its are_newborns_agents value is True, if the agent die and another agent is born at the same index
+            done (bool): whether the environment is done
+            dict_metrics (Dict[str, Any]): the metrics of the environment. It is attached to timestep t
+            aggregators_lifespan (List[Aggregator]): the aggregators for the lifespan metrics at timestep t+1
+            aggregators_population (List[Aggregator]): the aggregators for the population metrics at timestep t+1
+        """
 
         # Initialize the measures dictionnary. This will be used to store the measures of the environment at this step.
         dict_measures_all: Dict[str, jnp.ndarray] = {}
@@ -462,6 +502,7 @@ class GridworldEnv(BaseEcoEnvironment):
             else:
                 name_metric_new = f"{name_measure}/{' '.join(names[::-1])}"
             dict_metrics[name_metric_new] = dict_metrics.pop(name_metric)
+        info = {"metrics": dict_metrics}
 
         # Return the new state and observations
         return (
@@ -469,13 +510,14 @@ class GridworldEnv(BaseEcoEnvironment):
             observations_agents,
             are_newborns_agents,
             indexes_parents_agents,
+            are_just_dead_agents,
             done,
-            {"metrics": dict_metrics},
+            info,
             aggregators_lifespan,
             aggregators_population,
         )
 
-    def get_observation_space_dict(self) -> Dict[str, Space]:
+    def get_observation_space_dict(self) -> Dict[str, EcojaxSpace]:
         return {
             "visual_field": Continuous(
                 shape=(
@@ -489,7 +531,7 @@ class GridworldEnv(BaseEcoEnvironment):
             "energy": Continuous(shape=(), low=0, high=None),
         }
 
-    def get_action_space_dict(self) -> Dict[str, Space]:
+    def get_action_space_dict(self) -> Dict[str, EcojaxSpace]:
         return {
             "direction": Discrete(n=4),
             "do_eat": Discrete(n=2),
@@ -762,8 +804,10 @@ class GridworldEnv(BaseEcoEnvironment):
         # ====== Update the physical status of the agents ======
         energy_agents_new -= 1
         are_existing_agents_new = (
-            energy_agents_new > self.energy_thr_death
-        ) & state.are_existing_agents & (state.age_agents < self.age_max)
+            (energy_agents_new > self.energy_thr_death)
+            & state.are_existing_agents
+            & (state.age_agents < self.age_max)
+        )
 
         # Update the state
         state = state.replace(

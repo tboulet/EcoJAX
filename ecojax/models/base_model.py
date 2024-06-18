@@ -7,7 +7,7 @@ import flax.linen as nn
 from jax import random
 import jax.numpy as jnp
 
-from ecojax.spaces import Space
+from ecojax.spaces import EcojaxSpace
 from ecojax.types import ActionAgent, ObservationAgent
 
 
@@ -17,8 +17,8 @@ class BaseModel(nn.Module, ABC):
     """
 
     config: Dict[str, Any]
-    observation_space_dict: Dict[str, Space]
-    action_space_dict: Dict[str, Space]
+    observation_space_dict: Dict[str, EcojaxSpace]
+    action_space_dict: Dict[str, EcojaxSpace]
     observation_class: Type[ObservationAgent]
     action_class: Type[ActionAgent]
 

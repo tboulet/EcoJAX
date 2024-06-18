@@ -7,7 +7,7 @@ import numpy as np
 from jax import random
 
 
-class Space(ABC):
+class EcojaxSpace(ABC):
     """The base class for any EcoJAX space. A space describes the valid domain of a variable."""
 
     @abstractmethod
@@ -39,7 +39,7 @@ class Space(ABC):
         pass
 
 
-class Discrete(Space):
+class Discrete(EcojaxSpace):
 
     def __init__(self, n: int):
         """The constructor of the Discrete class.
@@ -48,6 +48,7 @@ class Discrete(Space):
             n (int): the number of possible values
         """
         assert n > 0, "The number of possible values must be positive."
+        assert type(n) == int, "The number of possible values must be an integer."
         self.n = n
 
     def sample(self, key_random: jnp.ndarray) -> int:
@@ -76,7 +77,7 @@ class Discrete(Space):
         return f"Discrete({self.n})"
 
 
-class Continuous(Space):
+class Continuous(EcojaxSpace):
 
     def __init__(
         self,
@@ -104,8 +105,8 @@ class Continuous(Space):
         Returns:
             float: the sampled value
         """
-        minval=self.low if self.low is not None else -1
-        maxval=self.high if self.high is not None else 1
+        minval = self.low if self.low is not None else -1
+        maxval = self.high if self.high is not None else 1
         return random.uniform(
             key=key_random,
             shape=self.shape,
@@ -130,8 +131,8 @@ class Continuous(Space):
         if self.high != None and jnp.any(x > self.high):
             return False
         return True
-    
+
     def __repr__(self) -> str:
-        minval=self.low if self.low is not None else "-inf"
-        maxval=self.high if self.high is not None else "inf"
+        minval = self.low if self.low is not None else "-inf"
+        maxval = self.high if self.high is not None else "inf"
         return f"Continuous({self.shape} in [{minval}, {maxval}])"

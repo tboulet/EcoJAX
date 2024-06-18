@@ -12,7 +12,9 @@ from ecojax.loggers.wandb import LoggerWandB
 # Config system
 import hydra
 from omegaconf import OmegaConf, DictConfig
+from ecojax.metrics.utils import get_dicts_metrics
 from ecojax.register_hydra import register_hydra_resolvers
+
 register_hydra_resolvers()
 
 # Utils
@@ -34,7 +36,9 @@ from ecojax.models import model_name_to_ModelClass
 from ecojax.video import VideoRecorder
 from ecojax.time_measure import RuntimeMeter
 from ecojax.utils import check_jax_device, is_array, is_scalar, try_get_seed
+
 check_jax_device()
+
 
 @hydra.main(config_path="configs", config_name="default.yaml")
 def main(config: DictConfig):
@@ -45,7 +49,7 @@ def main(config: DictConfig):
     # Run in a snakeviz profile
     run = Runner(config)
     do_snakeviz: bool = config["do_snakeviz"]
-    
+
     if not do_snakeviz:
         run.run()
     else:
@@ -53,15 +57,16 @@ def main(config: DictConfig):
             run.run()
         pr.dump_stats("logs/profile_stats.prof")
         print("Profile stats dumped to logs/profile_stats.prof")
-        
+
     # ================ Configuration ================
+
 
 class Runner:
     def __init__(self, config: Dict):
         self.config = config
-    
+
     def run(self):
-        
+
         # Main run's components
         env_name = self.config["env"]["name"]
         agent_species_name = self.config["agents"]["name"]
@@ -69,8 +74,7 @@ class Runner:
 
         # Hyperparameters
         n_timesteps: int = self.config["n_timesteps"]
-        period_eval: int = int(max(1, self.config["period_eval"]))
-        
+
         # Logging
         do_wandb: bool = self.config["do_wandb"]
         do_tb: bool = self.config["do_tb"]
@@ -92,14 +96,14 @@ class Runner:
         print(f"Current working directory: {os.getcwd()}")
         run_name = f"[{agent_species_name}_{model_name}_{env_name}]_{datetime.datetime.now().strftime('%dth%mmo_%Hh%Mmin%Ss')}_seed{seed}"
         if not do_global_log:
-            dir_videos = f"logs/videos/{run_name}"
-            path_csv = f"logs/metrics/{run_name}.csv"
+            dir_videos = f"./logs/videos/{run_name}"
+            dir_metrics = f"./logs/{run_name}"
         else:
-            dir_videos = "logs/videos"
-            path_csv = "logs/metrics/metrics.csv"
+            dir_videos = "./logs/videos"
+            dir_metrics = "./logs"
         print(f"\nStarting run {run_name}")
 
-        list_loggers : List[Type[BaseLogger]] = []
+        list_loggers: List[Type[BaseLogger]] = []
         if do_wandb:
             list_loggers.append(
                 LoggerWandB(
@@ -113,7 +117,7 @@ class Runner:
         if do_cli:
             list_loggers.append(LoggerCLI())
         if do_csv:
-            list_loggers.append(LoggerCSV(path_csv=path_csv))
+            list_loggers.append(LoggerCSV(dir_metrics=dir_metrics))
 
         # Create the env
         EnvClass = env_name_to_EnvClass[env_name]
@@ -153,9 +157,18 @@ class Runner:
         (
             observations_agents,
             dict_reproduction,
+            list_deaths,
             done_env,
             info_env,
         ) = env.reset(key_random=subkey)
+
+        # Log the metrics
+        metrics: Dict[str, Any] = info_env.get("metrics", {})
+        metrics_scalar, metrics_histogram = get_dicts_metrics(metrics)
+        for logger in list_loggers:
+            logger.log_scalars(metrics_scalar, timestep=0)
+            logger.log_histograms(metrics_histogram, timestep=0)
+            logger.log_eco_metrics(dict_reproduction, list_deaths, timestep=0)
 
         print("Starting agents...")
         key_random, subkey = random.split(key_random)
@@ -183,6 +196,7 @@ class Runner:
             (
                 observations_agents,
                 dict_reproduction,
+                list_deaths,
                 done_env,
                 info_env,
             ) = env.step(
@@ -191,20 +205,12 @@ class Runner:
             )
 
             # Log the metrics
-            if timestep_run % period_eval == 0:
-                metrics: Dict[str, Any] = info_env["metrics"]
-                metric_scalar = {}
-                metric_histogram = {}
-                for key, value in metrics.items():
-                    if is_scalar(value):
-                        metric_scalar[key] = value
-                    elif is_array(value):
-                        value_non_nan = value[~np.isnan(value)]
-                        if len(value_non_nan) > 0:
-                            metric_histogram[key] = value_non_nan
-                for logger in list_loggers:
-                    logger.log_scalars(metric_scalar, timestep_run)
-                    logger.log_histograms(metric_histogram, timestep_run)
+            metrics: Dict[str, Any] = info_env["metrics"]
+            metrics_scalar, metrics_histogram = get_dicts_metrics(metrics)
+            for logger in list_loggers:
+                logger.log_scalars(metrics_scalar, timestep_run)
+                logger.log_histograms(metrics_histogram, timestep_run)
+                logger.log_eco_metrics(dict_reproduction, list_deaths, timestep_run)
 
             # Finish the loop if the environment is done
             if done_env:

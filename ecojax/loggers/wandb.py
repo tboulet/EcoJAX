@@ -13,12 +13,20 @@ class LoggerWandB(BaseLogger):
             **kwargs,
         )
 
-    def log_scalars(self, dict_scalars: Dict[str, float], timestep: int):
+    def log_scalars(
+        self,
+        dict_scalars: Dict[str, float],
+        timestep: int,
+    ):
         self.run.log(dict_scalars, step=timestep)
 
-    def log_histograms(self, dict_histograms: Dict[str, List[float]], timestep: int):
+    def log_histograms(
+        self,
+        dict_histograms: Dict[str, List[float]],
+        timestep: int,
+    ):
         for key, values in dict_histograms.items():
             self.run.log({key: wandb.Histogram(values)}, step=timestep)
-    
+
     def close(self):
         self.run.finish()

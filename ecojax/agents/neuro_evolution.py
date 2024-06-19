@@ -91,35 +91,76 @@ class NeuroEvolutionAgentSpecies(BaseAgentSpecies):
         Returns:
             StateAgent: the updated state of the agents, with the newborn agents added
         """
+        # If there is no reproduction, return the same state
+        if len(dict_reproduction) == 0:
+            return batch_state_agents
+
+        # Construct the (filled) lists of indexes of children and parents
+        fill_value = self.n_agents_max
+        list_indexes_children, list_indexes_parents = [], []
         for idx_newborn, list_idx_parents in dict_reproduction.items():
-            # Get the parent's AgentState
-            
             if len(list_idx_parents) > 0 and list_idx_parents[0] != -1:
                 idx_parent = list_idx_parents[0]
-                print("Reproducing agent", idx_newborn, "from agent", idx_parent)
-                state_parent = jax.tree_map(lambda x: x[idx_parent], batch_state_agents)
-                # Mutate the parent's AgentState to create the newborn
-                key_random, subkey = random.split(key_random)
-                state_mutated = self.mutate_agent(state_parent, key_random=subkey)
-                # Add the newborn to the batch
-                batch_state_agents = jax.tree_map(
-                    lambda x, y: x.at[idx_newborn].set(y), batch_state_agents, state_mutated
-                )
-        return batch_state_agents
+                list_indexes_children.append(idx_newborn)
+                list_indexes_parents.append(idx_parent)
+        list_indexes_children += [fill_value] * (
+            self.n_agents_max - len(list_indexes_children)
+        )
+        list_indexes_parents += [fill_value] * (
+            self.n_agents_max - len(list_indexes_parents)
+        )
+        list_indexes_parents = jnp.array(list_indexes_parents)
+        list_indexes_children = jnp.array(list_indexes_children)
 
-    def mutate_agent(
-        self, agent: StateAgentEvolutionary, key_random: jnp.ndarray
+        # Apply the reproduction
+        key_random, subkey = random.split(key_random)
+        batch_state_agents_new = self.manage_reproduction_jitted(
+            key_random=subkey,
+            batch_state_agents=batch_state_agents,
+            parents=list_indexes_parents,
+            childs=list_indexes_children,
+        )
+        return batch_state_agents_new
+    
+    
+    
+    @partial(jax.jit, static_argnums=(0,))
+    def manage_reproduction_jitted(
+        self,
+        key_random: jnp.ndarray,
+        batch_state_agents: StateAgent,
+        parents : List[int],
+        childs : List[int],
+    ):
+        # Apply the mutation
+        batch_keys = random.split(key_random, self.n_agents_max)
+        batch_state_agents_mutated = jax.vmap(self.mutate_state_agent)(batch_state_agents, key_random=batch_keys)
+
+        # Transfer the genes from the parents to the childs component by component using jax.tree_map
+        def manage_genetic_component_inheritance(genes_target, genes_source):
+            return genes_target.at[childs].set(genes_source[parents])
+
+        batch_state_agents_new = jax.tree_map(
+            manage_genetic_component_inheritance, batch_state_agents, batch_state_agents_mutated
+        )
+        return batch_state_agents_new
+    
+    
+    
+    def mutate_state_agent(
+        self, state_agent: StateAgentEvolutionary, key_random: jnp.ndarray
     ) -> StateAgentEvolutionary:
-        return agent.replace(
+        return state_agent.replace(
             age=0,
             params=mutation_gaussian_noise(
-                arr=agent.params,
+                arr=state_agent.params,
                 mutation_rate=0.1,
                 mutation_std=0.01,
                 key_random=key_random,
             ),
         )
-
+    
+    
     # =============== Agent creation methods =================
 
     @partial(jax.jit, static_argnums=(0,))

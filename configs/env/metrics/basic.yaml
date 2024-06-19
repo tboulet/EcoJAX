@@ -1,0 +1,90 @@
+# ======================== Measures ========================
+measures:
+  environmental:
+    - n_agents
+    - n_plants
+  immediate:
+    - do_action_eat
+    # - do_action_reproduce
+    - do_action_forward
+    - do_action_left
+    - do_action_right
+    - do_action_backward
+    - amount_food_eaten
+    - amount_children
+    - died
+  state:
+    - energy
+    - age
+    - x
+    - y
+    # - density_agents_observed
+    # - density_plants_observed
+  behavior: []
+
+aggregators_lifespan:
+  - class_string : ecojax.metrics.aggregators:AggregatorLifespanCumulative
+    config:
+      keys_measures : ${env.metrics.measures.immediate}
+      n_agents : ${n_agents_max}
+      prefix_metric : life_cum
+      log_final : true
+  - class_string : ecojax.metrics.aggregators:AggregatorLifespanAverage
+    config:
+      keys_measures : ${merge:${env.metrics.measures.immediate}, ${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
+      n_agents : ${n_agents_max}
+      prefix_metric : life_avg
+  - class_string : ecojax.metrics.aggregators:AggregatorLifespanIncrementalChange
+    config:
+      keys_measures : ${merge:${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
+      n_agents : ${n_agents_max}
+      prefix_metric : inc
+  - class_string : ecojax.metrics.aggregators:AggregatorLifespanAbsoluteChange
+    config:
+      keys_measures : ${merge:${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
+      n_agents : ${n_agents_max}
+      prefix_metric : life_var
+  - class_string : ecojax.metrics.aggregators:AggregatorLifespanFinal
+    config:
+      keys_measures : ${merge:${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
+      n_agents : ${n_agents_max}
+      prefix_metric : last_final
+
+aggregators_population:
+  - class_string : ecojax.metrics.aggregators:AggregatorPopulationMean
+    config:
+      keys_measures : ${merge:${env.metrics.measures.immediate}, ${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
+      keys_measures_prefix : [life, last_final]
+      n_agents : ${n_agents_max}
+      prefix_metric : pop_mean
+  - class_string : ecojax.metrics.aggregators:AggregatorPopulationMovingMean
+    config:
+      keys_measures : ${merge:${env.metrics.measures.behavior}, ${env.metrics.measures.state}}
+      keys_measures_prefix : []
+      n_agents : ${n_agents_max}
+      prefix_metric : pop_moving_mean
+      learning_rate : 0.05
+  - class_string : ecojax.metrics.aggregators:AggregatorPopulationStd
+    config:
+      keys_measures : ${merge:${env.metrics.measures.behavior}, ${env.metrics.measures.state}}
+      keys_measures_prefix : [life, last_final]
+      n_agents : ${n_agents_max}
+      prefix_metric : pop_std
+
+
+
+# ======================== Video parameters ========================
+config_video:
+  do_video : True
+  n_steps_between_videos : 500
+  n_steps_per_video : 500
+  n_steps_between_frames : 1
+  fps_video : 20
+  dir_videos : logs
+  height_max_video : 500
+  width_max_video : 500
+  dict_name_channel_to_color_tag:
+    "sun" : "yellow"
+    "plants" : "green"
+    "agents" : "blue"
+  color_background : "gray"

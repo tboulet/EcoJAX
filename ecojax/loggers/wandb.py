@@ -1,3 +1,4 @@
+import numpy as np
 import wandb
 from ecojax.loggers import BaseLogger
 
@@ -26,6 +27,7 @@ class LoggerWandB(BaseLogger):
         timestep: int,
     ):
         for key, values in dict_histograms.items():
+            values = values[~np.isnan(values)]
             self.run.log({key: wandb.Histogram(values)}, step=timestep)
 
     def close(self):

@@ -5,104 +5,11 @@ height : 40
 width : 40
 
 # Whether the env is terminal, i.e. the simulation stops when all agents are dead
-is_terminal : False
+is_terminal : True
 
 # The period of the logging in number of timesteps
 # period_logging : ${eval:'${n_timesteps} // 200'}
 period_logging : 200
-
-
-
-# ======================== Metrics ========================
-measures:
-  environmental:
-    - n_agents
-    - n_plants
-  immediate:
-    - do_action_eat
-    # - do_action_reproduce
-    - do_action_forward
-    - do_action_left
-    - do_action_right
-    - do_action_backward
-    - amount_food_eaten
-    # - amout_children
-  state:
-    - energy
-    - age
-    - x
-    - y
-    # - density_agents_observed
-    # - density_plants_observed
-  behavior: []
-
-aggregators_lifespan:
-  - class_string : ecojax.metrics.aggregators:AggregatorLifespanCumulative
-    config:
-      keys_measures : ${env.measures.immediate}
-      n_agents : ${n_agents_max}
-      prefix_metric : life_cum
-      log_final : true
-  - class_string : ecojax.metrics.aggregators:AggregatorLifespanAverage
-    config:
-      keys_measures : ${merge:${env.measures.immediate}, ${env.measures.state}, ${env.measures.behavior}}
-      n_agents : ${n_agents_max}
-      prefix_metric : life_avg
-      log_final : true
-  - class_string : ecojax.metrics.aggregators:AggregatorLifespanIncrementalChange
-    config:
-      keys_measures : ${merge:${env.measures.state}, ${env.measures.behavior}}
-      n_agents : ${n_agents_max}
-      prefix_metric : inc
-  - class_string : ecojax.metrics.aggregators:AggregatorLifespanAbsoluteChange
-    config:
-      keys_measures : ${merge:${env.measures.state}, ${env.measures.behavior}}
-      n_agents : ${n_agents_max}
-      prefix_metric : life_var
-      log_final : true
-  - class_string : ecojax.metrics.aggregators:AggregatorLifespanFinal
-    config:
-      keys_measures : ${merge:${env.measures.state}, ${env.measures.behavior}}
-      n_agents : ${n_agents_max}
-      prefix_metric : final
-
-aggregators_population:
-  - class_string : ecojax.metrics.aggregators:AggregatorPopulationMean
-    config:
-      keys_measures : ${merge:${env.measures.immediate}, ${env.measures.state}, ${env.measures.behavior}}
-      keys_measures_prefix : [life, final]
-      n_agents : ${n_agents_max}
-      prefix_metric : pop_mean
-  - class_string : ecojax.metrics.aggregators:AggregatorPopulationMovingMean
-    config:
-      keys_measures : ${merge:${env.measures.behavior}, ${env.measures.state}}
-      keys_measures_prefix : [final]
-      n_agents : ${n_agents_max}
-      prefix_metric : pop_moving_mean
-      learning_rate : 0.05
-  - class_string : ecojax.metrics.aggregators:AggregatorPopulationStd
-    config:
-      keys_measures : ${merge:${env.measures.behavior}, ${env.measures.state}}
-      keys_measures_prefix : [life, final]
-      n_agents : ${n_agents_max}
-      prefix_metric : pop_std
-
-# ======================== Video parameters ========================
-
-# The parameters for the video recording
-do_video : True
-n_steps_between_videos : 500
-n_steps_per_video : 500
-n_steps_between_frames : 1
-fps_video : 20
-dir_videos : logs
-height_max_video : 500
-width_max_video : 500
-dict_name_channel_to_color_tag:
-  "sun" : "yellow"
-  "plants" : "green"
-  "agents" : "blue"
-color_background : "gray"
 
 
 
@@ -163,7 +70,10 @@ radius_plant_asphyxia : 15
 # ======================== Agent Parameters ========================
 
 # The vision range of an agent. If of value v, the agent will receive the information v tiles around it, so a (2v+1)*(2v+1) grid
-vision_range_agent : 10
+vision_range_agent : 5
+
+# The maximum age of an agent
+age_max : 500
 
 # The initial energy of an agent
 energy_initial : 50
@@ -183,3 +93,10 @@ energy_cost_reprod : 20
 # In sexual reproduction, agents will reproduce if they are in the same tile and both have the "reproduce" mode activated. To indicate that they are ready to reproduce, they emit reproductive pheromones.
 do_active_reprod : false
 
+
+
+
+# ======================== Defaults sub-configs and other Hydra config ========================
+defaults:
+  - _self_
+  - metrics : basic

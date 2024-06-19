@@ -137,22 +137,23 @@ class GridworldEnv(BaseEcoEnvironment):
         self.n_channels_map: int = len(self.dict_name_channel_to_idx)
         # Metrics parameters
         self.names_measures: List[str] = sum(
-            [names for type_measure, names in config["measures"].items()], []
+            [names for type_measure, names in config["metrics"]["measures"].items()], []
         )
         # Video parameters
-        self.do_video: bool = config["do_video"]
-        self.n_steps_between_videos: int = config["n_steps_between_videos"]
-        self.n_steps_per_video: int = config["n_steps_per_video"]
-        self.n_steps_between_frames: int = config["n_steps_between_frames"]
+        self.cfg_video = config["metrics"]["config_video"]
+        self.do_video: bool = self.cfg_video["do_video"]
+        self.n_steps_between_videos: int = self.cfg_video["n_steps_between_videos"]
+        self.n_steps_per_video: int = self.cfg_video["n_steps_per_video"]
+        self.n_steps_between_frames: int = self.cfg_video["n_steps_between_frames"]
         assert (
             self.n_steps_per_video <= self.n_steps_between_videos
         ) or not self.do_video, "len_video must be less than or equal to freq_video"
-        self.fps_video: int = config["fps_video"]
-        self.dir_videos: str = config["dir_videos"]
+        self.fps_video: int = self.cfg_video["fps_video"]
+        self.dir_videos: str = self.cfg_video["dir_videos"]
         os.makedirs(self.dir_videos, exist_ok=True)
-        self.height_max_video: int = config["height_max_video"]
-        self.width_max_video: int = config["width_max_video"]
-        self.dict_name_channel_to_color_tag: Dict[str, str] = config[
+        self.height_max_video: int = self.cfg_video["height_max_video"]
+        self.width_max_video: int = self.cfg_video["width_max_video"]
+        self.dict_name_channel_to_color_tag: Dict[str, str] = self.cfg_video[
             "dict_name_channel_to_color_tag"
         ]
         self.dict_idx_channel_to_color_tag: Dict[int, str] = {
@@ -279,11 +280,11 @@ class GridworldEnv(BaseEcoEnvironment):
 
         # Initialize the metrics
         self.aggregators_lifespan: List[Aggregator] = []
-        for config_agg in self.config["aggregators_lifespan"]:
+        for config_agg in self.config["metrics"]["aggregators_lifespan"]:
             agg = instantiate_class(**config_agg)
             self.aggregators_lifespan.append(agg)
         self.aggregators_population: List[Aggregator] = []
-        for config_agg in self.config["aggregators_population"]:
+        for config_agg in self.config["metrics"]["aggregators_population"]:
             agg = instantiate_class(**config_agg)
             self.aggregators_population.append(agg)
 
@@ -451,7 +452,7 @@ class GridworldEnv(BaseEcoEnvironment):
 
         # Set the measures to NaN for the agents that are not existing
         for name_measure, measures in dict_measures_all.items():
-            if name_measure not in self.config["measures"]["environmental"]:
+            if name_measure not in self.config["metrics"]["measures"]["environmental"]:
                 dict_measures_all[name_measure] = jnp.where(
                     state.are_existing_agents,
                     measures,
@@ -545,7 +546,7 @@ class GridworldEnv(BaseEcoEnvironment):
 
     def render(self) -> None:
         """The rendering function of the environment. It saves the RGB map of the environment as a video."""
-        if self.config["do_video"]:
+        if self.cfg_video["do_video"]:
             t = self.state.timestep
             if t % self.n_steps_between_videos == 0:
                 self.video_writer = VideoRecorder(

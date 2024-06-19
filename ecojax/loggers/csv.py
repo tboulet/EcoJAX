@@ -17,6 +17,7 @@ class LoggerCSV(BaseLogger):
         do_log_phylo_tree: bool = True,
         period_compute_metrics: int = 5000,
     ):
+        # Metrics
         os.makedirs(os.path.dirname(dir_metrics), exist_ok=True)
         self.file_csv_metrics = open(
             f"{dir_metrics}/metrics.csv", "w", newline="", encoding="utf-8"
@@ -25,19 +26,18 @@ class LoggerCSV(BaseLogger):
         self.writer_metrics_csv.writerow(
             ["timestep", "metric_name", "agent_idx", "value"]
         )
+        # Eco return metrics
+        os.makedirs(os.path.dirname(dir_metrics), exist_ok=True)
+        self.path_eco_return_metrics = f"{dir_metrics}/eco_return_metrics.csv"
+        self.period_compute_metrics = period_compute_metrics
+        self.current_agent_idx_to_id = {}  # map current agent index to its ID
+        self.id_to_agent_idx = {}  # map ID to the agent index when he was living
+        self.id_to_timestep_born = {}  # map ID to the timestep when he was born
+        self.id_to_parent_id = {}  # map ID to the parent ID
         # Phylo tree
         self.do_log_phylo_tree = do_log_phylo_tree
         if self.do_log_phylo_tree:
-            
-            os.makedirs(os.path.dirname(dir_metrics), exist_ok=True)
-            self.path_eco_return_metrics = f"{dir_metrics}/eco_return_metrics.csv"
-            os.remove(self.path_eco_return_metrics)
             self.path_phylo_tree = f"{dir_metrics}/phylo_tree.png"
-            self.period_compute_metrics = period_compute_metrics
-            self.current_agent_idx_to_id = {}  # map current agent index to its ID
-            self.id_to_agent_idx = {}  # map ID to the agent index when he was living
-            self.id_to_timestep_born = {}  # map ID to the timestep when he was born
-            self.id_to_parent_id = {}  # map ID to the parent ID
 
     def log_scalars(
         self,
@@ -78,9 +78,6 @@ class LoggerCSV(BaseLogger):
         list_deaths: List[int],
         timestep: int,
     ):
-        if not self.do_log_phylo_tree:
-            return
-
         # Deal with deaths : we release the current agent indexes
         for agent_idx in list_deaths:
             self.current_agent_idx_to_id.pop(agent_idx)
@@ -145,17 +142,14 @@ class LoggerCSV(BaseLogger):
                 )
                 
             # Save the phylo tree
-            phylotree_fig = get_phylogenetic_tree(
-                id_to_parent_id=self.id_to_parent_id,
-                id_to_timestep_born=self.id_to_timestep_born,
-            )
-            phylotree_fig.savefig(self.path_phylo_tree)
-            print(f"Phylo tree saved at {self.path_phylo_tree}")
+            if self.do_log_phylo_tree:
+                phylotree_fig = get_phylogenetic_tree(
+                    id_to_parent_id=self.id_to_parent_id,
+                    id_to_timestep_born=self.id_to_timestep_born,
+                )
+                phylotree_fig.savefig(self.path_phylo_tree)
+                print(f"Phylo tree saved at {self.path_phylo_tree}")
 
     def close(self):
         self.file_csv_metrics.close()
-        if self.do_log_phylo_tree:
-            try:
-                self.file_csv_phylo_tree.close()
-            except Exception as e:
-                print(f"Error when closing phylo tree file: {e}")
+        self.file_csv_phylo_tree.close()

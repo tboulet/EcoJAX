@@ -117,7 +117,7 @@ class Runner:
         if do_cli:
             list_loggers.append(LoggerCLI())
         if do_csv:
-            list_loggers.append(LoggerCSV(dir_metrics=dir_metrics))
+            list_loggers.append(LoggerCSV(dir_metrics=dir_metrics, do_log_phylo_tree=False))
 
         # Create the env
         EnvClass = env_name_to_EnvClass[env_name]

@@ -1,8 +1,8 @@
 name : Gridworld
 
 # The dimensions of the gridworld
-height : 400
-width : 400
+height : 100
+width : 100
 
 # Whether the env is terminal, i.e. the simulation stops when all agents are dead
 is_terminal : True
@@ -10,99 +10,6 @@ is_terminal : True
 # The period of the logging in number of timesteps
 # period_logging : ${eval:'${n_timesteps} // 200'}
 period_logging : 200
-
-
-# ======================== Metrics ========================
-measures:
-  environmental:
-    - n_agents
-    - n_plants
-  immediate:
-    - do_action_eat
-    # - do_action_reproduce
-    - do_action_forward
-    - do_action_left
-    - do_action_right
-    - do_action_backward
-    - amount_food_eaten
-    - amount_children
-    - died
-  state:
-    - energy
-    - age
-    - x
-    - y
-    # - density_agents_observed
-    # - density_plants_observed
-  behavior: []
-
-aggregators_lifespan:
-  - class_string : ecojax.metrics.aggregators:AggregatorLifespanCumulative
-    config:
-      keys_measures : ${env.measures.immediate}
-      n_agents : ${n_agents_max}
-      prefix_metric : life_cum
-      log_final : true
-  - class_string : ecojax.metrics.aggregators:AggregatorLifespanAverage
-    config:
-      keys_measures : ${merge:${env.measures.immediate}, ${env.measures.state}, ${env.measures.behavior}}
-      n_agents : ${n_agents_max}
-      prefix_metric : life_avg
-  - class_string : ecojax.metrics.aggregators:AggregatorLifespanIncrementalChange
-    config:
-      keys_measures : ${merge:${env.measures.state}, ${env.measures.behavior}}
-      n_agents : ${n_agents_max}
-      prefix_metric : inc
-  - class_string : ecojax.metrics.aggregators:AggregatorLifespanAbsoluteChange
-    config:
-      keys_measures : ${merge:${env.measures.state}, ${env.measures.behavior}}
-      n_agents : ${n_agents_max}
-      prefix_metric : life_var
-  - class_string : ecojax.metrics.aggregators:AggregatorLifespanFinal
-    config:
-      keys_measures : ${merge:${env.measures.state}, ${env.measures.behavior}}
-      n_agents : ${n_agents_max}
-      prefix_metric : last_final
-
-aggregators_population:
-  - class_string : ecojax.metrics.aggregators:AggregatorPopulationMean
-    config:
-      keys_measures : ${merge:${env.measures.immediate}, ${env.measures.state}, ${env.measures.behavior}}
-      keys_measures_prefix : [life, last_final]
-      n_agents : ${n_agents_max}
-      prefix_metric : pop_mean
-  - class_string : ecojax.metrics.aggregators:AggregatorPopulationMovingMean
-    config:
-      keys_measures : ${merge:${env.measures.behavior}, ${env.measures.state}}
-      keys_measures_prefix : []
-      n_agents : ${n_agents_max}
-      prefix_metric : pop_moving_mean
-      learning_rate : 0.05
-  - class_string : ecojax.metrics.aggregators:AggregatorPopulationStd
-    config:
-      keys_measures : ${merge:${env.measures.behavior}, ${env.measures.state}}
-      keys_measures_prefix : [life, last_final]
-      n_agents : ${n_agents_max}
-      prefix_metric : pop_std
-
-
-
-# ======================== Video parameters ========================
-
-# The parameters for the video recording
-do_video : True
-n_steps_between_videos : 1000
-n_steps_per_video : 1000
-n_steps_between_frames : 1
-fps_video : 20
-dir_video : logs/videos
-height_max_video : 500
-width_max_video : 500
-dict_name_channel_to_color_tag:
-  "sun" : "yellow"
-  "plants" : "green"
-  "agents" : "blue"
-color_background : "gray"
 
 
 
@@ -141,7 +48,7 @@ proportion_plant_initial : 0.2
 # - logit(p_base_die_food) * 1_if_tile_is_food
 
 # The base probability of a non-food tile to grow spontaneously
-p_base_plant_growth : 0.0005
+p_base_plant_growth : 0.0001
 # The base probability of a food tile to die spontaneously
 p_base_plant_death : 0.0
 
@@ -154,9 +61,9 @@ factor_plant_reproduction : 2
 radius_plant_reproduction : 10
 
 # The factor of the effect of the presence of food on the death of food
-factor_plant_asphyxia : 5
+factor_plant_asphyxia : 4
 # The radius of the effect of the presence of food on the death of food
-radius_plant_asphyxia : 15
+radius_plant_asphyxia : 20
 
 
 
@@ -178,11 +85,17 @@ energy_thr_death : 0
 do_active_eating: true
 
 # The energy required to be able to reproduce
-energy_req_reprod : 80
+energy_req_reprod : 120
 # The energy cost of reproduction
-energy_cost_reprod : 20
+energy_cost_reprod : 60
 # Whether the agent has to activate the reproduction action to reproduce.
 # In asexual reproduction, the agent will reproduce as soon as the "reproduce" mode is activated.
 # In sexual reproduction, agents will reproduce if they are in the same tile and both have the "reproduce" mode activated. To indicate that they are ready to reproduce, they emit reproductive pheromones.
 do_active_reprod : false
 
+
+
+# ======================== Defaults sub-configs and other Hydra config ========================
+defaults:
+  - _self_
+  - metrics : basic

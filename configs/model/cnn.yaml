@@ -1,1 +1,10 @@
 name: CNN
+cnn:
+  hidden_dims: [12, 12]
+  kernel_size: 3
+  stride: 1
+latent_dim: 5
+mlp:
+  hidden_dims: [12, 12]
+  latent_dim: 5
+  

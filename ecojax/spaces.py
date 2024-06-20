@@ -88,7 +88,7 @@ class Continuous(EcojaxSpace):
         """The constructor of the Continuous class.
 
         Args:
-            shape (Union[int, Tuple[int]]): the shape of the space, or the number of dimensions
+            shape (Union[int, Tuple[int]]): the shape of the space, as a tuple of non-negative integers
             low (float): the lower bound of the space
             high (float): the upper bound of the space
         """

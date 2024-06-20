@@ -97,28 +97,22 @@ class NeuroEvolutionAgentSpecies(BaseAgentSpecies):
 
         # Construct the (filled) lists of indexes of children and parents
         fill_value = self.n_agents_max
-        list_indexes_children, list_indexes_parents = [], []
-        for idx_newborn, list_idx_parents in dict_reproduction.items():
+        indexes_parents = jnp.full((self.n_agents_max,), fill_value)
+        indexes_childrens = jnp.full((self.n_agents_max,), fill_value)
+        
+        for i, (idx_newborn, list_idx_parents) in enumerate(dict_reproduction.items()):
             if len(list_idx_parents) > 0 and list_idx_parents[0] != -1:
                 idx_parent = list_idx_parents[0]
-                list_indexes_children.append(idx_newborn)
-                list_indexes_parents.append(idx_parent)
-        list_indexes_children += [fill_value] * (
-            self.n_agents_max - len(list_indexes_children)
-        )
-        list_indexes_parents += [fill_value] * (
-            self.n_agents_max - len(list_indexes_parents)
-        )
-        list_indexes_parents = jnp.array(list_indexes_parents)
-        list_indexes_children = jnp.array(list_indexes_children)
+                indexes_childrens = indexes_childrens.at[i].set(idx_newborn)
+                indexes_parents = indexes_parents.at[i].set(idx_parent)
 
         # Apply the reproduction
         key_random, subkey = random.split(key_random)
         batch_state_agents_new = self.manage_reproduction_jitted(
             key_random=subkey,
             batch_state_agents=batch_state_agents,
-            parents=list_indexes_parents,
-            childs=list_indexes_children,
+            indexes_parents=indexes_parents,
+            indexes_childrens=indexes_childrens,
         )
         return batch_state_agents_new
     
@@ -129,8 +123,8 @@ class NeuroEvolutionAgentSpecies(BaseAgentSpecies):
         self,
         key_random: jnp.ndarray,
         batch_state_agents: StateAgent,
-        parents : List[int],
-        childs : List[int],
+        indexes_parents : List[int],
+        indexes_childrens : List[int],
     ):
         # Apply the mutation
         batch_keys = random.split(key_random, self.n_agents_max)
@@ -138,7 +132,7 @@ class NeuroEvolutionAgentSpecies(BaseAgentSpecies):
 
         # Transfer the genes from the parents to the childs component by component using jax.tree_map
         def manage_genetic_component_inheritance(genes_target, genes_source):
-            return genes_target.at[childs].set(genes_source[parents])
+            return genes_target.at[indexes_childrens].set(genes_source[indexes_parents])
 
         batch_state_agents_new = jax.tree_map(
             manage_genetic_component_inheritance, batch_state_agents, batch_state_agents_mutated

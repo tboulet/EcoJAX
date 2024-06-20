@@ -1,8 +1,8 @@
 name : Gridworld
 
 # The dimensions of the gridworld
-height : 200
-width : 400
+height : 100
+width : 100
 
 # Whether the env is terminal, i.e. the simulation stops when all agents are dead
 is_terminal : False
@@ -71,6 +71,9 @@ radius_plant_asphyxia : 20
 
 # The vision range of an agent. If of value v, the agent will receive the information v tiles around it, so a (2v+1)*(2v+1) grid
 vision_range_agent : 10
+
+# The maximum age of an agent
+age_max : 500
 
 # The initial energy of an agent
 energy_initial : 50

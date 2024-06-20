@@ -1,10 +1,10 @@
 name: CNN
-cnn:
+cnn_config:
   hidden_dims: [12, 12]
   kernel_size: 3
-  stride: 1
-latent_dim: 5
-mlp:
+  strides: 1
+dim_cnn_output: 5
+mlp_config:
   hidden_dims: [12, 12]
-  latent_dim: 5
+  n_output_features: 5
   

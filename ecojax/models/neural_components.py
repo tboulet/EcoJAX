@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, List, Union
+from typing import Callable, Dict, List, Union
 import numpy as np
 
 import jax
@@ -11,9 +11,10 @@ import flax.linen as nn
 from ecojax.models.base_model import BaseModel
 from ecojax.types import ObservationAgent, ActionAgent
 from ecojax.spaces import Continuous, Discrete
+from ecojax.utils import jprint, jprint_and_breakpoint
 
 
-names_activations_to_fn = {
+names_activations_to_fn: Dict[str, Callable[[jnp.ndarray], jnp.ndarray]] = {
     "linear": lambda x: x,
     "relu": nn.relu,
     "tanh": nn.tanh,
@@ -24,25 +25,28 @@ names_activations_to_fn = {
 
 
 class MLP(nn.Module):
+    """
+    A simple MLP model. It will create a MLP that does the following inference :
+    MLP : input -> hidden_dims[0], -> hidden_dims[1], -> ... -> hidden_dims[-1], -> (n_output_features,)
 
-    def __init__(
-        self,
-        hidden_dims: List[int],
-        n_output_features: int,
-        name_activation_fn: str = "relu",
-        name_activation_output_fn: str = "linear",
-    ):
-        """Create a simple MLP model.
+    Args:
+        hidden_dims (List[int]): the number of hidden units in each hidden layer. Also defines the number of hidden layers.
+        n_output_features (int): the number of output features
+        name_activation_fn (str, optional): the name of the activation function. Defaults to "relu".
+        name_activation_output_fn (str, optional): the name of the activation function for the output. Defaults to "linear".
+    """
 
-        Args:
-            hidden_dims (List[int]): the number of hidden units in each hidden layer
-            n_output_features (int): the number of output features
-            name_activation_fn (str, optional): the name of the activation function. Defaults to "relu".
-        """
-        self.hidden_dims = hidden_dims
-        self.output_features = n_output_features
-        self.activation_fn = names_activations_to_fn[name_activation_fn]
-        self.activation_output_fn = names_activations_to_fn[name_activation_output_fn]
+    hidden_dims: List[int]
+    n_output_features: int
+    name_activation_fn: str = "relu"
+    name_activation_output_fn: str = "linear"
+
+    def setup(self) -> None:
+        self.activation_fn = names_activations_to_fn[self.name_activation_fn]
+        self.activation_output_fn = names_activations_to_fn[
+            self.name_activation_output_fn
+        ]
+        super().setup()
 
     @nn.compact
     def __call__(self, x):
@@ -59,36 +63,37 @@ class MLP(nn.Module):
         for hidden_dim in self.hidden_dims[1:]:
             x = nn.Dense(features=hidden_dim)(x)
             x = self.activation_fn(x)
-        x = nn.Dense(features=self.output_features)(x)
+        x = nn.Dense(features=self.n_output_features)(x)
         x = self.activation_output_fn(x)
         return x
 
 
 class CNN(nn.Module):
+    """
+    A CNN model adapted to the input and output shapes.
 
-    def __init__(
-        self,
-        hidden_dims: List[int],
-        kernel_size: List[int],
-        strides: List[int],
-        shape_output: List[int],
-        name_activation_fn: str = "relu",
-        name_activation_output_fn: str = "linear",
-    ):
-        """Create a simple CNN model.
+    Args:
+        hidden_dims (List[int]): the number of hidden units in each hidden layer. Also defines the number of hidden layers.
+        kernel_size (List[int]): the size of the kernel, common to all layers
+        strides (List[int]): the size of the strides, common to all layers
+        shape_output (List[int]): the shape of the output
+        name_activation_fn (str, optional): the name of the activation function. Defaults to "relu".
+        name_activation_output_fn (str, optional): the name of the activation function for the output. Defaults to "linear".
+    """
 
-        Args:
-            hidden_dims (List[int]): the number of hidden units in each hidden layer
-            shape_output (List[int]): the shape of the output
-            name_activation_fn (str, optional): the name of the activation function. Defaults to "relu".
-            name_activation_output_fn (str, optional): the name of the activation function for the output. Defaults to "linear".
-        """
-        self.hidden_dims = hidden_dims
-        self.kernel_size = kernel_size
-        self.strides = strides
-        self.shape_output = shape_output
-        self.activation_fn = names_activations_to_fn[name_activation_fn]
-        self.activation_output_fn = names_activations_to_fn[name_activation_output_fn]
+    hidden_dims: List[int]
+    kernel_size: List[int]
+    strides: List[int]
+    shape_output: List[int]
+    name_activation_fn: str = "relu"
+    name_activation_output_fn: str = "linear"
+
+    def setup(self) -> None:
+        self.activation_fn = names_activations_to_fn[self.name_activation_fn]
+        self.activation_output_fn = names_activations_to_fn[
+            self.name_activation_output_fn
+        ]
+        super().setup()
 
     @nn.compact
     def __call__(self, x):
@@ -126,29 +131,30 @@ class CNN(nn.Module):
 
         # Apply the output layer depending on the shape of the output
         if len(self.shape_output) == 0:
-            # Do the average of the last layer
+            # Scalar : Do the average of the last layer
             x = jnp.mean(x)
         elif len(self.shape_output) == 1:
-            # Flatten the output and apply a dense layer
-            x = nn.Flatten()(x)
+            # Shape (n,) : Flatten the output and apply a dense layer
+            x = x.reshape((-1,))
             x = nn.Dense(features=self.shape_output[0])(x)
         elif len(self.shape_output) == 2:
-            # Assert the shape correspond to (H, W)
+            # Shape (H, W) : For now only having the desired shape corresponding to the dimension of the input (H, W) is supported
+            # Assert the shape correspond to (H, W) and apply a mean accross the channel dimension
             assert self.shape_output == [
                 H,
                 W,
             ], f"Expected shape_output to be {H, W} but got {self.shape_output}"
-            # Average along the n_features dimension
             x = jnp.mean(x, axis=-1)
         elif len(self.shape_output) == 3:
-            # Assert the shape correspond to (H, W, ?)
-            assert self.shape_output[:2] == [
-                H,
-                W,
-            ], f"Expected shape_output to start with {H, W} but got {self.shape_output[:2]}"
+            # Shape (H, W, C') : For now only having the (H, W) corresponding to the dimension of the input is supported
+            # Assert the shape correspond to (H, W) and apply a convolutional layer to get the right shape
+            H_output, W_output, C_output = self.shape_output
+            assert (
+                H_output == H and W_output == W
+            ), f"Expected shape_output to be {H, W, '?'} but got {self.shape_output}"
             # Apply a convolutional layer to get the right shape
             x = nn.Conv(
-                features=self.shape_output[2],
+                features=C_output,
                 kernel_size=(1, 1),
                 strides=(1, 1),
             )(x)
@@ -156,4 +162,3 @@ class CNN(nn.Module):
         # Apply the output activation function and return the output
         x = self.activation_output_fn(x)
         return x
-        

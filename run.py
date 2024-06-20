@@ -135,11 +135,11 @@ class Runner:
         # Create the model
         ModelClass = model_name_to_ModelClass[model_name]
         model = ModelClass(
-            config=self.config["model"],
             observation_space_dict=observation_space_dict,
             action_space_dict=action_space_dict,
             observation_class=observation_class,
             action_class=action_class,
+            **self.config["model"],
         )
 
         # Create the agent's species

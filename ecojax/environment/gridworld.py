@@ -68,6 +68,9 @@ class ObservationAgentGridworld(ObservationAgent):
 
     # The energy level of an agent, of shape () and in [0, +inf).
     energy: jnp.ndarray
+    
+    # The age of an agent, of shape () and in [0, +inf).
+    age: jnp.ndarray
 
 
 @struct.dataclass
@@ -530,6 +533,7 @@ class GridworldEnv(BaseEcoEnvironment):
                 high=None,
             ),
             "energy": Continuous(shape=(), low=0, high=None),
+            "age": Continuous(shape=(), low=0, high=None),
         }
 
     def get_action_space_dict(self) -> Dict[str, EcojaxSpace]:
@@ -947,12 +951,11 @@ class GridworldEnv(BaseEcoEnvironment):
             dict_measures (Dict[str, jnp.ndarray]): a dictionary of the measures of the environment
         """
 
-        def get_single_agent_obs(
+        def get_single_agent_visual_field(
             agent_position: jnp.ndarray,
             agent_orientation: jnp.ndarray,
-            energy_agent: jnp.ndarray,
         ) -> ObservationAgentGridworld:
-            """Get the observation of a single agent.
+            """Get the visual field of a single agent.
 
             Args:
                 agent_position (jnp.ndarray): the position of the agent, of shape (2,)
@@ -966,12 +969,12 @@ class GridworldEnv(BaseEcoEnvironment):
             # Get the visual field of the agent
             visual_field_x = agent_position[0] + self.grid_indexes_vision_x
             visual_field_y = agent_position[1] + self.grid_indexes_vision_y
-            obs = state.map[
+            vis_field = state.map[
                 visual_field_x % H,
                 visual_field_y % W,
             ]
             # Rotate the visual field according to the orientation of the agent
-            obs = jnp.select(
+            vis_field = jnp.select(
                 [
                     agent_orientation == 0,
                     agent_orientation == 1,
@@ -979,23 +982,29 @@ class GridworldEnv(BaseEcoEnvironment):
                     agent_orientation == 3,
                 ],
                 [
-                    obs,
-                    jnp.rot90(obs, k=1, axes=(0, 1)),
-                    jnp.rot90(obs, k=2, axes=(0, 1)),
-                    jnp.rot90(obs, k=3, axes=(0, 1)),
+                    vis_field,
+                    jnp.rot90(vis_field, k=1, axes=(0, 1)),
+                    jnp.rot90(vis_field, k=2, axes=(0, 1)),
+                    jnp.rot90(vis_field, k=3, axes=(0, 1)),
                 ],
             )
-            # Return the observation
-            return ObservationAgentGridworld(visual_field=obs, energy=energy_agent)
+            # Return the visual field of the agent
+            return vis_field
 
         # Vectorize the function to get the observation of many agents
-        get_many_agents_obs = jax.vmap(get_single_agent_obs, in_axes=0)
+        get_many_agents_visual_field = jax.vmap(get_single_agent_visual_field, in_axes=0)
 
         # Compute the observations of all the agents
-        observations = get_many_agents_obs(
+        visual_field = get_many_agents_visual_field(
             state.positions_agents,
             state.orientation_agents,
-            state.energy_agents,
+        )
+        
+        # Create the observation of the agents
+        observations = ObservationAgentGridworld(
+            visual_field=visual_field,
+            energy=state.energy_agents,
+            age=state.age_agents,
         )
 
         dict_measures = {}

@@ -3,6 +3,7 @@ import os
 
 import jax
 import numpy as np
+from ecojax.core import EcoInformation
 from ecojax.evolution.metrics import compute_eco_return, get_phylogenetic_tree
 from ecojax.loggers import BaseLogger
 
@@ -74,10 +75,10 @@ class LoggerCSV(BaseLogger):
 
     def log_eco_metrics(
         self,
-        dict_reproduction: Dict[int, List[int]],
-        list_deaths: List[int],
+        eco_information: EcoInformation,
         timestep: int,
     ):
+        return  # Not implemented for eco info
         # Deal with deaths : we release the current agent indexes
         for agent_idx in list_deaths:
             self.current_agent_idx_to_id.pop(agent_idx)
@@ -151,5 +152,9 @@ class LoggerCSV(BaseLogger):
                 print(f"Phylo tree saved at {self.path_phylo_tree}")
 
     def close(self):
-        self.file_csv_metrics.close()
-        self.file_csv_phylo_tree.close()
+        try:
+            self.file_csv_metrics.close()
+            if self.do_log_phylo_tree:
+                self.file_csv_phylo_tree.close()
+        except Exception as e:
+            print(f"Error while closing the logger: {e}")

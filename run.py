@@ -117,7 +117,9 @@ class Runner:
         if do_cli:
             list_loggers.append(LoggerCLI())
         if do_csv:
-            list_loggers.append(LoggerCSV(dir_metrics=dir_metrics, do_log_phylo_tree=False))
+            list_loggers.append(
+                LoggerCSV(dir_metrics=dir_metrics, do_log_phylo_tree=False)
+            )
 
         # Create the env
         EnvClass = env_name_to_EnvClass[env_name]
@@ -156,8 +158,7 @@ class Runner:
         key_random, subkey = random.split(key_random)
         (
             observations_agents,
-            dict_reproduction,
-            list_deaths,
+            eco_information,
             done_env,
             info_env,
         ) = env.reset(key_random=subkey)
@@ -168,11 +169,11 @@ class Runner:
         for logger in list_loggers:
             logger.log_scalars(metrics_scalar, timestep=0)
             logger.log_histograms(metrics_histogram, timestep=0)
-            logger.log_eco_metrics(dict_reproduction, list_deaths, timestep=0)
+            logger.log_eco_metrics(eco_information, timestep=0)
 
         print("Starting agents...")
         key_random, subkey = random.split(key_random)
-        agent_species.init(key_random=subkey)
+        agent_species.initialize(key_random=subkey)
 
         # ============== Simulation loop ===============
         print("Simulation started.")
@@ -188,15 +189,14 @@ class Runner:
             actions = agent_species.react(
                 key_random=subkey,
                 batch_observations=observations_agents,
-                dict_reproduction=dict_reproduction,
+                eco_information=eco_information,
             )
 
             # Env step
             key_random, subkey = random.split(key_random)
             (
                 observations_agents,
-                dict_reproduction,
-                list_deaths,
+                eco_information,
                 done_env,
                 info_env,
             ) = env.step(
@@ -210,7 +210,7 @@ class Runner:
             for logger in list_loggers:
                 logger.log_scalars(metrics_scalar, timestep_run)
                 logger.log_histograms(metrics_histogram, timestep_run)
-                logger.log_eco_metrics(dict_reproduction, list_deaths, timestep_run)
+                logger.log_eco_metrics(eco_information, timestep_run)
 
             # Finish the loop if the environment is done
             if done_env:

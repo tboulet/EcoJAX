@@ -74,34 +74,5 @@ class CNN_Model(BaseModel):
         # Define the hidden layers of the MLP
         x = MLP(**self.mlp_config)(x)
 
-        # Generate the outputs for each action space
-        kwargs_action = {}
-        prob_action_sampled = 1.0
-        for name_action_component, space in self.action_space_dict.items():
-            key_random, subkey = random.split(key_random)
-            if isinstance(space, Discrete):
-                action_component_logits = nn.Dense(features=space.n)(x)
-                action_component_probs = nn.softmax(action_component_logits)
-                action_component_sampled = jax.random.categorical(
-                    subkey, action_component_logits
-                )
-                kwargs_action[name_action_component] = action_component_sampled
-                prob_action_sampled *= action_component_probs[action_component_sampled]
-            elif isinstance(space, Continuous):
-                mean = nn.Dense(features=np.prod(space.shape))(x)
-                log_std = nn.Dense(features=np.prod(space.shape))(x)
-                std = jnp.exp(log_std)
-                action_component_sampled = mean + std * random.normal(
-                    subkey, shape=mean.shape
-                )
-                kwargs_action[name_action_component] = action_component_sampled
-                # Assuming a standard normal distribution for the purpose of the probability
-                action_component_prob = (
-                    1.0 / jnp.sqrt(2.0 * jnp.pi * std**2)
-                ) * jnp.exp(-0.5 * ((action_component_sampled - mean) / std) ** 2)
-                prob_action_sampled *= jnp.prod(action_component_prob)
-            else:
-                raise ValueError(f"Unknown space type for action: {type(space)}")
-
-        # Return the action
-        return self.action_class(**kwargs_action), prob_action_sampled
+        # Return the action and the probability of the action
+        return self.get_action_and_prob(x, key_random=key_random)

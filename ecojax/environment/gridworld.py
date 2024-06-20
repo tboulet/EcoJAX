@@ -13,6 +13,7 @@ from jax.scipy.signal import convolve2d
 from flax import struct
 from jax.debug import breakpoint as jbreakpoint
 
+from ecojax.core import EcoInformation
 from ecojax.environment import BaseEcoEnvironment
 from ecojax.metrics import Aggregator
 from ecojax.spaces import EcojaxSpace, Discrete, Continuous
@@ -68,7 +69,7 @@ class ObservationAgentGridworld(ObservationAgent):
 
     # The energy level of an agent, of shape () and in [0, +inf).
     energy: jnp.ndarray
-    
+
     # The age of an agent, of shape () and in [0, +inf).
     age: jnp.ndarray
 
@@ -103,14 +104,30 @@ class GridworldEnv(BaseEcoEnvironment):
 
         The pipeline of the environment is the following:
         >>> env = GridworldEnv(config, n_agents_max, n_agents_initial)
-        >>> observations = env.reset(key_random)
+        >>> (
+        >>>     observations_agents,
+        >>>     eco_information,
+        >>>     done,
+        >>>     info,
+        >>> ) = env.reset(key_random)
+        >>> 
         >>> while not done:
+        >>> 
         >>>     env.render()
+        >>> 
         >>>     actions = ...
-        >>>     observations, dict_reproduction, done, info = env.step(key_random, actions)
-        >>>
-        >>>     if done_env:
-        >>>         break
+        >>> 
+        >>>     key_random, subkey = random.split(key_random)
+        >>>     (
+        >>>         observations_agents,
+        >>>         eco_information,
+        >>>         done_env,
+        >>>         info_env,
+        >>>     ) = env.step(
+        >>>         key_random=subkey,
+        >>>         actions=actions,
+        >>>     )
+        >>>    
 
         Args:
             config (Dict[str, Any]): the configuration of the environment
@@ -200,6 +217,8 @@ class GridworldEnv(BaseEcoEnvironment):
         self.energy_req_reprod: float = config["energy_req_reprod"]
         self.energy_cost_reprod: float = config["energy_cost_reprod"]
         self.do_active_reprod: bool = config["do_active_reprod"]
+        # Other
+        self.fill_value: int = self.n_agents_max
 
     def reset(
         self,
@@ -207,7 +226,7 @@ class GridworldEnv(BaseEcoEnvironment):
     ) -> Tuple[
         StateEnvGridworld,
         ObservationAgentGridworld,
-        Dict[int, List[int]],
+        EcoInformation,
         bool,
         Dict[str, Any],
     ]:
@@ -264,8 +283,6 @@ class GridworldEnv(BaseEcoEnvironment):
             minval=0,
             maxval=4,
         )
-        dict_reproduction = {i: [] for i in range(self.n_agents_initial)}
-        list_deaths = []
         energy_agents = jnp.ones(self.n_agents_max) * self.energy_initial
         age_agents = jnp.ones(self.n_agents_max)
 
@@ -291,12 +308,21 @@ class GridworldEnv(BaseEcoEnvironment):
             agg = instantiate_class(**config_agg)
             self.aggregators_population.append(agg)
 
+        # Initialize ecological informations
+        are_newborns_agents = jnp.zeros(self.n_agents_max, dtype=jnp.bool_)
+        are_dead_agents = jnp.zeros(self.n_agents_max, dtype=jnp.bool_)
+        indexes_parents_agents = jnp.full((self.n_agents_max,), self.fill_value)
+        eco_information = EcoInformation(
+            are_newborns_agents=are_newborns_agents,
+            indexes_parents=indexes_parents_agents,
+            are_just_dead_agents=are_dead_agents,
+        )
+
         # Return the information required by the agents
         observations_agents, _ = self.get_observations_agents(state=self.state)
         return (
             observations_agents,
-            dict_reproduction,
-            list_deaths,
+            eco_information,
             False,
             {},
         )
@@ -307,8 +333,7 @@ class GridworldEnv(BaseEcoEnvironment):
         actions: jnp.ndarray,
     ) -> Tuple[
         ObservationAgentGridworld,
-        Dict[int, List[int]],
-        List[int],
+        EcoInformation,
         bool,
         Dict[str, Any],
     ]:
@@ -317,9 +342,7 @@ class GridworldEnv(BaseEcoEnvironment):
         (
             self.state,
             observations_agents,
-            are_newborns_agents,
-            indexes_parents_agents,
-            are_dead_agents,
+            eco_information,
             done,
             info,
             self.aggregators_lifespan,
@@ -332,16 +355,6 @@ class GridworldEnv(BaseEcoEnvironment):
             aggregators_population=self.aggregators_population,
         )
 
-        # Extract the indexes of the newborns and their parents
-        dict_reproduction = {
-            int(idx): np.array(indexes_parents_agents[idx])
-            for idx in are_newborns_agents.nonzero()[0]
-        }  # TODO: check if this is a bottleneck
-
-        # Extract the indexes of the dead agents
-        list_deaths = are_dead_agents.nonzero()[0]
-        list_deaths = np.array(list_deaths).tolist()
-
         # Set metrics to numpy arrays for logging
         if timestep % self.period_logging == 0:
             info["metrics"] = {
@@ -349,10 +362,11 @@ class GridworldEnv(BaseEcoEnvironment):
             }
         else:
             info["metrics"] = {}
+
+        # Return the information required by the agents
         return (
             observations_agents,
-            dict_reproduction,
-            list_deaths,
+            eco_information,
             done,
             info,
         )
@@ -368,8 +382,7 @@ class GridworldEnv(BaseEcoEnvironment):
     ) -> Tuple[
         StateEnvGridworld,
         ObservationAgentGridworld,
-        jnp.ndarray,
-        jnp.ndarray,
+        EcoInformation,
         bool,
         Dict[str, Any],
         List[Aggregator],
@@ -387,10 +400,11 @@ class GridworldEnv(BaseEcoEnvironment):
         Returns:
             state_new (StateEnvGridworld): the new state of the environment at timestep t+1
             observations_agents (ObservationAgentGridworld): the observations of the agents at timestep t+1
-            are_newborns_agents (jnp.ndarray): a boolean array indicating which agents are newborns at this step
-            indexes_parents_agents (jnp.ndarray): an array indicating the indexes of the parents of the newborns at this step
-            are_dead_agents (jnp.ndarray): a boolean array indicating which agents are dead at this step (i.e. they were alive at t but not at t+1)
-                Note that an agent index could see its are_dead_agents value be False while its are_newborns_agents value is True, if the agent die and another agent is born at the same index
+            eco_information (EcoInformation): the ecological information of the environment regarding what happened at t. It should contain the following:
+                1) are_newborns_agents (jnp.ndarray): a boolean array indicating which agents are newborns at this step
+                2) indexes_parents_agents (jnp.ndarray): an array indicating the indexes of the parents of the newborns at this step
+                3) are_dead_agents (jnp.ndarray): a boolean array indicating which agents are dead at this step (i.e. they were alive at t but not at t+1)
+                    Note that an agent index could see its are_dead_agents value be False while its are_newborns_agents value is True, if the agent die and another agent is born at the same index
             done (bool): whether the environment is done
             dict_metrics (Dict[str, Any]): the metrics of the environment. It is attached to timestep t
             aggregators_lifespan (List[Aggregator]): the aggregators for the lifespan metrics at timestep t+1
@@ -400,7 +414,7 @@ class GridworldEnv(BaseEcoEnvironment):
         # Initialize the measures dictionnary. This will be used to store the measures of the environment at this step.
         dict_measures_all: Dict[str, jnp.ndarray] = {}
 
-        # 1) Interaction with the agents
+        # ============ (1) Agents interaction with the environment ============
         # Apply the actions of the agents on the environment
         key_random, subkey = jax.random.split(key_random)
         state_new, dict_measures = self.step_action_agents(
@@ -408,7 +422,7 @@ class GridworldEnv(BaseEcoEnvironment):
         )
         dict_measures_all.update(dict_measures)
 
-        # 3) Reproduction of the agents
+        # ============ (2) Agents reproduce ============
         key_random, subkey = jax.random.split(key_random)
         state_new, are_newborns_agents, indexes_parents_agents, dict_measures = (
             self.step_reproduce_agents(
@@ -417,7 +431,8 @@ class GridworldEnv(BaseEcoEnvironment):
         )
         dict_measures_all.update(dict_measures)
 
-        # 4) Update the state and extract the observations
+        # ============ (3) Extract the observations of the agents (and some updates) ============
+
         # Make some last updates to the state
         map_agents_new = jnp.zeros(state_new.map.shape[:2])
         map_agents_new = map_agents_new.at[
@@ -440,11 +455,23 @@ class GridworldEnv(BaseEcoEnvironment):
             age_agents=state_new.age_agents + 1,
         )
 
-        # Get the termination criterion : if all agents are dead
+        # ============ (4) Get the ecological information ============
+        are_just_dead_agents = state.are_existing_agents & (
+            ~state_new.are_existing_agents | (state_new.age_agents < state.age_agents)
+        )
+        eco_information = EcoInformation(
+            are_newborns_agents=are_newborns_agents,
+            indexes_parents=indexes_parents_agents,
+            are_just_dead_agents=are_just_dead_agents,
+        )
+
+        # ============ (5) Check if the environment is done ============
         if self.is_terminal:
             done = ~jnp.any(state_new.are_existing_agents)
         else:
             done = False
+
+        # ============ (6) Compute the metrics ============
 
         # Compute some measures
         key_random, subkey = jax.random.split(key_random)
@@ -462,12 +489,7 @@ class GridworldEnv(BaseEcoEnvironment):
                     jnp.nan,
                 )
 
-        # 5) Metrics aggregation
-
         # Aggregate the measures over the lifespan
-        are_just_dead_agents = state.are_existing_agents & (
-            ~state_new.are_existing_agents | (state_new.age_agents < state.age_agents)
-        )
         dict_metrics_lifespan = {}
         for agg in aggregators_lifespan:
             dict_metrics_lifespan.update(
@@ -512,9 +534,7 @@ class GridworldEnv(BaseEcoEnvironment):
         return (
             state_new,
             observations_agents,
-            are_newborns_agents,
-            indexes_parents_agents,
-            are_just_dead_agents,
+            eco_information,
             done,
             info,
             aggregators_lifespan,
@@ -877,7 +897,7 @@ class GridworldEnv(BaseEcoEnvironment):
         indices_ghost_agents_FILLED = jnp.where(
             ~are_existing_agents,
             size=self.n_agents_max,
-            fill_value=self.n_agents_max,
+            fill_value=self.fill_value,
         )[
             0
         ]  # placeholder_indices = [i1, i2, ..., i(n_ghost_agents), f, f, ..., f] of shape (n_max_agents,)
@@ -899,11 +919,11 @@ class GridworldEnv(BaseEcoEnvironment):
         indices_had_reproduced_FILLED = jnp.where(
             are_agents_reproducing,
             size=self.n_agents_max,
-            fill_value=self.n_agents_max,
+            fill_value=self.fill_value,
         )[0]
 
         agents_parents = jnp.full(
-            shape=(self.n_agents_max, 1), fill_value=-1, dtype=jnp.int32
+            shape=(self.n_agents_max, 1), fill_value=self.fill_value, dtype=jnp.int32
         )
         agents_parents = agents_parents.at[indices_newborn_agents_FILLED].set(
             indices_had_reproduced_FILLED[:, None]
@@ -992,14 +1012,16 @@ class GridworldEnv(BaseEcoEnvironment):
             return vis_field
 
         # Vectorize the function to get the observation of many agents
-        get_many_agents_visual_field = jax.vmap(get_single_agent_visual_field, in_axes=0)
+        get_many_agents_visual_field = jax.vmap(
+            get_single_agent_visual_field, in_axes=0
+        )
 
         # Compute the observations of all the agents
         visual_field = get_many_agents_visual_field(
             state.positions_agents,
             state.orientation_agents,
         )
-        
+
         # Create the observation of the agents
         observations = ObservationAgentGridworld(
             visual_field=visual_field,

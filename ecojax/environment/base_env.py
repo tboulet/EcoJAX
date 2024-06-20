@@ -3,6 +3,7 @@ from typing import Dict, List, Tuple, Type, Union, Any
 import numpy as np
 import jax.numpy as jnp
 
+from ecojax.core import EcoInformation
 from ecojax.spaces import EcojaxSpace
 from ecojax.types import ActionAgent, StateEnv, ObservationAgent
 
@@ -40,8 +41,9 @@ class BaseEcoEnvironment(ABC):
         self,
         key_random: jnp.ndarray,
     ) -> Tuple[
+        StateEnv,
         ObservationAgent,
-        Dict[int, List[int]],
+        EcoInformation,
         bool,
         Dict[str, Any],
     ]:
@@ -65,7 +67,7 @@ class BaseEcoEnvironment(ABC):
         actions: ActionAgent,
     ) -> Tuple[
         ObservationAgent,
-        Dict[int, List[int]],
+        EcoInformation,
         bool,
         Dict[str, Any],
     ]:
@@ -77,25 +79,17 @@ class BaseEcoEnvironment(ABC):
             actions (ActionAgent): the actions to perform
 
         Returns:
-            observations_agents (ObservationAgentGridworld): the new observations of the agents, of attributes of shape (n_max_agents, dim_observation_components)
-            dict_reproduction (Dict[int, List[int]]): a dictionary indicating the indexes of the parents of each newborn agent. The keys are the indexes of the newborn agents, and the values are the indexes of the parents of the newborn agents.
+            observations_agents (ObservationAgent): the new observations of the agents, of attributes of shape (n_max_agents, dim_observation_components)
+            eco_information (EcoInformation): the ecological information of the environment regarding what happened at t. It should contain the following:
+                1) are_newborns_agents (jnp.ndarray): a boolean array indicating which agents are newborns at this step
+                2) indexes_parents_agents (jnp.ndarray): an array indicating the indexes of the parents of the newborns at this step
+                3) are_dead_agents (jnp.ndarray): a boolean array indicating which agents are dead at this step (i.e. they were alive at t but not at t+1)
+                    Note that an agent index could see its are_dead_agents value be False while its are_newborns_agents value is True, if the agent die and another agent is born at the same index
             done (bool): whether the environment is done
             info (Dict[str, Any]): the info of the environment
         """
         raise NotImplementedError
-        # Apply the actions of the agents on the environment
-        self.state = f(state, actions)
-        # Get which agents are newborns and which are their parents
-        dict_reproduction = f(self.state)
-        # Extract the observations of the agents
-        observations_agents = f(self.state)
-        # Return the results
-        return (
-            observations_agents,
-            dict_reproduction,
-            done,
-            info,
-        )
+
 
     @abstractmethod
     def get_observation_space_dict(self) -> Dict[str, EcojaxSpace]:

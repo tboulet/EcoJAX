@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Dict, List, Tuple, Type, Union
 
+from ecojax.core import EcoInformation
+
 
 class BaseLogger(ABC):
     """Base class for all loggers"""
@@ -31,8 +33,7 @@ class BaseLogger(ABC):
 
     def log_eco_metrics(
         self,
-        dict_reproduction: Dict[int, List[int]],
-        list_deaths: List[int],
+        eco_information : EcoInformation,
         timestep: int,
     ):
         """Log ecp metrics"""

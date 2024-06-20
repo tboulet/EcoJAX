@@ -9,6 +9,7 @@ import numpy as np
 from flax import struct
 import flax.linen as nn
 
+from ecojax.core import EcoInformation
 from ecojax.spaces import EcojaxSpace
 from ecojax.types import ObservationAgent, ActionAgent, StateAgent
 
@@ -49,7 +50,7 @@ class BaseAgentSpecies(ABC):
         self.model = model
 
     @abstractmethod
-    def init(self, key_random: jnp.ndarray) -> None:
+    def initialize(self, key_random: jnp.ndarray) -> None:
         """Initialize the agents of the species. This should in particular initialize the agents species' state,
         i.e. the JAX dataclass that will contain the varying information of the agents species.
 
@@ -62,7 +63,7 @@ class BaseAgentSpecies(ABC):
         self,
         key_random: jnp.ndarray,
         batch_observations: ObservationAgent,
-        dict_reproduction: Dict[int, List[int]],
+        eco_information: EcoInformation,
     ) -> ActionAgent:
         """A function through which the agents reach to their observations and return their actions.
         It also handles the reproduction of the agents if required by the environment.
@@ -71,15 +72,9 @@ class BaseAgentSpecies(ABC):
             key_random (jnp.ndarray): the random key, of shape (2,)
             batch_observations (jnp.ndarray): the observations, as a JAX structure of components, each of shape (n_agents_max, **dim_obs_component).
                 It is composed of n_agents_max observations, each of them corresponding to the observation that the i-th indexed agent would receive.
-            dict_reproduction (Dict[int, List[int]]): a dictionary indicating the indexes of the parents of each newborn agent. The keys are the indexes of the newborn agents, and the values are the indexes of the parents of the newborn agents.
+            eco_information (EcoInformation): the eco-information of the environment, as an EcoInformation object.
 
         Returns:
             action (ActionAgent): the actions of the agents, as a ActionAgent object of components of shape (n_agents_max, **dim_action_component).
         """
         raise NotImplementedError
-        # Process with the reproduction here...
-        ...
-        # React agent-by-agent to the observations
-        actions = ...
-        # Return the actions
-        return actions

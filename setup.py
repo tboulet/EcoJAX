@@ -6,9 +6,9 @@ setup(
     author="Timothé Boulet",
     author_email="timothe.boulet0@gmail.com",
     
-    packages=find_namespace_packages(exclude=["tests*", "venv*"]),
+    packages=find_namespace_packages(include=["ecojax*"]),
 
-    version="1.0",
+    version="1.1",
     license="GNU",
     description="A framework for simulating ecosystems in JAX.",
     long_description=open('README.md').read(),      

@@ -1,10 +1,17 @@
 # EcoJAX
-Research project for studying ecosystems of neural agents. In the context of my internship at FLOWERS.
+This repository aims to provide a simple and modular codebase to run experiments on large neural-agents ecological models using JAX.
+
+<p align="center">
+    <video width="320" height="240" controls>
+    <source src="assets/video_example.mp4" type="video/mp4">
+    Your browser does not support the video tag.
+    </video>
+</p>
 
 # Installation
 
 Clone the repository and create a virtual environment.
-The python version used was 3.12.2.
+The repo work (at least) in python 3.10 to 3.12.
 
 ```bash
 git clone git@github.com:tboulet/EcoJAX.git
@@ -15,7 +22,7 @@ source venv/bin/activate   # on Windows, use `venv\Scripts\activate.bat`
 
 ### Install JAX
 
-On linux (note your CUDA version may var) :
+On linux (note your CUDA version may vary) :
 ```bash
 pip install jax[cuda12_pip]==0.4.24 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 ```
@@ -31,11 +38,10 @@ pip install jax[cpu]==0.4.24
 pip install -r requirements.txt
 ```
 
-Install EvoJAX (for now)
+### Eventually install the package in editable mode
+
 ```bash
-cd evojax
 pip install -e .
-cd ..
 ```
 
 

@@ -2,10 +2,7 @@
 This repository aims to provide a simple and modular codebase to run experiments on large neural-agents ecological models using JAX.
 
 <p align="center">
-    <video width="320" height="240" controls>
-    <source src="assets/video_example.mp4" type="video/mp4">
-    Your browser does not support the video tag.
-    </video>
+  <img src="assets/video.gif" alt="Title" width="60%"/>
 </p>
 
 # Installation

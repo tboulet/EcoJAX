@@ -311,7 +311,7 @@ class GridworldEnv(BaseEcoEnvironment):
         # Initialize ecological informations
         are_newborns_agents = jnp.zeros(self.n_agents_max, dtype=jnp.bool_)
         are_dead_agents = jnp.zeros(self.n_agents_max, dtype=jnp.bool_)
-        indexes_parents_agents = jnp.full((self.n_agents_max,), self.fill_value)
+        indexes_parents_agents = jnp.full((self.n_agents_max, 1), self.fill_value)
         eco_information = EcoInformation(
             are_newborns_agents=are_newborns_agents,
             indexes_parents=indexes_parents_agents,

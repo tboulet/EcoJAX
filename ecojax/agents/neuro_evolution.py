@@ -3,7 +3,7 @@ from functools import partial
 from typing import Dict, List, Tuple, Type
 
 import jax
-from jax import random
+from jax import random, tree_map
 import jax.numpy as jnp
 import numpy as np
 from flax import struct
@@ -83,11 +83,13 @@ class NeuroEvolutionAgentSpecies(BaseAgentSpecies):
         )
 
         # Transfer the genes from the parents to the childs component by component using jax.tree_map
-        are_newborns_agents = eco_information.are_newborns_agents  # (agent i is born)_i
-        indexes_parents = (
-            eco_information.indexes_parents
-        )  # (index of the parent of agent i)_i
-
+        are_newborns_agents = eco_information.are_newborns_agents
+        indexes_parents = eco_information.indexes_parents # (n_agents, n_parents)
+        if indexes_parents.shape == (self.n_agents_max, 1):
+            indexes_parents = indexes_parents.squeeze(axis=-1) # (n_agents,)
+        else:
+            raise NotImplementedError(f"Invalid shape for indexes_parents: {indexes_parents.shape}")
+        
         def manage_genetic_component_inheritance(
             genes: jnp.ndarray,
             genes_mutated: jnp.ndarray,
@@ -103,13 +105,17 @@ class NeuroEvolutionAgentSpecies(BaseAgentSpecies):
             Returns:
                 genes_inherited (jnp.ndarray): a JAX array of shape (n_agents, *gene_shape), which are the genes of the population after inheritance
             """
-            n = are_newborns_agents.shape[0]
-            dim = genes.shape[1:]
-            res = jnp.where(are_newborns_agents.reshape((n,) + (1,) * len(dim)), 
-                             genes_mutated[indexes_parents], genes)            
-            return res
+            mask = are_newborns_agents
+            for _ in range(genes.ndim - 1):
+                mask = jnp.expand_dims(mask, axis=-1)
+            genes_inherited = jnp.where(
+                mask,
+                genes_mutated[indexes_parents],
+                genes,
+            )
+            return genes_inherited
 
-        batch_state_agents = jax.tree_map(
+        new_batch_state_agents = tree_map(
             manage_genetic_component_inheritance,
             batch_state_agents,
             batch_state_agents_mutated,
@@ -117,13 +123,13 @@ class NeuroEvolutionAgentSpecies(BaseAgentSpecies):
 
         # Agent-wise reaction
         key_random, subkey = random.split(key_random)
-        batch_state_agents, batch_actions = self.act_agents(
+        new_batch_state_agents, batch_actions = self.act_agents(
             key_random=subkey,
             batch_observations=batch_observations,
-            batch_state_agents=batch_state_agents,
+            batch_state_agents=new_batch_state_agents,
         )
 
-        return batch_state_agents, batch_actions
+        return new_batch_state_agents, batch_actions
 
     # =============== Mutation methods =================
 

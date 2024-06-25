@@ -1,8 +1,8 @@
 # Hyperparameters
 seed: 
-n_timesteps : 1000
+n_timesteps : 100000
 n_agents_max : 5000
-n_agents_initial : 200
+n_agents_initial : 1000
 
 
 # Logging
@@ -24,7 +24,7 @@ defaults:
   - _self_
   - env : grid_uniform
   - agents : ne
-  - model : mlp
+  - model : cnn
   - override hydra/hydra_logging: disabled  
   - override hydra/job_logging: disabled 
 

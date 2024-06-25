@@ -58,9 +58,7 @@ class MLP(nn.Module):
         Returns:
             jnp.ndarray: the output data
         """
-        x = nn.Dense(features=self.hidden_dims[0])(x)
-        x = self.activation_fn(x)
-        for hidden_dim in self.hidden_dims[1:]:
+        for hidden_dim in self.hidden_dims:
             x = nn.Dense(features=hidden_dim)(x)
             x = self.activation_fn(x)
         x = nn.Dense(features=self.n_output_features)(x)
@@ -117,15 +115,11 @@ class CNN(nn.Module):
         H, W = x.shape[:2]
 
         # Apply the CNN
-        x = nn.Conv(
-            features=self.hidden_dims[0],
-            kernel_size=self.kernel_size,
-            strides=self.strides,
-        )(x)
-        x = self.activation_fn(x)
-        for hidden_dim in self.hidden_dims[1:]:
+        for hidden_dim in self.hidden_dims:
             x = nn.Conv(
-                features=hidden_dim, kernel_size=self.kernel_size, strides=self.strides
+                features=hidden_dim,
+                kernel_size=(self.kernel_size, self.kernel_size),
+                strides=(self.strides, self.strides),
             )(x)
             x = self.activation_fn(x)
 
@@ -134,8 +128,13 @@ class CNN(nn.Module):
             # Scalar : Do the average of the last layer
             x = jnp.mean(x)
         elif len(self.shape_output) == 1:
-            # Shape (n,) : Flatten the output and apply a dense layer
-            x = x.reshape((-1,))
+            # Shape (n,) : apply conv and then dense : (H, W, C) -> (H, C, 1) -> flatten -> (n,)
+            x = nn.Conv(
+                features=1,
+                kernel_size=(1, 1),
+                strides=(1, 1),
+            )(x)
+            x = jnp.reshape(x, (-1,))
             x = nn.Dense(features=self.shape_output[0])(x)
         elif len(self.shape_output) == 2:
             # Shape (H, W) : For now only having the desired shape corresponding to the dimension of the input (H, W) is supported

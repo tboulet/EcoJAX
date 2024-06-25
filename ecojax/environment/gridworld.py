@@ -31,11 +31,6 @@ from ecojax.video import VideoRecorder
 
 
 @struct.dataclass
-class MetricsLifespan:
-    metric_cumulative: jnp.ndarray
-
-
-@struct.dataclass
 class StateEnvGridworld(StateEnv):
     # The current timestep of the environment
     timestep: int
@@ -84,6 +79,9 @@ class ActionAgentGridworld(ActionAgent):
     # If an agent eats, it won't be able to move this turn.
     do_eat: jnp.ndarray
 
+    # Whether the agent wants to reproduce, of shape () and in {0, 1}. It represents whether the agent wants to reproduce with another agent.
+    do_reproduce: jnp.ndarray
+
 
 class GridworldEnv(BaseEcoEnvironment):
     """A Gridworld environment."""
@@ -110,13 +108,13 @@ class GridworldEnv(BaseEcoEnvironment):
         >>>     done,
         >>>     info,
         >>> ) = env.reset(key_random)
-        >>> 
+        >>>
         >>> while not done:
-        >>> 
+        >>>
         >>>     env.render()
-        >>> 
+        >>>
         >>>     actions = ...
-        >>> 
+        >>>
         >>>     key_random, subkey = random.split(key_random)
         >>>     (
         >>>         observations_agents,
@@ -127,7 +125,7 @@ class GridworldEnv(BaseEcoEnvironment):
         >>>         key_random=subkey,
         >>>         actions=actions,
         >>>     )
-        >>>    
+        >>>
 
         Args:
             config (Dict[str, Any]): the configuration of the environment
@@ -560,6 +558,7 @@ class GridworldEnv(BaseEcoEnvironment):
         return {
             "direction": Discrete(n=4),
             "do_eat": Discrete(n=2),
+            "do_reproduce": Discrete(n=2),
         }
 
     def get_class_observation_agent(self) -> Type[ObservationAgent]:

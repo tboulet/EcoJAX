@@ -74,7 +74,6 @@ class NeuroEvolutionAgentSpecies(BaseAgentSpecies):
         batch_observations: ObservationAgent,  # Batched
         eco_information: EcoInformation,
     ) -> jnp.ndarray:
-        print("compiling...")
 
         # Apply the mutation
         batch_keys = random.split(key_random, self.n_agents_max)

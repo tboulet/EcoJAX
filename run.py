@@ -143,7 +143,8 @@ class Runner:
             action_class=action_class,
             **self.config["model"],
         )
-
+        print(model.get_table_summary())
+        
         # Create the agent's species
         AgentSpeciesClass = agent_name_to_AgentSpeciesClass[agent_species_name]
         agent_species = AgentSpeciesClass(

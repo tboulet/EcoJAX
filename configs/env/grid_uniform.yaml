@@ -1,8 +1,8 @@
 name : Gridworld
 
 # The dimensions of the gridworld
-height : 100
-width : 100
+height : 200
+width : 200
 
 # Whether the env is terminal, i.e. the simulation stops when all agents are dead
 is_terminal : True
@@ -48,7 +48,7 @@ proportion_plant_initial : 0.2
 # - logit(p_base_die_food) * 1_if_tile_is_food
 
 # The base probability of a non-food tile to grow spontaneously
-p_base_plant_growth : 0.0003
+p_base_plant_growth : 0.0001
 # The base probability of a food tile to die spontaneously
 p_base_plant_death : 0.0
 
@@ -56,12 +56,12 @@ p_base_plant_death : 0.0
 factor_sun_effect : 0
 
 # The factor of the effect of the presence of food on the growth of food
-factor_plant_reproduction : 2
+factor_plant_reproduction : 5
 # The radius of the effect of the presence of food on the growth of food
 radius_plant_reproduction : 10
 
 # The factor of the effect of the presence of food on the death of food
-factor_plant_asphyxia : 3
+factor_plant_asphyxia : 2
 # The radius of the effect of the presence of food on the death of food
 radius_plant_asphyxia : 20
 
@@ -78,20 +78,20 @@ age_max : 500
 # The initial energy of an agent
 energy_initial : 50
 # The energy amount obtained by eating a food tile
-energy_food : 10
+energy_food : 5
 # The energy threshold under which an agent dies
 energy_thr_death : 0
 # Whether the agent has to activate the eating action to eat
 do_active_eating: true
 
 # The energy required to be able to reproduce
-energy_req_reprod : 120
+energy_req_reprod : ${eval:'${env.energy_initial} * 2'}
 # The energy cost of reproduction
-energy_cost_reprod : 60
+energy_cost_reprod : ${eval:'${env.energy_initial} * 1.2'}
 # Whether the agent has to activate the reproduction action to reproduce.
 # In asexual reproduction, the agent will reproduce as soon as the "reproduce" mode is activated.
 # In sexual reproduction, agents will reproduce if they are in the same tile and both have the "reproduce" mode activated. To indicate that they are ready to reproduce, they emit reproductive pheromones.
-do_active_reprod : false
+do_active_reprod : true
 
 
 

@@ -116,3 +116,14 @@ class BaseModel(nn.Module, ABC):
             prob_action_sampled (jnp.ndarray): the probability of the sampled action, as a scalar
         """
         raise NotImplementedError
+
+    def get_table_summary(self) -> Dict[str, Any]:
+        """Returns a table that summarizes the model's parameters and shapes.
+        """
+        
+        kwargs_obs: Dict[str, np.ndarray] = {}
+        key_random = jax.random.PRNGKey(0)
+        for key_dict, space in self.observation_space_dict.items():
+            kwargs_obs[key_dict] = space.sample(key_random=key_random)
+        obs = self.observation_class(**kwargs_obs)
+        return f"Model summary: {nn.tabulate(self, rngs=key_random)(obs, key_random)}"

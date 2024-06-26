@@ -31,7 +31,7 @@ from ecojax.video import VideoRecorder
 
 
 @struct.dataclass
-class StateAgentGriworld:
+class AgentGriworld:
     # Where the agents are, of shape (n_max_agents, 2). positions_agents[i, :] represents the (x,y) coordinates of the i-th agent in the map. Ghost agents are still represented in the array (in position (0,0)).
     positions_agents: jnp.ndarray  # (n_max_agents, 2) in [0, height-1] x [0, width-1]
     # The orientation of the agents, of shape (n_max_agents,) and of values in {0, 1, 2, 3}. orientation_agents[i] represents the index of its orientation in the env.
@@ -63,7 +63,7 @@ class StateEnvGridworld(StateEnv):
     latitude_sun: int
 
     # The state of the agents in the environment
-    agents: StateAgentGriworld  # Batched
+    agents: AgentGriworld  # Batched
 
 
 class GridworldEnv(BaseEcoEnvironment):
@@ -348,7 +348,7 @@ class GridworldEnv(BaseEcoEnvironment):
         )
 
         # Initialize the state
-        agents = StateAgentGriworld(
+        agents = AgentGriworld(
             positions_agents=positions_agents,
             orientation_agents=orientation_agents,
             are_existing_agents=are_existing_agents,
@@ -1046,7 +1046,7 @@ class GridworldEnv(BaseEcoEnvironment):
         """
 
         def get_single_agent_visual_field(
-            agents: StateAgentGriworld,
+            agents: AgentGriworld,
         ) -> jnp.ndarray:
             """Get the visual field of a single agent.
 

@@ -56,33 +56,6 @@ class StateEnvGridworld(StateEnv):
     age_agents: jnp.ndarray  # (n_max_agents,) in [0, +inf)
 
 
-@struct.dataclass
-class ObservationAgentGridworld(ObservationAgent):
-
-    # The visual field of the agent, of shape (2v+1, 2v+1, n_channels_map) where n_channels_map is the number of channels used to represent the environment.
-    visual_field: jnp.ndarray  # (2v+1, 2v+1, n_channels_map) in R
-
-    # The energy level of an agent, of shape () and in [0, +inf).
-    energy: jnp.ndarray
-
-    # The age of an agent, of shape () and in [0, +inf).
-    age: jnp.ndarray
-
-
-@struct.dataclass
-class ActionAgentGridworld(ActionAgent):
-
-    # The direction of the agent, of shape () and in {0, 3}. direction represents the direction the agent wants to take.
-    direction: jnp.ndarray
-
-    # Whether the agent wants to eat, of shape () and in {0, 1}. eat represents whether the agent wants to eat the plant on its cell.
-    # If an agent eats, it won't be able to move this turn.
-    do_eat: jnp.ndarray
-
-    # Whether the agent wants to reproduce, of shape () and in {0, 1}. It represents whether the agent wants to reproduce with another agent.
-    do_reproduce: jnp.ndarray
-
-
 class GridworldEnv(BaseEcoEnvironment):
     """A Gridworld environment."""
 
@@ -201,20 +174,95 @@ class GridworldEnv(BaseEcoEnvironment):
         self.kernel_plant_asphyxia = jnp.ones(
             (config["radius_plant_asphyxia"], config["radius_plant_asphyxia"])
         ) / (config["radius_plant_asphyxia"] ** 2)
-        # Agents Parameters
-        self.vision_range_agent: int = config["vision_range_agent"]
-        self.grid_indexes_vision_x, self.grid_indexes_vision_y = jnp.meshgrid(
-            jnp.arange(-self.vision_range_agent, self.vision_range_agent + 1),
-            jnp.arange(-self.vision_range_agent, self.vision_range_agent + 1),
-            indexing="ij",
-        )
+
+        # ======================== Agent Parameters ========================
+
+        # Observations
+        self.list_observations: List[str] = config["list_observations"]
+        assert (
+            len(self.list_observations) > 0
+        ), "The list of observations must be non-empty"
+
+        @struct.dataclass
+        class ObservationAgentGridworld(ObservationAgent):
+            # The visual field of the agent, of shape (2v+1, 2v+1, n_channels_map) where n_channels_map is the number of channels used to represent the environment.
+            if "visual_field" in self.list_observations:
+                visual_field: jnp.ndarray  # (2v+1, 2v+1, n_channels_map) in R
+
+            # The energy level of an agent, of shape () and in [0, +inf).
+            if "energy" in self.list_observations:
+                energy: jnp.ndarray
+
+            # The age of an agent, of shape () and in [0, +inf).
+            if "age" in self.list_observations:
+                age: jnp.ndarray
+
+        self.ObservationAgentGridworld = ObservationAgentGridworld
+
+        # Create the observation space
+        self.observation_space_dict = {}
+        if "visual_field" in self.list_observations:
+            self.vision_range_agent: int = config["vision_range_agent"]
+            self.grid_indexes_vision_x, self.grid_indexes_vision_y = jnp.meshgrid(
+                jnp.arange(-self.vision_range_agent, self.vision_range_agent + 1),
+                jnp.arange(-self.vision_range_agent, self.vision_range_agent + 1),
+                indexing="ij",
+            )
+            self.observation_space_dict["visual_field"] = Continuous(
+                shape=(
+                    2 * self.vision_range_agent + 1,
+                    2 * self.vision_range_agent + 1,
+                    self.n_channels_map,
+                ),
+                low=None,
+                high=None,
+            )
+        if "energy" in self.list_observations:
+            self.observation_space_dict["energy"] = Continuous(
+                shape=(), low=0, high=None
+            )
+        if "age" in self.list_observations:
+            self.observation_space_dict["age"] = Continuous(shape=(), low=0, high=None)
+
+        # Actions
+        self.list_actions: List[str] = config["list_actions"]
+        assert len(self.list_actions) > 0, "The list of actions must be non-empty"
+
+        @struct.dataclass
+        class ActionAgentGridworld(ActionAgent):
+            # The direction of the agent, of shape () and in {0, 3}. direction represents the direction the agent wants to take.
+            assert (
+                "direction" in self.list_actions
+            ), "The direction action must be present in the actions"
+            direction: jnp.ndarray
+
+            # Whether the agent wants to eat, of shape () and in {0, 1}. eat represents whether the agent wants to eat the plant on its cell.
+            # If an agent eats, it won't be able to move this turn.
+            if "do_eat" in self.list_actions:
+                do_eat: jnp.ndarray
+
+            # Whether the agent wants to reproduce, of shape () and in {0, 1}. It represents whether the agent wants to reproduce with another agent.
+            if "do_reproduce" in self.list_actions:
+                do_reproduce: jnp.ndarray
+
+        self.ActionAgentGridworld = ActionAgentGridworld
+
+        # Create the action space
+        self.action_space_dict = {}
+        if "direction" in self.list_actions:
+            self.action_space_dict["direction"] = Discrete(n=4)
+        if "do_eat" in self.list_actions:
+            self.action_space_dict["do_eat"] = Discrete(n=2)
+        if "do_reproduce" in self.list_actions:
+            self.action_space_dict["do_reproduce"] = Discrete(n=2)
+
+        # Agent's internal dynamics
         self.age_max: int = config["age_max"]
         self.energy_initial: float = config["energy_initial"]
         self.energy_food: float = config["energy_food"]
         self.energy_thr_death: float = config["energy_thr_death"]
         self.energy_req_reprod: float = config["energy_req_reprod"]
         self.energy_cost_reprod: float = config["energy_cost_reprod"]
-        self.do_active_reprod: bool = config["do_active_reprod"]
         # Other
         self.fill_value: int = self.n_agents_max
 
@@ -223,7 +271,7 @@ class GridworldEnv(BaseEcoEnvironment):
         key_random: jnp.ndarray,
     ) -> Tuple[
         StateEnvGridworld,
-        ObservationAgentGridworld,
+        ObservationAgent,
         EcoInformation,
         bool,
         Dict[str, Any],
@@ -330,7 +378,7 @@ class GridworldEnv(BaseEcoEnvironment):
         key_random: jnp.ndarray,
         actions: jnp.ndarray,
     ) -> Tuple[
-        ObservationAgentGridworld,
+        ObservationAgent,
         EcoInformation,
         bool,
         Dict[str, Any],
@@ -379,7 +427,7 @@ class GridworldEnv(BaseEcoEnvironment):
         aggregators_population: List[Aggregator],
     ) -> Tuple[
         StateEnvGridworld,
-        ObservationAgentGridworld,
+        ObservationAgent,
         EcoInformation,
         bool,
         Dict[str, Any],
@@ -397,7 +445,7 @@ class GridworldEnv(BaseEcoEnvironment):
 
         Returns:
             state_new (StateEnvGridworld): the new state of the environment at timestep t+1
-            observations_agents (ObservationAgentGridworld): the observations of the agents at timestep t+1
+            observations_agents (ObservationAgent): the observations of the agents at timestep t+1
             eco_information (EcoInformation): the ecological information of the environment regarding what happened at t. It should contain the following:
                 1) are_newborns_agents (jnp.ndarray): a boolean array indicating which agents are newborns at this step
                 2) indexes_parents_agents (jnp.ndarray): an array indicating the indexes of the parents of the newborns at this step
@@ -540,32 +588,16 @@ class GridworldEnv(BaseEcoEnvironment):
         )
 
     def get_observation_space_dict(self) -> Dict[str, EcojaxSpace]:
-        return {
-            "visual_field": Continuous(
-                shape=(
-                    2 * self.vision_range_agent + 1,
-                    2 * self.vision_range_agent + 1,
-                    self.n_channels_map,
-                ),
-                low=None,
-                high=None,
-            ),
-            "energy": Continuous(shape=(), low=0, high=None),
-            "age": Continuous(shape=(), low=0, high=None),
-        }
+        return self.observation_space_dict
 
     def get_action_space_dict(self) -> Dict[str, EcojaxSpace]:
-        return {
-            "direction": Discrete(n=4),
-            "do_eat": Discrete(n=2),
-            "do_reproduce": Discrete(n=2),
-        }
+        return self.action_space_dict
 
     def get_class_observation_agent(self) -> Type[ObservationAgent]:
-        return ObservationAgentGridworld
+        return self.ObservationAgentGridworld
 
     def get_class_action_agent(self) -> Type[ActionAgent]:
-        return ActionAgentGridworld
+        return self.ActionAgentGridworld
 
     def render(self) -> None:
         """The rendering function of the environment. It saves the RGB map of the environment as a video."""
@@ -744,13 +776,13 @@ class GridworldEnv(BaseEcoEnvironment):
         self,
         agent_position: jnp.ndarray,
         agent_orientation: jnp.ndarray,
-        action: ActionAgentGridworld,
+        action: ActionAgent,
     ) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """Get the new position and orientation of a single agent.
         Args:
             agent_position (jnp.ndarray): the position of the agent, of shape (2,)
             agent_orientation (jnp.ndarray): the orientation of the agent, of shape ()
-            action (ActionAgentGridworld): the action of the agent, as a ActionAgentGridworld of components of shape ()
+            action (ActionAgent): the action of the agent, as a ActionAgent of components of shape ()
 
         Returns:
             jnp.ndarray: the new position of the agent, of shape (2,)
@@ -768,11 +800,12 @@ class GridworldEnv(BaseEcoEnvironment):
         agent_position_new = agent_position_new % jnp.array([H, W])
 
         # If agent is eating, it won't move
-        do_eat = action.do_eat
-        agent_position_new = jnp.where(do_eat, agent_position, agent_position_new)
-        agent_orientation_new = jnp.where(
-            do_eat, agent_orientation, agent_orientation_new
-        )
+        if "do_eat" in self.list_actions:
+            do_eat = action.do_eat
+            agent_position_new = jnp.where(do_eat, agent_position, agent_position_new)
+            agent_orientation_new = jnp.where(
+                do_eat, agent_orientation, agent_orientation_new
+            )
 
         # Return the new position and orientation of the agent
         return agent_position_new, agent_orientation_new
@@ -780,7 +813,7 @@ class GridworldEnv(BaseEcoEnvironment):
     def step_action_agents(
         self,
         state: StateEnvGridworld,
-        actions: ActionAgentGridworld,
+        actions: ActionAgent,
         key_random: jnp.ndarray,
     ) -> Tuple[StateEnvGridworld, Dict[str, jnp.ndarray]]:
         """Modify the state of the environment by applying the actions of the agents."""
@@ -805,10 +838,13 @@ class GridworldEnv(BaseEcoEnvironment):
         )
 
         # ====== Perform the eating action of the agents ======
+        are_agents_eating = state.are_existing_agents
+        if "do_eat" in self.list_actions:
+            are_agents_eating &= actions.do_eat
         map_agents_try_eating = (
             jnp.zeros_like(map_agents)
             .at[positions_agents_new[:, 0], positions_agents_new[:, 1]]
-            .add(actions.do_eat & state.are_existing_agents)
+            .add(are_agents_eating)
         )  # map of the number of (existing) agents trying to eat at each cell
 
         map_food_energy_bonus_available_per_agent = (
@@ -855,7 +891,7 @@ class GridworldEnv(BaseEcoEnvironment):
     def step_reproduce_agents(
         self,
         state: StateEnvGridworld,
-        actions: ActionAgentGridworld,
+        actions: ActionAgent,
         key_random: jnp.ndarray,
     ) -> Tuple[StateEnvGridworld, jnp.ndarray, jnp.ndarray]:
         """Reproduce the agents in the environment."""
@@ -866,7 +902,7 @@ class GridworldEnv(BaseEcoEnvironment):
         are_agents_trying_reprod = (
             state.energy_agents > self.energy_req_reprod
         ) & are_existing_agents
-        if self.do_active_reprod:
+        if "do_reproduce" in self.list_actions:
             are_agents_trying_reprod &= actions.do_reproduce
 
         # # For test
@@ -959,21 +995,21 @@ class GridworldEnv(BaseEcoEnvironment):
 
     def get_observations_agents(
         self, state: StateEnvGridworld
-    ) -> Tuple[ObservationAgentGridworld, Dict[str, jnp.ndarray]]:
+    ) -> Tuple[ObservationAgent, Dict[str, jnp.ndarray]]:
         """Extract the observations of the agents from the state of the environment.
 
         Args:
             state (StateEnvGridworld): the state of the environment
 
         Returns:
-            observation_agents (ObservationAgentGridworld): the observations of the agents
+            observation_agents (ObservationAgent): the observations of the agents
             dict_measures (Dict[str, jnp.ndarray]): a dictionary of the measures of the environment
         """
 
         def get_single_agent_visual_field(
             agent_position: jnp.ndarray,
             agent_orientation: jnp.ndarray,
-        ) -> ObservationAgentGridworld:
+        ) -> ObservationAgent:
             """Get the visual field of a single agent.
 
             Args:
@@ -981,7 +1017,7 @@ class GridworldEnv(BaseEcoEnvironment):
                 agent_orientation (jnp.ndarray): the orientation of the agent, of shape ()
 
             Returns:
-                ObservationAgentGridworld: the observation of the agent
+                ObservationAgent: the observation of the agent
             """
             H, W, c = state.map.shape
 
@@ -1010,23 +1046,16 @@ class GridworldEnv(BaseEcoEnvironment):
             # Return the visual field of the agent
             return vis_field
 
-        # Vectorize the function to get the observation of many agents
-        get_many_agents_visual_field = jax.vmap(
-            get_single_agent_visual_field, in_axes=0
-        )
-
-        # Compute the observations of all the agents
-        visual_field = get_many_agents_visual_field(
-            state.positions_agents,
-            state.orientation_agents,
-        )
-
         # Create the observation of the agents
-        observations = ObservationAgentGridworld(
-            visual_field=visual_field,
-            energy=state.energy_agents,
-            age=state.age_agents,
-        )
+        dict_observations: Dict[str, jnp.ndarray] = {
+            "energy": state.energy_agents,
+            "age": state.age_agents,
+        }
+        if "visual_field" in self.list_observations:
+            dict_observations["visual_field"] = jax.vmap(
+                get_single_agent_visual_field, in_axes=0
+            )(state.positions_agents, state.orientation_agents)
+        observations = self.ObservationAgentGridworld(**{name_obs: dict_observations[name_obs] for name_obs in self.list_observations})
 
         dict_measures = {}
 
@@ -1041,7 +1070,7 @@ class GridworldEnv(BaseEcoEnvironment):
     def compute_measures(
         self,
         state: StateEnvGridworld,
-        actions: ActionAgentGridworld,
+        actions: ActionAgent,
         state_new: StateEnvGridworld,
         key_random: jnp.ndarray,
     ) -> Dict[str, jnp.ndarray]:
@@ -1049,7 +1078,7 @@ class GridworldEnv(BaseEcoEnvironment):
 
         Args:
             state (StateEnvGridworld): the state of the environment
-            actions (ActionAgentGridworld): the actions of the agents
+            actions (ActionAgent): the actions of the agents
             state_new (StateEnvGridworld): the new state of the environment
             key_random (jnp.ndarray): the random key
 
@@ -1065,9 +1094,12 @@ class GridworldEnv(BaseEcoEnvironment):
             elif name_measure == "n_plants":
                 measures = jnp.sum(state.map[..., idx_plants])
             # Immediate measures
-            elif name_measure == "do_action_eat":
+            elif name_measure == "do_action_eat" and "do_eat" in self.list_actions:
                 measures = actions.do_eat
-            elif name_measure == "do_action_reproduce":
+            elif (
+                name_measure == "do_action_reproduce"
+                and "do_reproduce" in self.list_actions
+            ):
                 raise NotImplementedError("Do action reproduce is not implemented yet")
             elif name_measure == "do_action_forward":
                 measures = actions.direction == 0

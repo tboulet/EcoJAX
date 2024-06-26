@@ -10,6 +10,7 @@ from flax import struct
 import flax.linen as nn
 
 from ecojax.core import EcoInformation
+from ecojax.models.base_model import BaseModel
 from ecojax.spaces import EcojaxSpace
 from ecojax.types import ObservationAgent, ActionAgent, StateAgent
 
@@ -47,7 +48,7 @@ class BaseAgentSpecies(ABC):
         self.config = config
         self.n_agents_max = n_agents_max
         self.n_agents_initial = n_agents_initial
-        self.model = model
+        self.model : BaseModel = model
 
     @abstractmethod
     def initialize(self, key_random: jnp.ndarray) -> None:

@@ -30,7 +30,7 @@ class HyperParametersRL:
 
 
 @struct.dataclass
-class StateAgentRL(StateAgent):
+class AgentRL(StateAgent):
     # The age of the agent, in number of timesteps
     age: int
 
@@ -40,8 +40,14 @@ class StateAgentRL(StateAgent):
     # The hyperparameters of the agent
     hp: HyperParametersRL
 
-    # The training state of the agent
-    tr_state: train_state.TrainState
+
+@struct.dataclass
+class StateSpecies:
+    # The agents of the species
+    agents: StateAgent  # Batched
+
+    # The training state of the species
+    tr_state: train_state.TrainState  # Batched
 
 
 class RL_AgentSpecies(BaseAgentSpecies):
@@ -50,39 +56,37 @@ class RL_AgentSpecies(BaseAgentSpecies):
     def get_initial_hp(self) -> HyperParametersRL:
         return HyperParametersRL(**self.config["hp_initial"])
 
-    def init_single_agent(
+    def init_agent(
         self,
-        model: BaseModel,
         key_random: jnp.ndarray,
         params: Dict[str, jnp.ndarray] = None,
         hp: HyperParametersRL = None,
     ) -> jnp.ndarray:
         if params is None:
-            variables = model.get_initialized_variables(key_random)
+            variables = self.model.get_initialized_variables(key_random)
             params = variables.get("params", {})
         if hp is None:
             hp = self.get_initial_hp()
-        tx = optax.adam(learning_rate=hp.lr)
-        tr_state = train_state.TrainState.create(
-            apply_fn=model.apply, params=params, tx=tx
-        )
-        return StateAgentRL(
+        return AgentRL(
             age=0,
             params=params,
             hp=hp,
-            tr_state=tr_state,
         )
 
-    def initialize(self, key_random: jnp.ndarray) -> None:
+    def get_tr_state(self, agent: AgentRL) -> train_state.TrainState:
+        tx = optax.adam(learning_rate=agent.hp.lr)
+        tr_state = train_state.TrainState.create(
+            apply_fn=self.model.apply, params=agent.params, tx=tx
+        )
+        return tr_state
 
+    def initialize(self, key_random: jnp.ndarray) -> None:
         # Initialize the state
         key_random, subkey = random.split(key_random)
         batch_keys = jax.random.split(subkey, self.n_agents_max)
-        init_many_agents = jax.vmap(self.init_single_agent, in_axes=(None, 0))
-        self.batch_state_agents = init_many_agents(
-            self.model,
-            batch_keys,
-        )
+        batch_agents = jax.vmap(self.init_agent)(batch_keys)
+        batch_tr_states = jax.vmap(self.get_tr_state)(batch_agents)
+        self.state = StateSpecies(agents=batch_agents, tr_state=batch_tr_states)
 
     def react(
         self,
@@ -91,9 +95,9 @@ class RL_AgentSpecies(BaseAgentSpecies):
         eco_information: EcoInformation,
     ) -> ActionAgent:
 
-        self.batch_state_agents, batch_actions = self.react_jitted(
+        self.state, batch_actions = self.react_jitted(
             key_random=key_random,
-            batch_state_agents=self.batch_state_agents,
+            state_species=self.state,
             batch_observations=batch_observations,
             eco_information=eco_information,
         )
@@ -104,15 +108,15 @@ class RL_AgentSpecies(BaseAgentSpecies):
     def react_jitted(
         self,
         key_random: jnp.ndarray,
-        batch_state_agents: StateAgentRL,  # Batched
+        state_species: StateSpecies,
         batch_observations: ObservationAgent,  # Batched
         eco_information: EcoInformation,
     ) -> jnp.ndarray:
-
+        
         # Apply the mutation
         batch_keys = random.split(key_random, self.n_agents_max)
-        batch_state_agents_mutated = jax.vmap(self.mutate_state_agent)(
-            batch_state_agents, key_random=batch_keys
+        batch_agents_mutated = jax.vmap(self.mutate_state_agent)(
+            agent=state_species.agents, key_random=batch_keys
         )
 
         # Transfer the genes from the parents to the childs component by component using jax.tree_map
@@ -150,71 +154,79 @@ class RL_AgentSpecies(BaseAgentSpecies):
             )
             return genes_inherited
 
-        new_batch_state_agents = tree_map(
+        new_batch_agents = tree_map(
             manage_genetic_component_inheritance,
-            batch_state_agents,
-            batch_state_agents_mutated,
+            state_species.agents,
+            batch_agents_mutated,
+        )
+        
+        new_state_species = StateSpecies(
+            agents=new_batch_agents,
+            tr_state=state_species.tr_state,
         )
 
         # Agent-wise reaction
         key_random, subkey = random.split(key_random)
-        new_batch_state_agents, batch_actions = self.act_agents(
+        new_state_species, batch_actions = self.act_agents(
             key_random=subkey,
+            state_species=new_state_species,
             batch_observations=batch_observations,
-            batch_state_agents=new_batch_state_agents,
         )
 
-        return new_batch_state_agents, batch_actions
+        return new_state_species, batch_actions
 
     # =============== Mutation methods =================
 
     def mutate_state_agent(
-        self, state_agent: StateAgentRL, key_random: jnp.ndarray
-    ) -> StateAgentRL:
-        # If "innate" learning is enable, inherit the parameters from the parents with a small mutation, else reset the parameters
-        if self.config["innate_learning"]:
-            key_random, subkey = random.split(key_random)
-            params = mutation_gaussian_noise(
-                arr=state_agent.params,
-                mutation_rate=0.1,
-                mutation_std=0.01,
-                key_random=subkey,
-            )
-        else:
-            variables = self.model.get_initialized_variables(key_random)
-            params = variables.get("params", {})
+        self, agent: AgentRL, key_random: jnp.ndarray
+    ) -> AgentRL:
 
         # Mutate the hyperparameters
         key_random, *subkeys = random.split(key_random, 5)
         hp = HyperParametersRL(
             lr=mutate_scalar(
-                value=state_agent.hp.lr, range=(0, None), key_random=subkeys[0]
+                value=agent.hp.lr, range=(0, None), key_random=subkeys[0]
             ),
             gamma=mutate_scalar(
-                value=state_agent.hp.gamma, range=(0, 1), key_random=subkeys[1]
+                value=agent.hp.gamma, range=(0, 1), key_random=subkeys[1]
             ),
         )
-        # Return the mutated state
-        return state_agent.replace(
-            age=0,
-            params=params,
-            hp=hp,
-            tr_state=state_agent.tr_state.replace(params=params),
-        )
+
+        # If "innate" learning is enable, inherit the parameters from the parents with a small mutation
+        if self.config["innate"]:
+            key_random, subkey = random.split(key_random)
+            params = mutation_gaussian_noise(
+                arr=agent.params,
+                mutation_rate=0.1,
+                mutation_std=0.01,
+                key_random=subkey,
+            )
+            return self.init_agent(
+                key_random=key_random,
+                params=params,
+                hp=hp,
+            )
+        # Else, reset the parameters
+        else:
+            return self.init_agent(
+                key_random=key_random,
+                hp=hp,
+            )
 
     # =============== Agent creation methods =================
 
     def act_agents(
         self,
         key_random: jnp.ndarray,
+        state_species: StateSpecies,
         batch_observations: ObservationAgent,  # Batched
-        batch_state_agents: StateAgentRL,  # Batched
     ) -> jnp.ndarray:
 
         def act_single_agent(
             key_random: jnp.ndarray,
+            state_agent: AgentRL,
+            tr_state: train_state.TrainState,
             obs: jnp.ndarray,
-            state_agent: StateAgentRL,
         ) -> jnp.ndarray:
             # Inference part
             action, prob_action = self.model.apply(
@@ -224,15 +236,20 @@ class RL_AgentSpecies(BaseAgentSpecies):
             )
             # Learning part
             state_agent.replace(age=state_agent.age + 1)
+            pass  # TODO: Implement the learning part
             # Update the agent's state and act
-            return state_agent, action
+            return state_agent, tr_state, action
 
-        act_many_agents = jax.vmap(act_single_agent, in_axes=(0, 0, 0))
         batch_keys = random.split(key_random, self.n_agents_max)
-        batch_state_agents, batch_actions = act_many_agents(
-            batch_keys,
-            batch_observations,
-            batch_state_agents,
+        batch_agents, batch_tr_state, batch_actions = jax.vmap(act_single_agent)(
+            key_random=batch_keys,
+            state_agent=state_species.agents,
+            tr_state=state_species.tr_state,
+            obs=batch_observations,
         )
 
-        return batch_state_agents, batch_actions
+        new_state_species = StateSpecies(
+            agents=batch_agents,
+            tr_state=batch_tr_state,
+        )
+        return new_state_species, batch_actions

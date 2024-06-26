@@ -31,16 +31,7 @@ from ecojax.video import VideoRecorder
 
 
 @struct.dataclass
-class StateEnvGridworld(StateEnv):
-    # The current timestep of the environment
-    timestep: int
-
-    # The current map of the environment, of shape (H, W, C) where C is the number of channels used to represent the environment
-    map: jnp.ndarray  # (height, width, dim_tile) in R
-
-    # The latitude of the sun (the row of the map where the sun is). It represents entirely the sun location.
-    latitude_sun: int
-
+class StateAgentGriworld:
     # Where the agents are, of shape (n_max_agents, 2). positions_agents[i, :] represents the (x,y) coordinates of the i-th agent in the map. Ghost agents are still represented in the array (in position (0,0)).
     positions_agents: jnp.ndarray  # (n_max_agents, 2) in [0, height-1] x [0, width-1]
     # The orientation of the agents, of shape (n_max_agents,) and of values in {0, 1, 2, 3}. orientation_agents[i] represents the index of its orientation in the env.
@@ -54,6 +45,25 @@ class StateEnvGridworld(StateEnv):
     energy_agents: jnp.ndarray  # (n_max_agents,) in [0, +inf)
     # The age of the agents
     age_agents: jnp.ndarray  # (n_max_agents,) in [0, +inf)
+    # The appearance of the agent, encoded as a vector in R^dim_appearance. appearance_agents[i, :] represents the appearance of the i-th agent.
+    # The appearance of an agent allows the agents to distinguish their genetic proximity, as agents with similar appearances are more likely to be genetically close.
+    # By convention : a non-agent has an appearance of zeros, the common ancestors have an appearance of ones, and m superposed agents have an appearance of their average.
+    appearance_agents: jnp.ndarray  # (n_max_agents, dim_appearance) in R
+
+
+@struct.dataclass
+class StateEnvGridworld(StateEnv):
+    # The current timestep of the environment
+    timestep: int
+
+    # The current map of the environment, of shape (H, W, C) where C is the number of channels used to represent the environment
+    map: jnp.ndarray  # (height, width, dim_tile) in R
+
+    # The latitude of the sun (the row of the map where the sun is). It represents entirely the sun location.
+    latitude_sun: int
+
+    # The state of the agents in the environment
+    agents: StateAgentGriworld  # Batched
 
 
 class GridworldEnv(BaseEcoEnvironment):
@@ -331,17 +341,27 @@ class GridworldEnv(BaseEcoEnvironment):
         )
         energy_agents = jnp.ones(self.n_agents_max) * self.energy_initial
         age_agents = jnp.ones(self.n_agents_max)
+        appearance_agents = (
+            jnp.zeros((self.n_agents_max, self.config["dim_appearance"]))
+            .at[: self.n_agents_initial, :]
+            .set(1)
+        )
 
         # Initialize the state
-        self.state = StateEnvGridworld(
-            timestep=0,
-            map=map,
-            latitude_sun=latitude_sun,
+        agents = StateAgentGriworld(
             positions_agents=positions_agents,
             orientation_agents=orientation_agents,
             are_existing_agents=are_existing_agents,
             energy_agents=energy_agents,
             age_agents=age_agents,
+            appearance_agents=appearance_agents,
+        )
+
+        self.state = StateEnvGridworld(
+            timestep=0,
+            map=map,
+            latitude_sun=latitude_sun,
+            agents=agents,
         )
 
         # Initialize the metrics
@@ -480,14 +500,22 @@ class GridworldEnv(BaseEcoEnvironment):
         # ============ (3) Extract the observations of the agents (and some updates) ============
 
         # Make some last updates to the state
-        map_agents_new = jnp.zeros(state_new.map.shape[:2])
-        map_agents_new = map_agents_new.at[
-            state_new.positions_agents[:, 0], state_new.positions_agents[:, 1]
-        ].add(state_new.are_existing_agents)
+        map_agents_new = (
+            jnp.zeros(state_new.map.shape[:2])
+            .at[
+                state.agents.positions_agents[:, 0],
+                state.agents.positions_agents[:, 1],
+            ]
+            .add(state.agents.are_existing_agents)
+        )
         state_new: StateEnvGridworld = state_new.replace(
             map=state_new.map.at[:, :, self.dict_name_channel_to_idx["agents"]].set(
                 map_agents_new
-            )
+            ),
+            timestep=state_new.timestep + 1,
+            agents=state_new.agents.replace(
+                age_agents=state_new.agents.age_agents + 1
+            ),
         )
         # Extract the observations of the agents
         observations_agents, dict_measures = self.get_observations_agents(
@@ -495,15 +523,9 @@ class GridworldEnv(BaseEcoEnvironment):
         )
         dict_measures_all.update(dict_measures)
 
-        # Update the time
-        state_new = state_new.replace(
-            timestep=state_new.timestep + 1,
-            age_agents=state_new.age_agents + 1,
-        )
-
         # ============ (4) Get the ecological information ============
-        are_just_dead_agents = state.are_existing_agents & (
-            ~state_new.are_existing_agents | (state_new.age_agents < state.age_agents)
+        are_just_dead_agents = state_new.agents.are_existing_agents & (
+            ~state_new.agents.are_existing_agents | (state_new.agents.age_agents < state_new.agents.age_agents)
         )
         eco_information = EcoInformation(
             are_newborns_agents=are_newborns_agents,
@@ -513,7 +535,7 @@ class GridworldEnv(BaseEcoEnvironment):
 
         # ============ (5) Check if the environment is done ============
         if self.is_terminal:
-            done = ~jnp.any(state_new.are_existing_agents)
+            done = ~jnp.any(state_new.agents.are_existing_agents)
         else:
             done = False
 
@@ -530,7 +552,7 @@ class GridworldEnv(BaseEcoEnvironment):
         for name_measure, measures in dict_measures_all.items():
             if name_measure not in self.config["metrics"]["measures"]["environmental"]:
                 dict_measures_all[name_measure] = jnp.where(
-                    state.are_existing_agents,
+                    state_new.agents.are_existing_agents,
                     measures,
                     jnp.nan,
                 )
@@ -541,9 +563,9 @@ class GridworldEnv(BaseEcoEnvironment):
             dict_metrics_lifespan.update(
                 agg.aggregate(
                     dict_measures=dict_measures_all,
-                    are_alive=state.are_existing_agents,
+                    are_alive=state_new.agents.are_existing_agents,
                     are_just_dead=are_just_dead_agents,
-                    ages=state.age_agents,
+                    ages=state_new.agents.age_agents,
                 )
             )
 
@@ -553,9 +575,9 @@ class GridworldEnv(BaseEcoEnvironment):
             dict_metrics_population.update(
                 agg.aggregate(
                     dict_measures=dict_metrics_lifespan,
-                    are_alive=state.are_existing_agents,
+                    are_alive=state_new.agents.are_existing_agents,
                     are_just_dead=are_just_dead_agents,
-                    ages=state.age_agents,
+                    ages=state_new.agents.age_agents,
                 )
             )
 
@@ -831,14 +853,14 @@ class GridworldEnv(BaseEcoEnvironment):
         )
         positions_agents_new, orientation_agents_new = (
             get_many_agents_new_position_and_orientation(
-                state.positions_agents,
-                state.orientation_agents,
+                state.agents.positions_agents,
+                state.agents.orientation_agents,
                 actions,
             )
         )
 
         # ====== Perform the eating action of the agents ======
-        are_agents_eating = state.are_existing_agents
+        are_agents_eating = state.agents.are_existing_agents
         if "do_eat" in self.list_actions:
             are_agents_eating &= actions.do_eat
         map_agents_try_eating = (
@@ -855,7 +877,7 @@ class GridworldEnv(BaseEcoEnvironment):
         ]
         if "amount_food_eaten" in self.names_measures:
             dict_measures["amount_food_eaten"] = food_energy_bonus
-        energy_agents_new = state.energy_agents + food_energy_bonus
+        energy_agents_new = state.agents.energy_agents + food_energy_bonus
 
         # Remove plants that have been eaten
         map_plants -= map_agents_try_eating * map_plants
@@ -865,17 +887,20 @@ class GridworldEnv(BaseEcoEnvironment):
         energy_agents_new -= 1
         are_existing_agents_new = (
             (energy_agents_new > self.energy_thr_death)
-            & state.are_existing_agents
-            & (state.age_agents < self.age_max)
+            & state.agents.are_existing_agents
+            & (state.agents.age_agents < self.age_max)
         )
 
         # Update the state
-        state = state.replace(
-            map=state.map.at[:, :, idx_plants].set(map_plants),
+        agents_new = state.agents.replace(
             positions_agents=positions_agents_new,
             orientation_agents=orientation_agents_new,
             energy_agents=energy_agents_new,
             are_existing_agents=are_existing_agents_new,
+        )
+        state = state.replace(
+            map=state.map.at[:, :, idx_plants].set(map_plants),
+            agents=agents_new,
         )
 
         # Update the sun
@@ -898,9 +923,9 @@ class GridworldEnv(BaseEcoEnvironment):
         dict_measures = {}
 
         # Detect which agents are trying to reproduce
-        are_existing_agents = state.are_existing_agents
+        are_existing_agents = state.agents.are_existing_agents
         are_agents_trying_reprod = (
-            state.energy_agents > self.energy_req_reprod
+            state.agents.energy_agents > self.energy_req_reprod
         ) & are_existing_agents
         if "do_reproduce" in self.list_actions:
             are_agents_trying_reprod &= actions.do_reproduce
@@ -966,7 +991,8 @@ class GridworldEnv(BaseEcoEnvironment):
 
         # Decrease the energy of the agents that are reproducing
         energy_agents_new = (
-            state.energy_agents - are_agents_reproducing * self.energy_cost_reprod
+            state.agents.energy_agents
+            - are_agents_reproducing * self.energy_cost_reprod
         )
 
         # Initialize the newborn agents
@@ -974,18 +1000,31 @@ class GridworldEnv(BaseEcoEnvironment):
         energy_agents_new = energy_agents_new.at[indices_newborn_agents_FILLED].set(
             self.energy_initial
         )
-        age_agents_new = state.age_agents.at[indices_newborn_agents_FILLED].set(0)
-        positions_agents_new = state.positions_agents.at[
+        age_agents_new = state.agents.age_agents.at[
             indices_newborn_agents_FILLED
-        ].set(state.positions_agents[indices_had_reproduced_FILLED])
-
+        ].set(0)
+        positions_agents_new = state.agents.positions_agents.at[
+            indices_newborn_agents_FILLED
+        ].set(state.agents.positions_agents[indices_had_reproduced_FILLED])
+        key_random, subkey = jax.random.split(key_random)
+        noise_appearances = jax.random.normal(
+            key=subkey,
+            shape=(self.n_agents_max, self.config["dim_appearance"]),
+        )
+        appearance_agents_new = state.agents.appearance_agents.at[
+            indices_newborn_agents_FILLED
+        ].set(state.agents.appearance_agents[indices_had_reproduced_FILLED] + noise_appearances)
+        
         # Update the state
-        state = state.replace(
+        agents_new = state.agents.replace(
             energy_agents=energy_agents_new,
             are_existing_agents=are_existing_agents_new,
             age_agents=age_agents_new,
             positions_agents=positions_agents_new,
+            appearance_agents=appearance_agents_new,
         )
+        state = state.replace(agents=agents_new)
+
         return (
             state,
             are_newborns_agents,
@@ -1007,34 +1046,65 @@ class GridworldEnv(BaseEcoEnvironment):
         """
 
         def get_single_agent_visual_field(
-            agent_position: jnp.ndarray,
-            agent_orientation: jnp.ndarray,
-        ) -> ObservationAgent:
+            agents: StateAgentGriworld,
+        ) -> jnp.ndarray:
             """Get the visual field of a single agent.
 
             Args:
-                agent_position (jnp.ndarray): the position of the agent, of shape (2,)
-                agent_orientation (jnp.ndarray): the orientation of the agent, of shape ()
+                agent_state (StateAgentGriworld): the state of the agent
 
             Returns:
-                ObservationAgent: the observation of the agent
+                jnp.ndarray: the visual field of the agent, of shape (2 * self.vision_radius + 1, 2 * self.vision_radius + 1, ?)
             """
-            H, W, c = state.map.shape
+            H, W, C_map = state.map.shape
+
+            # Construct the map of the visual field of the agent
+            map_vis_field = state.map  # (H, W, C_map)
+
+            # Compute the agent's genetic distance with other agents
+            appearances_other_agents = (
+                state.agents.appearance_agents
+            )  # (n_agents, dim_appearance)
+            appearance_agent = agents.appearance_agents  # (dim_appearance,)
+            genetic_distance_with_other_agents = jnp.linalg.norm(
+                appearances_other_agents - appearance_agent, axis=-1
+            )  # (n_agents,)
+            map_genetic_distance = (
+                jnp.zeros((H, W))
+                .at[
+                    state.agents.positions_agents[:, 0],
+                    state.agents.positions_agents[:, 1],
+                ]
+                .set(genetic_distance_with_other_agents)
+            )  # (H, W)
+
+            vis_field = jnp.concatenate(
+                [
+                    map_vis_field,
+                    map_genetic_distance[..., None],
+                ],
+                axis=-1,
+            )  # (H, W, C_map + 1)
 
             # Get the visual field of the agent
-            visual_field_x = agent_position[0] + self.grid_indexes_vision_x
-            visual_field_y = agent_position[1] + self.grid_indexes_vision_y
-            vis_field = state.map[
+            visual_field_x = (
+                agents.positions_agents[0] + self.grid_indexes_vision_x
+            )
+            visual_field_y = (
+                agents.positions_agents[1] + self.grid_indexes_vision_y
+            )
+            vis_field = map_vis_field[
                 visual_field_x % H,
                 visual_field_y % W,
-            ]
+            ]  # (2 * self.vision_radius + 1, 2 * self.vision_radius + 1, C_map + 1)
+
             # Rotate the visual field according to the orientation of the agent
             vis_field = jnp.select(
                 [
-                    agent_orientation == 0,
-                    agent_orientation == 1,
-                    agent_orientation == 2,
-                    agent_orientation == 3,
+                    agents.orientation_agents == 0,
+                    agents.orientation_agents == 1,
+                    agents.orientation_agents == 2,
+                    agents.orientation_agents == 3,
                 ],
                 [
                     vis_field,
@@ -1043,19 +1113,25 @@ class GridworldEnv(BaseEcoEnvironment):
                     jnp.rot90(vis_field, k=3, axes=(0, 1)),
                 ],
             )
+
             # Return the visual field of the agent
             return vis_field
 
         # Create the observation of the agents
         dict_observations: Dict[str, jnp.ndarray] = {
-            "energy": state.energy_agents,
-            "age": state.age_agents,
+            "energy": state.agents.energy_agents,
+            "age": state.agents.age_agents,
         }
         if "visual_field" in self.list_observations:
-            dict_observations["visual_field"] = jax.vmap(
-                get_single_agent_visual_field, in_axes=0
-            )(state.positions_agents, state.orientation_agents)
-        observations = self.ObservationAgentGridworld(**{name_obs: dict_observations[name_obs] for name_obs in self.list_observations})
+            dict_observations["visual_field"] = jax.vmap(get_single_agent_visual_field)(
+                state.agents
+            )
+        observations = self.ObservationAgentGridworld(
+            **{
+                name_obs: dict_observations[name_obs]
+                for name_obs in self.list_observations
+            }
+        )
 
         dict_measures = {}
 
@@ -1090,7 +1166,7 @@ class GridworldEnv(BaseEcoEnvironment):
         for name_measure in self.names_measures:
             # Environment measures
             if name_measure == "n_agents":
-                measures = jnp.sum(state.are_existing_agents)
+                measures = jnp.sum(state.agents.are_existing_agents)
             elif name_measure == "n_plants":
                 measures = jnp.sum(state.map[..., idx_plants])
             # Immediate measures
@@ -1111,13 +1187,13 @@ class GridworldEnv(BaseEcoEnvironment):
                 measures = actions.direction == 2
             # State measures
             elif name_measure == "energy":
-                measures = state.energy_agents
+                measures = state.agents.energy_agents
             elif name_measure == "age":
-                measures = state.age_agents
+                measures = state.agents.age_agents
             elif name_measure == "x":
-                measures = state.positions_agents[:, 0]
+                measures = state.agents.positions_agents[:, 0]
             elif name_measure == "y":
-                measures = state.positions_agents[:, 1]
+                measures = state.agents.positions_agents[:, 1]
             elif name_measure == "density_agents_observed":
                 raise NotImplementedError(
                     "Density of agents observed is not implemented yet"

@@ -84,6 +84,9 @@ list_actions:
 # The vision range of an agent. If of value v, the agent will receive the information v tiles around it, so a (2v+1)*(2v+1) grid
 vision_range_agent : 5
 
+# The dimension of the agent's appearance space
+dim_appearance : 3
+
 # The maximum age of an agent
 age_max : 500
 

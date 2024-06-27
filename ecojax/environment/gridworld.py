@@ -13,7 +13,7 @@ from jax.scipy.signal import convolve2d
 from flax import struct
 from jax.debug import breakpoint as jbreakpoint
 
-from ecojax.core import EcoInformation
+from ecojax.core.eco_info import EcoInformation
 from ecojax.environment import BaseEcoEnvironment
 from ecojax.metrics import Aggregator
 from ecojax.spaces import EcojaxSpace, Discrete, Continuous
@@ -64,6 +64,10 @@ class StateEnvGridworld(StateEnv):
 
     # The state of the agents in the environment
     agents: AgentGriworld  # Batched
+
+    # The lifespan and population aggregators
+    aggregators_lifespan: List[Aggregator]
+    aggregators_population: List[Aggregator]
 
 
 class GridworldEnv(BaseEcoEnvironment):
@@ -336,10 +340,11 @@ class GridworldEnv(BaseEcoEnvironment):
         )
         positions_agents %= jnp.array([H, W])
         map = map.at[
-            positions_agents[are_existing_agents, 0],
-            positions_agents[are_existing_agents, 1],
+            positions_agents[:, 0],
+            positions_agents[:, 1],
             idx_agents,
-        ].add(1)
+        ].add(are_existing_agents)
+                    
         key_random, subkey = jax.random.split(key_random)
         orientation_agents = jax.random.randint(
             key=subkey,
@@ -365,22 +370,15 @@ class GridworldEnv(BaseEcoEnvironment):
             appearance_agents=appearance_agents,
         )
 
-        self.state = StateEnvGridworld(
-            timestep=0,
-            map=map,
-            latitude_sun=latitude_sun,
-            agents=agents,
-        )
-
         # Initialize the metrics
-        self.aggregators_lifespan: List[Aggregator] = []
+        aggregators_lifespan: List[Aggregator] = []
         for config_agg in self.config["metrics"]["aggregators_lifespan"]:
             agg = instantiate_class(**config_agg)
-            self.aggregators_lifespan.append(agg)
-        self.aggregators_population: List[Aggregator] = []
+            aggregators_lifespan.append(agg)
+        aggregators_population: List[Aggregator] = []
         for config_agg in self.config["metrics"]["aggregators_population"]:
             agg = instantiate_class(**config_agg)
-            self.aggregators_population.append(agg)
+            aggregators_population.append(agg)
 
         # Initialize ecological informations
         are_newborns_agents = jnp.zeros(self.n_agents_max, dtype=jnp.bool_)
@@ -392,9 +390,20 @@ class GridworldEnv(BaseEcoEnvironment):
             are_just_dead_agents=are_dead_agents,
         )
 
+        # Initialize the state
+        state = StateEnvGridworld(
+            timestep=0,
+            map=map,
+            latitude_sun=latitude_sun,
+            agents=agents,
+            aggregators_lifespan=aggregators_lifespan,
+            aggregators_population=aggregators_population,
+        )
+
         # Return the information required by the agents
-        observations_agents, _ = self.get_observations_agents(state=self.state)
+        observations_agents, _ = self.get_observations_agents(state=state)
         return (
+            state,
             observations_agents,
             eco_information,
             False,
@@ -403,78 +412,21 @@ class GridworldEnv(BaseEcoEnvironment):
 
     def step(
         self,
-        key_random: jnp.ndarray,
-        actions: jnp.ndarray,
-    ) -> Tuple[
-        ObservationAgent,
-        EcoInformation,
-        bool,
-        Dict[str, Any],
-    ]:
-        timestep = self.state.timestep
-        # Apply the step function to the environment
-        (
-            self.state,
-            observations_agents,
-            eco_information,
-            done,
-            info,
-            self.aggregators_lifespan,
-            self.aggregators_population,
-        ) = self.step_jitted(
-            key_random=key_random,
-            state=self.state,
-            actions=actions,
-            aggregators_lifespan=self.aggregators_lifespan,
-            aggregators_population=self.aggregators_population,
-        )
-
-        # Set metrics to numpy arrays for logging
-        if timestep % self.period_logging == 0:
-            # putting this here as a temporary hack bc i don't yet have a jit-able way to compute the average group size
-            idx_agents = self.dict_name_channel_to_idx["agents"]
-            group_sizes = compute_group_sizes(self.state.map[..., idx_agents])
-            info["metrics"]["average_group_size"] = group_sizes.mean()
-            info["metrics"]["max_group_size"] = group_sizes.max()
-            info["metrics"] = {
-                key: np.array(value) for key, value in info["metrics"].items()
-            }
-        else:
-            info["metrics"] = {}
-
-        # Return the information required by the agents
-        return (
-            observations_agents,
-            eco_information,
-            done,
-            info,
-        )
-
-    @partial(jax.jit, static_argnums=(0,))
-    def step_jitted(
-        self,
-        key_random: jnp.ndarray,
         state: StateEnvGridworld,
         actions: jnp.ndarray,
-        aggregators_lifespan: List[Aggregator],
-        aggregators_population: List[Aggregator],
+        key_random: jnp.ndarray,
     ) -> Tuple[
         StateEnvGridworld,
         ObservationAgent,
         EcoInformation,
         bool,
-        Dict[str, Any],
-        List[Aggregator],
-        List[Aggregator],
     ]:
-        """The jitted part of the step function, that takes constant-shaped inputs and outputs.
+        """A step of the environment. This function will update the environment according to the actions of the agents.
 
         Args:
-            key_random (jnp.ndarray): the random key used to generate random numbers
             state (StateEnvGridworld): the state of the environment at timestep t
             actions (jnp.ndarray): the actions of the agents reacting to the environment at timestep t
-            aggregators_lifespan (List[Aggregator]): the aggregators for the lifespan metrics at timestep t
-            aggregators_population (List[Aggregator]): the aggregators for the population metrics at timestep t
+            key_random (jnp.ndarray): the random key used to generate random numbers
 
         Returns:
             state_new (StateEnvGridworld): the new state of the environment at timestep t+1
@@ -485,9 +437,6 @@ class GridworldEnv(BaseEcoEnvironment):
                 3) are_dead_agents (jnp.ndarray): a boolean array indicating which agents are dead at this step (i.e. they were alive at t but not at t+1)
                     Note that an agent index could see its are_dead_agents value be False while its are_newborns_agents value is True, if the agent die and another agent is born at the same index
             done (bool): whether the environment is done
-            dict_metrics (Dict[str, Any]): the metrics of the environment. It is attached to timestep t
-            aggregators_lifespan (List[Aggregator]): the aggregators for the lifespan metrics at timestep t+1
-            aggregators_population (List[Aggregator]): the aggregators for the population metrics at timestep t+1
         """
 
         # Initialize the measures dictionnary. This will be used to store the measures of the environment at this step.
@@ -569,56 +518,12 @@ class GridworldEnv(BaseEcoEnvironment):
                     jnp.nan,
                 )
 
-        # Aggregate the measures over the lifespan
-        dict_metrics_lifespan = {}
-        for agg in aggregators_lifespan:
-            dict_metrics_lifespan.update(
-                agg.aggregate(
-                    dict_measures=dict_measures_all,
-                    are_alive=state_new.agents.are_existing_agents,
-                    are_just_dead=are_just_dead_agents,
-                    ages=state_new.agents.age_agents,
-                )
-            )
-
-        # Aggregate the measures over the population
-        dict_metrics_population = {}
-        for agg in aggregators_population:
-            dict_metrics_population.update(
-                agg.aggregate(
-                    dict_measures=dict_metrics_lifespan,
-                    are_alive=state_new.agents.are_existing_agents,
-                    are_just_dead=are_just_dead_agents,
-                    ages=state_new.agents.age_agents,
-                )
-            )
-
-        # Get the final metrics
-        dict_metrics = {
-            **dict_measures_all,
-            **dict_metrics_lifespan,
-            **dict_metrics_population,
-        }
-
-        # Arrange metrics in right format
-        for name_metric in list(dict_metrics.keys()):
-            *names, name_measure = name_metric.split("/")
-            if len(names) == 0:
-                name_metric_new = name_measure
-            else:
-                name_metric_new = f"{name_measure}/{' '.join(names[::-1])}"
-            dict_metrics[name_metric_new] = dict_metrics.pop(name_metric)
-        info = {"metrics": dict_metrics}
-
         # Return the new state and observations
         return (
             state_new,
             observations_agents,
             eco_information,
             done,
-            info,
-            aggregators_lifespan,
-            aggregators_population,
         )
 
     def get_observation_space_dict(self) -> Dict[str, EcojaxSpace]:
@@ -633,10 +538,11 @@ class GridworldEnv(BaseEcoEnvironment):
     def get_class_action_agent(self) -> Type[ActionAgent]:
         return self.ActionAgentGridworld
 
-    def render(self) -> None:
+    def render(self, state : StateEnvGridworld) -> None:
         """The rendering function of the environment. It saves the RGB map of the environment as a video."""
+        return
         if self.cfg_video["do_video"]:
-            t = self.state.timestep
+            t = state.timestep
             if t % self.n_steps_between_videos == 0:
                 self.video_writer = VideoRecorder(
                     filename=f"{self.dir_videos}/video_t{t}.mp4",
@@ -648,13 +554,12 @@ class GridworldEnv(BaseEcoEnvironment):
             if (t_current_video < self.n_steps_per_video) and (
                 t_current_video % self.n_steps_between_frames == 0
             ):
-                self.video_writer.add(self.get_RGB_map(state=self.state))
+                self.video_writer.add(self.get_RGB_map(state=state))
             if t_current_video == self.n_steps_per_video - 1:
                 self.video_writer.close()
 
     # ================== Helper functions ==================
 
-    @partial(jax.jit, static_argnums=(0,))
     def get_RGB_map(self, state: StateEnvGridworld) -> Any:
         """A function for rendering the environment. It returns the RGB map of the environment.
 
@@ -821,7 +726,7 @@ class GridworldEnv(BaseEcoEnvironment):
             jnp.ndarray: the new orientation of the agent, of shape ()
         """
         # Compute the new position and orientation of the agent
-        H, W, c = self.state.map.shape
+        H, W = self.height, self.width
         direction = action.direction
         agent_orientation_new = (agent_orientation + direction) % 4
         angle_new = agent_orientation_new * jnp.pi / 2
@@ -946,6 +851,7 @@ class GridworldEnv(BaseEcoEnvironment):
             & state.agents.are_existing_agents
             & (state.agents.age_agents < self.age_max)
         )
+        appearance_agents_new = state.agents.appearance_agents * are_existing_agents_new[:, None]
 
         # Update the state
         agents_new = state.agents.replace(
@@ -953,6 +859,7 @@ class GridworldEnv(BaseEcoEnvironment):
             orientation_agents=orientation_agents_new,
             energy_agents=energy_agents_new,
             are_existing_agents=are_existing_agents_new,
+            appearance_agents=appearance_agents_new,
         )
         state = state.replace(
             map=state.map.at[:, :, idx_plants].set(map_plants),
@@ -1063,9 +970,12 @@ class GridworldEnv(BaseEcoEnvironment):
             indices_newborn_agents_FILLED
         ].set(state.agents.positions_agents[indices_had_reproduced_FILLED])
         key_random, subkey = jax.random.split(key_random)
-        noise_appearances = jax.random.normal(
-            key=subkey,
-            shape=(self.n_agents_max, self.config["dim_appearance"]),
+        noise_appearances = (
+            jax.random.normal(
+                key=subkey,
+                shape=(self.n_agents_max, self.config["dim_appearance"]),
+            )
+            * 0.001
         )
         appearance_agents_new = state.agents.appearance_agents.at[
             indices_newborn_agents_FILLED

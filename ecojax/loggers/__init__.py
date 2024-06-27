@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Dict, List, Tuple, Type, Union
 
-from ecojax.core import EcoInformation
+from ecojax.core.eco_info import EcoInformation
 
 
 class BaseLogger(ABC):

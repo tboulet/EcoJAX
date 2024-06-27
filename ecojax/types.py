@@ -1,33 +1,48 @@
 from abc import ABC, abstractmethod
 from flax import struct
 
-
+from ecojax.core.eco_info import EcoInformation
+import jax.numpy as jnp
+            
 @struct.dataclass
 class StateEnv:
-    """This JAX data class represents the state of the environment. It is used to store the state of the environment and to apply JAX transformations to it.
+    """This JAX data class represents the state of the environment.
     Instances of this class represents objects that will change of value through the simulation and that entirely representing the non-constant part of the environment.
     """
 
   
 @struct.dataclass
 class ObservationAgent:
-    """This class represents the observation of an agent. It is used to store the observation of an agent and to apply JAX transformations to it.
+    """This class represents the observation of an agent.
     Instancess of this class represents objects that will be given as input to the agents by the environment.
     """
 
 
 @struct.dataclass
 class ActionAgent:
-    """This class represents the action of an agent. It is used to store the action of an agent and to apply JAX transformations to it.
+    """This class represents the action of an agent.
     Instances of this class represents objects that will be output by the agents and given as input to the environment.
     """
-    
-    
+
+
+
 @struct.dataclass
-class StateAgent:
-    """This class represents the current state of an agent. It is used to store the state of an agent and to apply JAX transformations to it.
-    Instances of this class represents objects that will change of value through the simulation and that entirely representing the non-constant part of the agent.
+class StateSpecies:
+    """This class represents the current state of a species of agents.
+    Instances of this class represents objects that will change of value through the simulation and that entirely representing the non-constant part of the species.
     """
+
+
+@struct.dataclass
+class StateGlobal:
+    state_env: StateEnv
+    state_species: StateSpecies
+    observations: ObservationAgent # Batched
+    eco_information: EcoInformation
+    timestep_run: int
+    done: bool
+    key_random: jnp.ndarray
+    
     
     
 class PytreeLike(ABC):

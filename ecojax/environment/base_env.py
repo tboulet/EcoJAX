@@ -3,7 +3,7 @@ from typing import Dict, List, Tuple, Type, Union, Any
 import numpy as np
 import jax.numpy as jnp
 
-from ecojax.core import EcoInformation
+from ecojax.core.eco_info import EcoInformation
 from ecojax.spaces import EcojaxSpace
 from ecojax.types import ActionAgent, StateEnv, ObservationAgent
 
@@ -35,6 +35,9 @@ class BaseEcoEnvironment(ABC):
             n_agents_max (int): the maximal number of agents allowed to exist in the simulation.
             n_agents_initial (int): the initial number of agents in the simulation
         """
+        self.config = config
+        self.n_agents_max = n_agents_max
+        self.n_agents_initial = n_agents_initial
 
     @abstractmethod
     def reset(
@@ -63,13 +66,14 @@ class BaseEcoEnvironment(ABC):
     @abstractmethod
     def step(
         self,
-        key_random: jnp.ndarray,
+        state: StateEnv,
         actions: ActionAgent,
+        key_random: jnp.ndarray,
     ) -> Tuple[
+        StateEnv,
         ObservationAgent,
         EcoInformation,
         bool,
-        Dict[str, Any],
     ]:
         """Perform one step of the Gridworld environment.
 
@@ -86,7 +90,6 @@ class BaseEcoEnvironment(ABC):
                 3) are_dead_agents (jnp.ndarray): a boolean array indicating which agents are dead at this step (i.e. they were alive at t but not at t+1)
                     Note that an agent index could see its are_dead_agents value be False while its are_newborns_agents value is True, if the agent die and another agent is born at the same index
             done (bool): whether the environment is done
-            info (Dict[str, Any]): the info of the environment
         """
         raise NotImplementedError
 
@@ -144,6 +147,6 @@ class BaseEcoEnvironment(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def render(self) -> None:
+    def render(self, state : StateEnv) -> None:
         """Do the rendering of the environment. This can be a visual rendering or a logging of the state of any kind."""
         return

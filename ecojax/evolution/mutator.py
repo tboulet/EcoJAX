@@ -15,25 +15,20 @@ from ecojax.utils import logit, nest_for_array, sigmoid
 @nest_for_array
 def mutation_gaussian_noise(
     arr: jnp.ndarray,
-    mutation_rate: float,
-    mutation_std: float,
+    strength_mutation: float,
     key_random: jnp.ndarray,
 ) -> jnp.ndarray:
     """Mutates an array by adding Gaussian noise to it.
 
     Args:
         arr (jnp.ndarray): the array to mutate
-        mutation_rate (float): the probability of mutating each element of the array
-        mutation_std (float): the standard deviation of the Gaussian noise
+        strength_mutation (float): the strength of the mutation, in [0, +oo]
         key_random (jnp.ndarray): the random key used for the mutation
 
     Returns:
         jnp.ndarray: the mutated array
     """
-    key_random, subkey = random.split(key_random)
-    mask_mutation = random.bernoulli(subkey, mutation_rate, shape=arr.shape)
-    mutation = random.normal(subkey, arr.shape) * mutation_std
-    return arr + mask_mutation * mutation
+    return arr + random.normal(key_random, arr.shape) * strength_mutation
 
 
 def mutate_scalar(
@@ -58,13 +53,13 @@ def mutate_scalar(
     elif range[0] is not None and range[1] is None:
         a = range[0]
         value_centred = value - a
-        value_centred *= jnp.exp(random.normal(key_random))
+        value_centred *= jnp.exp(random.normal(key_random) * 0.1)
         return value_centred + a
     # Mode [-oo, b]:
     elif range[0] is None and range[1] is not None:
         b = range[1]
         value_centred = b - value
-        value_centred *= jnp.exp(random.normal(key_random))
+        value_centred *= jnp.exp(random.normal(key_random) * 0.1)
         return b - value_centred
     # Mode [a, b]:
     else:

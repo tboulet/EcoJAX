@@ -11,16 +11,16 @@ import flax.linen as nn
 
 
 from ecojax.agents.base_agent_species import BaseAgentSpecies
-from ecojax.core import EcoInformation
+from ecojax.core.eco_info import EcoInformation
 from ecojax.models.base_model import BaseModel
 from ecojax.evolution.mutator import mutation_gaussian_noise
-from ecojax.types import ActionAgent, ObservationAgent, StateAgent
+from ecojax.types import ActionAgent, ObservationAgent
 import ecojax.spaces as spaces
 from ecojax.utils import jprint
 
 
 @struct.dataclass
-class StateAgentEvolutionary(StateAgent):
+class StateAgentEvolutionary:
     # The age of the agent, in number of timesteps
     age: int
 
@@ -31,7 +31,7 @@ class StateAgentEvolutionary(StateAgent):
 class NeuroEvolutionAgentSpecies(BaseAgentSpecies):
     """A species of agents that evolve their neural network weights."""
 
-    def initialize(self, key_random: jnp.ndarray) -> None:
+    def reset(self, key_random: jnp.ndarray) -> None:
 
         # Initialize the state
         def init_single_agent(
@@ -83,12 +83,14 @@ class NeuroEvolutionAgentSpecies(BaseAgentSpecies):
 
         # Transfer the genes from the parents to the childs component by component using jax.tree_map
         are_newborns_agents = eco_information.are_newborns_agents
-        indexes_parents = eco_information.indexes_parents # (n_agents, n_parents)
+        indexes_parents = eco_information.indexes_parents  # (n_agents, n_parents)
         if indexes_parents.shape == (self.n_agents_max, 1):
-            indexes_parents = indexes_parents.squeeze(axis=-1) # (n_agents,)
+            indexes_parents = indexes_parents.squeeze(axis=-1)  # (n_agents,)
         else:
-            raise NotImplementedError(f"Invalid shape for indexes_parents: {indexes_parents.shape}")
-        
+            raise NotImplementedError(
+                f"Invalid shape for indexes_parents: {indexes_parents.shape}"
+            )
+
         def manage_genetic_component_inheritance(
             genes: jnp.ndarray,
             genes_mutated: jnp.ndarray,
@@ -139,8 +141,7 @@ class NeuroEvolutionAgentSpecies(BaseAgentSpecies):
             age=0,
             params=mutation_gaussian_noise(
                 arr=state_agent.params,
-                mutation_rate=0.1,
-                mutation_std=0.01,
+                strength_mutation=0.001,
                 key_random=key_random,
             ),
         )

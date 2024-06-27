@@ -9,10 +9,10 @@ import numpy as np
 from flax import struct
 import flax.linen as nn
 
-from ecojax.core import EcoInformation
+from ecojax.core.eco_info import EcoInformation
 from ecojax.models.base_model import BaseModel
 from ecojax.spaces import EcojaxSpace
-from ecojax.types import ObservationAgent, ActionAgent, StateAgent
+from ecojax.types import ObservationAgent, ActionAgent, StateSpecies
 
 
 class BaseAgentSpecies(ABC):
@@ -48,10 +48,10 @@ class BaseAgentSpecies(ABC):
         self.config = config
         self.n_agents_max = n_agents_max
         self.n_agents_initial = n_agents_initial
-        self.model : BaseModel = model
+        self.model: BaseModel = model
 
     @abstractmethod
-    def initialize(self, key_random: jnp.ndarray) -> None:
+    def reset(self, key_random: jnp.ndarray) -> StateSpecies:
         """Initialize the agents of the species. This should in particular initialize the agents species' state,
         i.e. the JAX dataclass that will contain the varying information of the agents species.
 
@@ -62,18 +62,20 @@ class BaseAgentSpecies(ABC):
     @abstractmethod
     def react(
         self,
-        key_random: jnp.ndarray,
+        state: StateSpecies,
         batch_observations: ObservationAgent,
         eco_information: EcoInformation,
+        key_random: jnp.ndarray,
     ) -> ActionAgent:
         """A function through which the agents reach to their observations and return their actions.
         It also handles the reproduction of the agents if required by the environment.
 
         Args:
-            key_random (jnp.ndarray): the random key, of shape (2,)
+            state (StateSpecies): the state of the species, as a StateSpecies object.
             batch_observations (jnp.ndarray): the observations, as a JAX structure of components, each of shape (n_agents_max, **dim_obs_component).
                 It is composed of n_agents_max observations, each of them corresponding to the observation that the i-th indexed agent would receive.
             eco_information (EcoInformation): the eco-information of the environment, as an EcoInformation object.
+            key_random (jnp.ndarray): the random key, of shape (2,)
 
         Returns:
             action (ActionAgent): the actions of the agents, as a ActionAgent object of components of shape (n_agents_max, **dim_action_component).

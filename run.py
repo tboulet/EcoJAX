@@ -1,6 +1,7 @@
 # Logging
 import os
 import cProfile
+from ecojax.core.eco_loop import get_eco_loop_fn
 from ecojax.loggers import BaseLogger
 from ecojax.loggers.cli import LoggerCLI
 from ecojax.loggers.csv import LoggerCSV
@@ -14,6 +15,7 @@ import hydra
 from omegaconf import OmegaConf, DictConfig
 from ecojax.metrics.utils import get_dicts_metrics
 from ecojax.register_hydra import register_hydra_resolvers
+from ecojax.types import ObservationAgent, StateEnv, StateGlobal, StateSpecies
 
 register_hydra_resolvers()
 
@@ -28,20 +30,24 @@ import jax
 from jax import random
 import jax.numpy as jnp
 import numpy as np
+from flax import struct
 
 # Project imports
 from ecojax.environment import env_name_to_EnvClass
 from ecojax.agents import agent_name_to_AgentSpeciesClass
 from ecojax.models import model_name_to_ModelClass
+from ecojax.core.eco_info import EcoInformation
 from ecojax.video import VideoRecorder
 from ecojax.time_measure import RuntimeMeter
 from ecojax.utils import check_jax_device, is_array, is_scalar, try_get_seed
 
-check_jax_device()
+
 
 
 @hydra.main(config_path="configs", config_name="default.yaml")
 def main(config: DictConfig):
+    # Check if GPU is used
+    check_jax_device()
     # Load the configuration
     print("Configuration used :")
     print(OmegaConf.to_yaml(config))
@@ -156,71 +162,44 @@ class Runner:
 
         # =============== Start simulation ===============
         print("Starting simulation...")
-        key_random, subkey = random.split(key_random)
-        (
-            observations_agents,
-            eco_information,
-            done_env,
-            info_env,
-        ) = env.reset(key_random=subkey)
+        
 
         # Log the metrics
-        metrics: Dict[str, Any] = info_env.get("metrics", {})
-        metrics_scalar, metrics_histogram = get_dicts_metrics(metrics)
-        for logger in list_loggers:
-            logger.log_scalars(metrics_scalar, timestep=0)
-            logger.log_histograms(metrics_histogram, timestep=0)
-            logger.log_eco_metrics(eco_information, timestep=0)
+        # metrics: Dict[str, Any] = info_env.get("metrics", {})
+        # metrics_scalar, metrics_histogram = get_dicts_metrics(metrics)
+        # for logger in list_loggers:
+        #     logger.log_scalars(metrics_scalar, timestep=0)
+        #     logger.log_histograms(metrics_histogram, timestep=0)
+        #     logger.log_eco_metrics(eco_information, timestep=0)
 
-        print("Starting agents...")
-        key_random, subkey = random.split(key_random)
-        agent_species.initialize(key_random=subkey)
-
+        
+        
         # ============== Simulation loop ===============
-        print("Simulation started.")
-        # Training loop
-        for timestep_run in tqdm(range(n_timesteps), disable=not do_tqdm):
+        eco_loop = get_eco_loop_fn(
+            env=env,
+            agent_species=agent_species,
+            n_timesteps=n_timesteps,
+            do_render=do_render,
+        )    
+        eco_loop = jax.jit(eco_loop)
+        key_random, subkey = random.split(key_random)
+        eco_loop(key_random=subkey)
+        
+        
+        
 
-            # Render the environment
-            if do_render:
-                env.render()
+        #     # Log the metrics
+        #     metrics: Dict[str, Any] = info_env["metrics"]
+        #     metrics_scalar, metrics_histogram = get_dicts_metrics(metrics)
+        #     for logger in list_loggers:
+        #         logger.log_scalars(metrics_scalar, timestep_run)
+        #         logger.log_histograms(metrics_histogram, timestep_run)
+        #         logger.log_eco_metrics(eco_information, timestep_run)
 
-            # Agents step
-            key_random, subkey = random.split(key_random)
-            actions = agent_species.react(
-                key_random=subkey,
-                batch_observations=observations_agents,
-                eco_information=eco_information,
-            )
 
-            # Env step
-            key_random, subkey = random.split(key_random)
-            (
-                observations_agents,
-                eco_information,
-                done_env,
-                info_env,
-            ) = env.step(
-                key_random=subkey,
-                actions=actions,
-            )
-
-            # Log the metrics
-            metrics: Dict[str, Any] = info_env["metrics"]
-            metrics_scalar, metrics_histogram = get_dicts_metrics(metrics)
-            for logger in list_loggers:
-                logger.log_scalars(metrics_scalar, timestep_run)
-                logger.log_histograms(metrics_histogram, timestep_run)
-                logger.log_eco_metrics(eco_information, timestep_run)
-
-            # Finish the loop if the environment is done
-            if done_env:
-                print("Environment done.")
-                break
-
-        # Finish the WandB run.
-        for logger in list_loggers:
-            logger.close()
+        # # Finish the WandB run.
+        # for logger in list_loggers:
+        #     logger.close()
 
 
 if __name__ == "__main__":

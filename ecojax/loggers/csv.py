@@ -3,7 +3,7 @@ import os
 
 import jax
 import numpy as np
-from ecojax.core import EcoInformation
+from ecojax.core.eco_info import EcoInformation
 from ecojax.evolution.metrics import compute_eco_return, get_phylogenetic_tree
 from ecojax.loggers import BaseLogger
 

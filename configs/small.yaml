@@ -13,6 +13,7 @@ do_cli : False
 do_csv : False
 do_tqdm : True
 do_snakeviz : False
+do_jax_prof : False
 do_render : True
 do_global_log : False
 

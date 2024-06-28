@@ -4,6 +4,7 @@ import cProfile
 from ecojax.loggers import BaseLogger
 from ecojax.loggers.cli import LoggerCLI
 from ecojax.loggers.csv import LoggerCSV
+from ecojax.loggers.jax_profiling import LoggerJaxProfiling
 from ecojax.loggers.snakeviz import LoggerSnakeviz
 from ecojax.loggers.tensorboard import LoggerTensorboard
 from ecojax.loggers.tqdm import LoggerTQDM
@@ -56,6 +57,8 @@ def eco_loop(
     do_cli: bool = config["do_cli"]
     do_csv: bool = config["do_csv"]
     do_tqdm: bool = config["do_tqdm"]
+    do_snakeviz: bool = config["do_snakeviz"]
+    do_jax_prof: bool = config.get("do_jax_prof", False)
     do_render: bool = config["do_render"]
     do_global_log: bool = config["do_global_log"]
 
@@ -86,6 +89,10 @@ def eco_loop(
         list_loggers.append(LoggerCSV(dir_metrics=dir_metrics, do_log_phylo_tree=False))
     if do_tqdm:
         list_loggers.append(LoggerTQDM(n_timesteps=n_timesteps))
+    if do_snakeviz:
+        list_loggers.append(LoggerSnakeviz())
+    if do_jax_prof:
+        list_loggers.append(LoggerJaxProfiling())
 
     # Initialize the environment
     print("Initializing environment...")
@@ -104,20 +111,12 @@ def eco_loop(
     state_species = agent_species.reset(key_random=subkey)
     info_species = {"metrics": {}}
 
-    # Initialize the global state
+    # Initialize the metrics
     metrics_env = info_env.get("metrics", {})
     metrics_species = info_species.get("metrics", {})
     metrics_global = {**metrics_env, **metrics_species}
     info = {"metrics": metrics_global}
-    global_state = StateGlobal(
-        state_env=state_env,
-        state_species=state_species,
-        observations=observations,
-        eco_information=eco_information,
-        timestep_run=0,
-        done=done,
-        key_random=subkey,
-    )
+    
 
     # Initial logging of the metrics
     metrics_global = info.get("metrics", {})
@@ -143,6 +142,7 @@ def eco_loop(
             logger.log_histograms(metrics_histogram, t)
             logger.log_eco_metrics(eco_information, t)
 
+    @jax.jit
     def step_eco_loop(x: Tuple[StateGlobal, Dict[str, Any]]) -> jnp.ndarray:
         global_state, info = x
         key_random = global_state.key_random
@@ -191,6 +191,7 @@ def eco_loop(
             info,
         )
 
+    @jax.jit
     def do_continue_eco_loop(x: Tuple[StateGlobal, Dict[str, Any]]) -> jnp.ndarray:
         global_state, info = x
         return jax.numpy.logical_and(
@@ -200,18 +201,34 @@ def eco_loop(
 
     # Run the simulation
     print("Starting simulation...")
-    global_state, info = step_eco_loop(
-        (global_state, info)
-    )  # Do the first step to obtain info at the right type structure
     
-    def _eco_loop(global_state, info):
-        while_loop(
-            cond_fun=do_continue_eco_loop,
-            body_fun=step_eco_loop,
-            init_val=(global_state, info),
-        )
-    jax.jit(_eco_loop)(global_state, info)
+    # @jax.jit
+    def _eco_loop(global_state : StateGlobal, info : Dict[str, Any]):
 
+        global_state, info = step_eco_loop(
+            (global_state, info)
+        )  # Do the first step to obtain info at the right type structure
+        
+        # while_loop(
+        #     cond_fun=do_continue_eco_loop,
+        #     body_fun=step_eco_loop,
+        #     init_val=(global_state, info),
+        # )
+        while do_continue_eco_loop((global_state, info)):
+            global_state, info = step_eco_loop((global_state, info))
+            
+    global_state = StateGlobal(
+            state_env=state_env,
+            state_species=state_species,
+            observations=observations,
+            eco_information=eco_information,
+            timestep_run=0,
+            done=done,
+            key_random=subkey,
+        )
+    
+    _eco_loop(global_state, info)
+    global_state.key_random.block_until_ready()
     # Close the loggers
     for logger in list_loggers:
         logger.close()

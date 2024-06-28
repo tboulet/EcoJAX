@@ -1061,30 +1061,30 @@ class GridworldEnv(BaseEcoEnvironment):
             # Construct the map of the visual field of the agent
             map_vis_field = state.map  # (H, W, C_map)
 
-            # Compute the agent's genetic distance with other agents
-            appearances_other_agents = (
-                state.agents.appearance_agents
-            )  # (n_agents, dim_appearance)
-            appearance_agent = agents.appearance_agents  # (dim_appearance,)
-            genetic_distance_with_other_agents = jnp.linalg.norm(
-                appearances_other_agents - appearance_agent, axis=-1
-            )  # (n_agents,)
-            map_genetic_distance = (
-                jnp.zeros((H, W))
-                .at[
-                    state.agents.positions_agents[:, 0],
-                    state.agents.positions_agents[:, 1],
-                ]
-                .set(genetic_distance_with_other_agents)
-            )  # (H, W)
+            # # Compute the agent's genetic distance with other agents
+            # appearances_other_agents = (
+            #     state.agents.appearance_agents
+            # )  # (n_agents, dim_appearance)
+            # appearance_agent = agents.appearance_agents  # (dim_appearance,)
+            # genetic_distance_with_other_agents = jnp.linalg.norm(
+            #     appearances_other_agents - appearance_agent, axis=-1
+            # )  # (n_agents,)
+            # map_genetic_distance = (
+            #     jnp.zeros((H, W))
+            #     .at[
+            #         state.agents.positions_agents[:, 0],
+            #         state.agents.positions_agents[:, 1],
+            #     ]
+            #     .set(genetic_distance_with_other_agents)
+            # )  # (H, W)
 
-            vis_field = jnp.concatenate(
-                [
-                    map_vis_field,
-                    map_genetic_distance[..., None],
-                ],
-                axis=-1,
-            )  # (H, W, C_map + 1)
+            # vis_field = jnp.concatenate(
+            #     [
+            #         map_vis_field,
+            #         map_genetic_distance[..., None],
+            #     ],
+            #     axis=-1,
+            # )  # (H, W, C_map + 1)
 
             # Get the visual field of the agent
             visual_field_x = (

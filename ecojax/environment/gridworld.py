@@ -1,5 +1,6 @@
 # Gridworld EcoJAX environment
 
+from collections import defaultdict
 from functools import partial
 import os
 from time import sleep
@@ -135,6 +136,7 @@ class GridworldEnv(EcoEnvironment):
             "plants",
             "agents",
         ]
+        self.list_names_channels += [f"appearance_{i}" for i in range(config["dim_appearance"])]
         self.dict_name_channel_to_idx: Dict[str, int] = {
             name_channel: idx_channel
             for idx_channel, name_channel in enumerate(self.list_names_channels)
@@ -161,10 +163,12 @@ class GridworldEnv(EcoEnvironment):
         self.dict_name_channel_to_color_tag: Dict[str, str] = self.cfg_video[
             "dict_name_channel_to_color_tag"
         ]
-        self.dict_idx_channel_to_color_tag: Dict[int, str] = {
-            idx_channel: self.dict_name_channel_to_color_tag[name_channel]
-            for name_channel, idx_channel in self.dict_name_channel_to_idx.items()
-        }
+        self.dict_idx_channel_to_color_tag: Dict[int, str] = {}
+        for name_channel, idx_channel in self.dict_name_channel_to_idx.items():
+            if name_channel in self.dict_name_channel_to_color_tag:
+                self.dict_idx_channel_to_color_tag[idx_channel] = self.dict_name_channel_to_color_tag[name_channel]
+            else:
+                self.dict_idx_channel_to_color_tag[idx_channel] = "cyan"
         # Sun Parameters
         self.period_sun: int = config["period_sun"]
         self.method_sun: str = config["method_sun"]
@@ -455,19 +459,36 @@ class GridworldEnv(EcoEnvironment):
 
         # ============ (3) Extract the observations of the agents (and some updates) ============
 
-        # Make some last updates to the state
+        H, W, C = state_new.map.shape
+        idx_agents = self.dict_name_channel_to_idx["agents"]
+        
+        # Recreate the map of agents
         map_agents_new = (
-            jnp.zeros(state_new.map.shape[:2])
+            jnp.zeros((H, W))
             .at[
                 state.agents.positions_agents[:, 0],
                 state.agents.positions_agents[:, 1],
             ]
             .add(state.agents.are_existing_agents)
         )
+        
+        # Recreate the map of appearances
+        map_appearances_new = (
+            jnp.zeros((H, W, self.config["dim_appearance"]))
+        )
+        map_appearances_new = map_appearances_new.at[
+            state.agents.positions_agents[:, 0],
+            state.agents.positions_agents[:, 1],
+            :,
+        ].add(state.agents.appearance_agents * state.agents.are_existing_agents[:, None])
+        map_appearances_new /= jnp.maximum(
+            1, map_agents_new[:, :][:, :, None])
+        
+        # Update the state
+        map_new = state_new.map.at[:, :, idx_agents].set(map_agents_new)
+        map_new = map_new.at[:, :, idx_agents + 1:].set(map_appearances_new)
         state_new: StateEnvGridworld = state_new.replace(
-            map=state_new.map.at[:, :, self.dict_name_channel_to_idx["agents"]].set(
-                map_agents_new
-            ),
+            map=map_new,
             timestep=state_new.timestep + 1,
             agents=state_new.agents.replace(age_agents=state_new.agents.age_agents + 1),
         )
@@ -977,38 +998,13 @@ class GridworldEnv(EcoEnvironment):
             # Construct the map of the visual field of the agent
             map_vis_field = state.map  # (H, W, C_map)
 
-            # Compute the agent's genetic distance with other agents
-            appearances_other_agents = (
-                state.agents.appearance_agents
-            )  # (n_agents, dim_appearance)
-            appearance_agent = agents.appearance_agents  # (dim_appearance,)
-            genetic_distance_with_other_agents = jnp.linalg.norm(
-                appearances_other_agents - appearance_agent, axis=-1
-            )  # (n_agents,)
-            map_genetic_distance = (
-                jnp.zeros((H, W))
-                .at[
-                    state.agents.positions_agents[:, 0],
-                    state.agents.positions_agents[:, 1],
-                ]
-                .set(genetic_distance_with_other_agents)
-            )  # (H, W)
-
-            vis_field = jnp.concatenate(
-                [
-                    map_vis_field,
-                    map_genetic_distance[..., None],
-                ],
-                axis=-1,
-            )  # (H, W, C_map + 1)
-
             # Get the visual field of the agent
             visual_field_x = agents.positions_agents[0] + self.grid_indexes_vision_x
             visual_field_y = agents.positions_agents[1] + self.grid_indexes_vision_y
             vis_field = map_vis_field[
                 visual_field_x % H,
                 visual_field_y % W,
-            ]  # (2 * self.vision_radius + 1, 2 * self.vision_radius + 1, C_map + 1)
+            ]  # (2 * self.vision_radius + 1, 2 * self.vision_radius + 1, C_map)
 
             # Rotate the visual field according to the orientation of the agent
             vis_field = jnp.select(

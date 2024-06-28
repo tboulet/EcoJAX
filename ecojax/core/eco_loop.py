@@ -32,7 +32,6 @@ from ecojax.core.eco_info import EcoInformation
 from ecojax.types import ObservationAgent, StateEnv, StateGlobal, StateSpecies
 from ecojax.utils import check_jax_device, is_array, is_scalar, try_get_seed
 
-
 def eco_loop(
     env: EcoEnvironment,
     agent_species: AgentSpecies,
@@ -204,11 +203,14 @@ def eco_loop(
     global_state, info = step_eco_loop(
         (global_state, info)
     )  # Do the first step to obtain info at the right type structure
-    while_loop(
-        cond_fun=do_continue_eco_loop,
-        body_fun=step_eco_loop,
-        init_val=(global_state, info),
-    )
+    
+    def _eco_loop(global_state, info):
+        while_loop(
+            cond_fun=do_continue_eco_loop,
+            body_fun=step_eco_loop,
+            init_val=(global_state, info),
+        )
+    jax.jit(_eco_loop)(global_state, info)
 
     # Close the loggers
     for logger in list_loggers:

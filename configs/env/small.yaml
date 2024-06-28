@@ -5,7 +5,7 @@ height : 40
 width : 40
 
 # Whether the env is terminal, i.e. the simulation stops when all agents are dead
-is_terminal : True
+is_terminal : False
 
 # The period of the logging in number of timesteps
 # period_logging : ${eval:'${n_timesteps} // 200'}

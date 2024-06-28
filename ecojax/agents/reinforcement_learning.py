@@ -12,7 +12,7 @@ import optax
 from flax.training import train_state
 
 
-from ecojax.agents.base_agent_species import BaseAgentSpecies
+from ecojax.agents.base_agent_species import AgentSpecies
 from ecojax.core.eco_info import EcoInformation
 from ecojax.models.base_model import BaseModel
 from ecojax.evolution.mutator import mutate_scalar, mutation_gaussian_noise
@@ -54,7 +54,7 @@ class StateSpeciesRL:
     tr_state: train_state.TrainState  # Batched
 
 
-class RL_AgentSpecies(BaseAgentSpecies):
+class RL_AgentSpecies(AgentSpecies):
     """A species of agents that learn with reinforcement learning."""
 
     def reset(self, key_random: jnp.ndarray) -> StateSpeciesRL:
@@ -115,7 +115,7 @@ class RL_AgentSpecies(BaseAgentSpecies):
         key_random: jnp.ndarray,
     ) -> Tuple[
         StateSpeciesRL,
-        ActionAgent, # Batched
+        ActionAgent,  # Batched
     ]:
 
         # Apply the mutation

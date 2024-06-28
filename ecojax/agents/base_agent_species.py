@@ -15,7 +15,7 @@ from ecojax.spaces import EcojaxSpace
 from ecojax.types import ObservationAgent, ActionAgent, StateSpecies
 
 
-class BaseAgentSpecies(ABC):
+class AgentSpecies(ABC):
     """The base class for any species of agents.
     A species of agents represents a general method for eco-evolutionary algorithms environment-agnostic.
 
@@ -24,7 +24,7 @@ class BaseAgentSpecies(ABC):
     - What is the reproduction mecanism between agents indexes "i1", "i2", ..., "in", where those indexes are received from the environment ?
 
     For obeying the constant shape paradigm, even if the number of agents in the simulation is not constant, the number of "potential agents" is constant and equal to n_agents_max.
-    This imply that any BaseAgentSpecies instance should maintain a population of n_agents_max agents, even if some of them are not existing in the simulation at a given time.
+    This imply that any AgentSpecies instance should maintain a population of n_agents_max agents, even if some of them are not existing in the simulation at a given time.
     """
 
     def __init__(
@@ -34,7 +34,7 @@ class BaseAgentSpecies(ABC):
         n_agents_initial: int,
         model: nn.Module,
     ):
-        """The constructor of the BaseAgentSpecies class. It initializes the species of agents with the configuration.
+        """The constructor of the AgentSpecies class. It initializes the species of agents with the configuration.
         Elements allowing the interactions with the environment are also given as input : the numbers of agents, and the observation and action spaces.
 
         The observation and action space dictionnary are objects allowing to describe the observation and action spaces of the agents. More information can be found in the documentation of the environment at the corresponding methods.

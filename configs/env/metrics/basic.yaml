@@ -9,7 +9,7 @@ measures:
   immediate:
     - do_action_eat
     - do_action_transfer
-    # - do_action_reproduce
+    - do_action_reproduce
     - do_action_forward
     - amount_food_eaten
     - amount_children

@@ -10,7 +10,7 @@ from flax import struct
 import flax.linen as nn
 
 
-from ecojax.agents.base_agent_species import BaseAgentSpecies
+from ecojax.agents.base_agent_species import AgentSpecies
 from ecojax.core.eco_info import EcoInformation
 from ecojax.models.base_model import BaseModel
 from ecojax.evolution.mutator import mutation_gaussian_noise
@@ -28,7 +28,7 @@ class StateAgentEvolutionary:
     params: Dict[str, jnp.ndarray]
 
 
-class NeuroEvolutionAgentSpecies(BaseAgentSpecies):
+class NeuroEvolutionAgentSpecies(AgentSpecies):
     """A species of agents that evolve their neural network weights."""
 
     def reset(self, key_random: jnp.ndarray) -> None:

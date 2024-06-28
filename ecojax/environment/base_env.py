@@ -8,7 +8,7 @@ from ecojax.spaces import EcojaxSpace
 from ecojax.types import ActionAgent, StateEnv, ObservationAgent
 
 
-class BaseEcoEnvironment(ABC):
+class EcoEnvironment(ABC):
     """The base class for any EcoJAX environment.
     An Eco-environment is a simulation with which a (non constant) set of agents will interact and evolve.
     It contains those 2 general notions :
@@ -67,13 +67,14 @@ class BaseEcoEnvironment(ABC):
     def step(
         self,
         state: StateEnv,
-        actions: ActionAgent,
+        actions: jnp.ndarray,
         key_random: jnp.ndarray,
     ) -> Tuple[
         StateEnv,
         ObservationAgent,
         EcoInformation,
         bool,
+        Dict[str, Any],
     ]:
         """Perform one step of the Gridworld environment.
 
@@ -92,7 +93,6 @@ class BaseEcoEnvironment(ABC):
             done (bool): whether the environment is done
         """
         raise NotImplementedError
-
 
     @abstractmethod
     def get_observation_space_dict(self) -> Dict[str, EcojaxSpace]:
@@ -147,6 +147,6 @@ class BaseEcoEnvironment(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def render(self, state : StateEnv) -> None:
+    def render(self, state: StateEnv) -> None:
         """Do the rendering of the environment. This can be a visual rendering or a logging of the state of any kind."""
         return

@@ -1,6 +1,7 @@
 # Hyperparameters
 seed: 
-n_timesteps : 100000
+n_timesteps : 1000
+period_logging : 100
 n_agents_max : 5000
 n_agents_initial : 1000
 
@@ -20,13 +21,13 @@ n_agents_initial : 1000
 do_wandb : False
 wandb_config:
   project : EcoJAX
-do_tb : False
+do_tb : True
 do_cli : False
-do_csv : False
+do_csv : True
 do_tqdm : True
 do_snakeviz : True
 do_jax_prof : False
-do_render : False
+do_render : True
 do_global_log : True
 
 

@@ -1,6 +1,8 @@
 # Logging
 import os
 import cProfile
+
+import jax.experimental
 from ecojax.loggers import BaseLogger
 from ecojax.loggers.cli import LoggerCLI
 from ecojax.loggers.csv import LoggerCSV
@@ -15,6 +17,7 @@ from tqdm import tqdm
 import datetime
 from time import time, sleep
 from typing import Any, Dict, List, Tuple, Type
+from pprint import pprint
 
 # ML libraries
 import jax
@@ -30,8 +33,10 @@ from ecojax.agents import AgentSpecies, agent_name_to_AgentSpeciesClass
 from ecojax.metrics.utils import get_dicts_metrics
 from ecojax.models import model_name_to_ModelClass
 from ecojax.core.eco_info import EcoInformation
+from ecojax.time_measure import RuntimeMeter
 from ecojax.types import ObservationAgent, StateEnv, StateGlobal, StateSpecies
 from ecojax.utils import check_jax_device, is_array, is_scalar, try_get_seed
+
 
 def eco_loop(
     env: EcoEnvironment,
@@ -50,6 +55,7 @@ def eco_loop(
     """
     # Hyperparameters
     n_timesteps: int = config["n_timesteps"]
+    period_logging: int = int(max(1, config["period_logging"]))
 
     # Logging
     do_wandb: bool = config["do_wandb"]
@@ -94,39 +100,8 @@ def eco_loop(
     if do_jax_prof:
         list_loggers.append(LoggerJaxProfiling())
 
-    # Initialize the environment
-    print("Initializing environment...")
-    key_random, subkey = random.split(key_random)
-    (
-        state_env,
-        observations,
-        eco_information,
-        done,
-        info_env,
-    ) = env.reset(key_random=subkey)
-
-    # Initialize the species
-    print("Initializing agents...")
-    key_random, subkey = random.split(key_random)
-    state_species = agent_species.reset(key_random=subkey)
-    info_species = {"metrics": {}}
-
-    # Initialize the metrics
-    metrics_env = info_env.get("metrics", {})
-    metrics_species = info_species.get("metrics", {})
-    metrics_global = {**metrics_env, **metrics_species}
-    info = {"metrics": metrics_global}
-    
-
-    # Initial logging of the metrics
-    metrics_global = info.get("metrics", {})
-    metrics_scalar, metrics_histogram = get_dicts_metrics(metrics_global)
-    for logger in list_loggers:
-        logger.log_scalars(metrics_scalar, timestep=0)
-        logger.log_histograms(metrics_histogram, timestep=0)
-        logger.log_eco_metrics(eco_information, timestep=0)
-
     def render_eco_loop(x: Tuple[StateGlobal, Dict[str, Any]]) -> jnp.ndarray:
+    
         global_state, info = x
         t = global_state.timestep_run.item()
 
@@ -140,15 +115,15 @@ def eco_loop(
         for logger in list_loggers:
             logger.log_scalars(metrics_scalar, t)
             logger.log_histograms(metrics_histogram, t)
-            logger.log_eco_metrics(eco_information, t)
+            logger.log_eco_metrics(global_state.eco_information, t)
+
+        return x
 
     @jax.jit
     def step_eco_loop(x: Tuple[StateGlobal, Dict[str, Any]]) -> jnp.ndarray:
+        print("compiling step_eco_loop...")
         global_state, info = x
         key_random = global_state.key_random
-
-        # Callback
-        jax.debug.callback(render_eco_loop, (global_state, info))
 
         # Agents step
         key_random, subkey = random.split(key_random)
@@ -199,36 +174,85 @@ def eco_loop(
             global_state.timestep_run < n_timesteps,
         )
 
-    # Run the simulation
-    print("Starting simulation...")
-    
-    # @jax.jit
-    def _eco_loop(global_state : StateGlobal, info : Dict[str, Any]):
+    def _eco_loop(key_random : jnp.ndarray):
+        # Initialize the environment
+        print("Initializing environment...")
+        key_random, subkey = random.split(key_random)
+        (
+            state_env,
+            observations,
+            eco_information,
+            done,
+            info_env,
+        ) = env.reset(key_random=subkey)
 
-        global_state, info = step_eco_loop(
-            (global_state, info)
-        )  # Do the first step to obtain info at the right type structure
-        
-        # while_loop(
-        #     cond_fun=do_continue_eco_loop,
-        #     body_fun=step_eco_loop,
-        #     init_val=(global_state, info),
-        # )
-        while do_continue_eco_loop((global_state, info)):
-            global_state, info = step_eco_loop((global_state, info))
-            
-    global_state = StateGlobal(
+        # Initialize the species
+        print("Initializing agents...")
+        key_random, subkey = random.split(key_random)
+        state_species = agent_species.reset(key_random=subkey)
+        info_species = {"metrics": {}}
+
+        # Initialize the metrics
+        metrics_env = info_env.get("metrics", {})
+        metrics_species = info_species.get("metrics", {})
+        metrics_global = {**metrics_env, **metrics_species}
+        info = {"metrics": metrics_global}
+
+        # Initial logging of the metrics
+        metrics_global = info.get("metrics", {})
+        metrics_scalar, metrics_histogram = get_dicts_metrics(metrics_global)
+        for logger in list_loggers:
+            logger.log_scalars(metrics_scalar, timestep=0)
+            logger.log_histograms(metrics_histogram, timestep=0)
+            logger.log_eco_metrics(eco_information, timestep=0)
+
+        global_state = StateGlobal(
             state_env=state_env,
             state_species=state_species,
             observations=observations,
             eco_information=eco_information,
-            timestep_run=0,
+            timestep_run=jnp.array(0),
             done=done,
             key_random=subkey,
         )
+
+        print("Running the simulation...")
+        
+        # Do two first steps to warm up the JIT
+        for _ in range(2):
+            with RuntimeMeter("warmup steps"):
+                if do_continue_eco_loop((global_state, info)):
+                    global_state, info = step_eco_loop((global_state, info))
+        
+        do_simulation = True
+        while do_simulation:
+            # Render every period_logging steps
+            with RuntimeMeter("render"):
+                render_eco_loop((global_state, info))
+            # Run period_logging steps
+            for _ in range(period_logging):
+                with RuntimeMeter("step"):
+                    if do_continue_eco_loop((global_state, info)):
+                        global_state, info = step_eco_loop((global_state, info))
+                    else:
+                        do_simulation = False
+                        break
+        # Final render
+        with RuntimeMeter("render"):
+            render_eco_loop((global_state, info))
+            # jax.debug.callback(render_eco_loop, (global_state, info))
+                        
+
+        print("End of simulation")
+        print(f"Total runtime: {RuntimeMeter.get_total_runtime()}s")
+        print("Stage runtimes:")
+        pprint(RuntimeMeter.get_runtimes())
+        print("Average stage runtimes:")
+        pprint(RuntimeMeter.get_average_runtimes())
+
+    # Run the simulation
+    _eco_loop(key_random)
     
-    _eco_loop(global_state, info)
-    global_state.key_random.block_until_ready()
     # Close the loggers
     for logger in list_loggers:
         logger.close()

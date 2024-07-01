@@ -1,6 +1,5 @@
 from ecojax.loggers import BaseLogger
 
-from tensorboardX import SummaryWriter
 from typing import Dict, List, Tuple, Type, Union
 from jax import profiler
 
@@ -8,16 +7,10 @@ from jax import profiler
 class LoggerJaxProfiling(BaseLogger):
     def __init__(
         self,
-        log_dir: str = "logs/jax-trace",
-        create_perfetto_link: bool = True,
-        create_perfetto_trace: bool = False,
+        log_dir: str = "./tensorboard",
     ):
-        self.pr = profiler.start_trace(
-            log_dir=log_dir,
-            create_perfetto_link=create_perfetto_link,
-            create_perfetto_trace=create_perfetto_trace,
-        )
-
+        profiler.start_trace(log_dir)
+        
     def log_scalars(
         self,
         *args,
@@ -34,4 +27,4 @@ class LoggerJaxProfiling(BaseLogger):
 
     def close(self):
         profiler.stop_trace()
-        print("JAX profiling finished.")
+        print("[Logging] JAX Profiling finished. See results on tensorboard with command `tensorboard --logdir tensorboard` in section #profile.")

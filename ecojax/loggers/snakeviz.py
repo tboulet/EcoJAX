@@ -27,4 +27,4 @@ class LoggerSnakeviz(BaseLogger):
     def close(self):
         self.pr.disable()
         self.pr.dump_stats("logs/profile_stats.prof")
-        print("Profile stats dumped to logs/profile_stats.prof")
+        print("[Profile] Profile stats dumped to logs/profile_stats.prof")

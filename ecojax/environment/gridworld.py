@@ -570,22 +570,24 @@ class GridworldEnv(EcoEnvironment):
 
     def render(self, state: StateEnvGridworld) -> None:
         """The rendering function of the environment. It saves the RGB map of the environment as a video."""
-        if self.cfg_video["do_video"]:
-            t = state.timestep
-            if t % self.n_steps_between_videos == 0:
-                self.video_writer = VideoRecorder(
-                    filename=f"{self.dir_videos}/video_t{t}.mp4",
-                    fps=self.fps_video,
-                )
-            t_current_video = (
-                t - (t // self.n_steps_between_videos) * self.n_steps_between_videos
+        if not self.cfg_video["do_video"]:
+            return
+        return # TODO : stack frames in state and at this function save the video from the stack of frames
+        t = state.timestep
+        if t % self.n_steps_between_videos == 0:
+            self.video_writer = VideoRecorder(
+                filename=f"{self.dir_videos}/video_t{t}.mp4",
+                fps=self.fps_video,
             )
-            if (t_current_video < self.n_steps_per_video) and (
-                t_current_video % self.n_steps_between_frames == 0
-            ):
-                self.video_writer.add(self.get_RGB_map(state=state))
-            if t_current_video == self.n_steps_per_video - 1:
-                self.video_writer.close()
+        t_current_video = (
+            t - (t // self.n_steps_between_videos) * self.n_steps_between_videos
+        )
+        if (t_current_video < self.n_steps_per_video) and (
+            t_current_video % self.n_steps_between_frames == 0
+        ):
+            self.video_writer.add(self.get_RGB_map(state=state))
+        if t_current_video == self.n_steps_per_video - 1:
+            self.video_writer.close()
 
     # ================== Helper functions ==================
 

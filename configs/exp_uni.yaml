@@ -1,7 +1,8 @@
 # Hyperparameters
 seed: 
 n_timesteps : 1000
-period_logging : 100
+# period_eval : ${eval:'${n_timesteps} / 500'}
+period_eval : 200 
 n_agents_max : 5000
 n_agents_initial : 1000
 

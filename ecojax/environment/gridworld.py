@@ -11,12 +11,12 @@ import jax.numpy as jnp
 import numpy as np
 from jax import random
 from jax.scipy.signal import convolve2d
-from flax import struct
+from flax.struct import PyTreeNode, dataclass
 from jax.debug import breakpoint as jbreakpoint
 
 from ecojax.core.eco_info import EcoInformation
 from ecojax.environment import EcoEnvironment
-from ecojax.metrics import Aggregator
+from ecojax.metrics.new import Aggregator
 from ecojax.spaces import EcojaxSpace, Discrete, Continuous
 from ecojax.types import ActionAgent, ObservationAgent, StateEnv
 from ecojax.utils import (
@@ -31,7 +31,7 @@ from ecojax.utils import (
 from ecojax.video import VideoRecorder
 
 
-@struct.dataclass
+@dataclass
 class AgentGriworld:
     # Where the agents are, of shape (n_max_agents, 2). positions_agents[i, :] represents the (x,y) coordinates of the i-th agent in the map. Ghost agents are still represented in the array (in position (0,0)).
     positions_agents: jnp.ndarray  # (n_max_agents, 2) in [0, height-1] x [0, width-1]
@@ -52,7 +52,7 @@ class AgentGriworld:
     appearance_agents: jnp.ndarray  # (n_max_agents, dim_appearance) in R
 
 
-@struct.dataclass
+@dataclass
 class StateEnvGridworld(StateEnv):
     # The current timestep of the environment
     timestep: int
@@ -67,8 +67,8 @@ class StateEnvGridworld(StateEnv):
     agents: AgentGriworld  # Batched
 
     # The lifespan and population aggregators
-    aggregators_lifespan: List[Aggregator]
-    aggregators_population: List[Aggregator]
+    metrics_lifespan: List[PyTreeNode]
+    metrics_population: List[PyTreeNode]
 
 
 class GridworldEnv(EcoEnvironment):
@@ -203,7 +203,7 @@ class GridworldEnv(EcoEnvironment):
             len(self.list_observations) > 0
         ), "The list of observations must be non-empty"
 
-        @struct.dataclass
+        @dataclass
         class ObservationAgentGridworld(ObservationAgent):
             # The visual field of the agent, of shape (2v+1, 2v+1, n_channels_map) where n_channels_map is the number of channels used to represent the environment.
             if "visual_field" in self.list_observations:
@@ -248,7 +248,7 @@ class GridworldEnv(EcoEnvironment):
         self.list_actions: List[str] = config["list_actions"]
         assert len(self.list_actions) > 0, "The list of actions must be non-empty"
 
-        @struct.dataclass
+        @dataclass
         class ActionAgentGridworld(ActionAgent):
             # The direction of the agent, of shape () and in {0, 3}. direction represents the direction the agent wants to take.
             assert (
@@ -359,7 +359,7 @@ class GridworldEnv(EcoEnvironment):
             maxval=4,
         )
         energy_agents = jnp.ones(self.n_agents_max) * self.energy_initial
-        age_agents = jnp.ones(self.n_agents_max)
+        age_agents = jnp.zeros(self.n_agents_max)
         appearance_agents = (
             jnp.zeros((self.n_agents_max, self.config["dim_appearance"]))
             .at[: self.n_agents_initial, :]
@@ -377,14 +377,19 @@ class GridworldEnv(EcoEnvironment):
         )
 
         # Initialize the metrics
-        aggregators_lifespan: List[Aggregator] = []
+        self.aggregators_lifespan: List[Aggregator] = []
+        list_metrics_lifespan: List[PyTreeNode] = []
         for config_agg in self.config["metrics"]["aggregators_lifespan"]:
-            agg = instantiate_class(**config_agg)
-            aggregators_lifespan.append(agg)
-        aggregators_population: List[Aggregator] = []
+            agg : Aggregator = instantiate_class(**config_agg)
+            self.aggregators_lifespan.append(agg)
+            list_metrics_lifespan.append(agg.get_initial_metrics())
+            
+        self.aggregators_population: List[Aggregator] = []
+        list_metrics_population: List[PyTreeNode] = []
         for config_agg in self.config["metrics"]["aggregators_population"]:
-            agg = instantiate_class(**config_agg)
-            aggregators_population.append(agg)
+            agg : Aggregator = instantiate_class(**config_agg)
+            self.aggregators_population.append(agg)
+            list_metrics_population.append(agg.get_initial_metrics())
 
         # Initialize ecological informations
         are_newborns_agents = jnp.zeros(self.n_agents_max, dtype=jnp.bool_)
@@ -402,8 +407,8 @@ class GridworldEnv(EcoEnvironment):
             map=map,
             latitude_sun=latitude_sun,
             agents=agents,
-            aggregators_lifespan=aggregators_lifespan,
-            aggregators_population=aggregators_population,
+            metrics_lifespan=list_metrics_lifespan,
+            metrics_population=list_metrics_population,
         )
 
         # Return the information required by the agents
@@ -542,7 +547,7 @@ class GridworldEnv(EcoEnvironment):
                     jnp.nan,
                 )
         # Compute the metrics
-        dict_metrics = self.compute_metrics(
+        state_new, dict_metrics = self.compute_metrics(
             state=state, state_new=state_new, dict_measures=dict_measures_all
         )
         info = {"metrics": dict_metrics}
@@ -1242,29 +1247,40 @@ def compute_group_sizes(agent_map: jnp.ndarray) -> float:
             ~state_new.agents.are_existing_agents
             | (state_new.agents.age_agents < state_new.agents.age_agents)
         )
+        
         dict_metrics_lifespan = {}
-        for agg in state.aggregators_lifespan:
-            dict_metrics_lifespan.update(
-                agg.aggregate(
-                    dict_measures=dict_measures,
-                    are_alive=state_new.agents.are_existing_agents,
-                    are_just_dead=are_just_dead_agents,
-                    ages=state_new.agents.age_agents,
+        new_list_metrics_lifespan = []
+        for (agg, metrics) in zip(
+            self.aggregators_lifespan, state.metrics_lifespan
+        ):
+            new_metrics = agg.update_metrics(
+                metrics=metrics,
+                dict_measures=dict_measures,
+                are_alive=state_new.agents.are_existing_agents,
+                are_just_dead=are_just_dead_agents,
+                ages=state_new.agents.age_agents,
                 )
-            )
+            dict_metrics_lifespan.update(agg.get_dict_metrics(new_metrics))
+            new_list_metrics_lifespan.append(new_metrics)
+        state_new_new = state_new.replace(metrics_lifespan=new_list_metrics_lifespan)
 
         # Aggregate the measures over the population
         dict_metrics_population = {}
-        for agg in state.aggregators_population:
-            dict_metrics_population.update(
-                agg.aggregate(
-                    dict_measures=dict_metrics_lifespan,
-                    are_alive=state_new.agents.are_existing_agents,
-                    are_just_dead=are_just_dead_agents,
-                    ages=state_new.agents.age_agents,
+        new_list_metrics_population = []
+        for (agg, metrics) in zip(
+            self.aggregators_population, state.metrics_population
+        ):
+            new_metrics = agg.update_metrics(
+                metrics=metrics,
+                dict_measures=dict_measures,
+                are_alive=state_new.agents.are_existing_agents,
+                are_just_dead=are_just_dead_agents,
+                ages=state_new.agents.age_agents,
                 )
-            )
-
+            dict_metrics_population.update(agg.get_dict_metrics(new_metrics))
+            new_list_metrics_population.append(new_metrics)
+        state_new_new = state_new_new.replace(metrics_population=new_list_metrics_population)
+        
         # Get the final metrics
         dict_metrics = {
             **dict_measures,
@@ -1281,4 +1297,4 @@ def compute_group_sizes(agent_map: jnp.ndarray) -> float:
                 name_metric_new = f"{name_measure}/{' '.join(names[::-1])}"
             dict_metrics[name_metric_new] = dict_metrics.pop(name_metric)
 
-        return dict_metrics
+        return state_new_new, dict_metrics

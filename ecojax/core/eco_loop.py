@@ -55,7 +55,7 @@ def eco_loop(
     """
     # Hyperparameters
     n_timesteps: int = config["n_timesteps"]
-    period_logging: int = int(max(1, config["period_logging"]))
+    period_eval: int = int(max(1, config["period_eval"]))
 
     # Logging
     do_wandb: bool = config["do_wandb"]
@@ -119,7 +119,7 @@ def eco_loop(
 
         return x
 
-    @jax.jit
+    # @jax.jit
     def step_eco_loop(x: Tuple[StateGlobal, Dict[str, Any]]) -> jnp.ndarray:
         print("compiling step_eco_loop...")
         global_state, info = x
@@ -226,11 +226,11 @@ def eco_loop(
         
         do_simulation = True
         while do_simulation:
-            # Render every period_logging steps
+            # Render every period_eval steps
             with RuntimeMeter("render"):
                 render_eco_loop((global_state, info))
-            # Run period_logging steps
-            for _ in range(period_logging):
+            # Run period_eval steps
+            for _ in range(period_eval):
                 with RuntimeMeter("step"):
                     if do_continue_eco_loop((global_state, info)):
                         global_state, info = step_eco_loop((global_state, info))

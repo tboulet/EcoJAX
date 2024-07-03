@@ -54,13 +54,6 @@ def main(config: DictConfig):
     # Run in a snakeviz profile
     runner = Runner(config)
     runner.run()
-    # if not config["do_snakeviz"]:
-    #     runner.run()
-    # else:
-    #     with cProfile.Profile() as pr:
-    #         runner.run()
-    #     pr.dump_stats("logs/profile_stats.prof")
-    #     print("Profile stats dumped to logs/profile_stats.prof")
 
     # ================ Configuration ================
 

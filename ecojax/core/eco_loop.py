@@ -101,7 +101,7 @@ def eco_loop(
         list_loggers.append(LoggerJaxProfiling())
 
     def render_eco_loop(x: Tuple[StateGlobal, Dict[str, Any]]) -> jnp.ndarray:
-    
+
         global_state, info = x
         t = global_state.timestep_run.item()
 
@@ -119,7 +119,7 @@ def eco_loop(
 
         return x
 
-    # @jax.jit
+    @jax.jit
     def step_eco_loop(x: Tuple[StateGlobal, Dict[str, Any]]) -> jnp.ndarray:
         print("compiling step_eco_loop...")
         global_state, info = x
@@ -174,7 +174,7 @@ def eco_loop(
             global_state.timestep_run < n_timesteps,
         )
 
-    def _eco_loop(key_random : jnp.ndarray):
+    def _eco_loop(key_random: jnp.ndarray):
         # Initialize the environment
         print("Initializing environment...")
         key_random, subkey = random.split(key_random)
@@ -217,31 +217,45 @@ def eco_loop(
         )
 
         print("Running the simulation...")
-        
+
         # Do two first steps to warm up the JIT
         for _ in range(2):
             with RuntimeMeter("warmup steps"):
                 if do_continue_eco_loop((global_state, info)):
-                    global_state, info = step_eco_loop((global_state, info))
+                    global_state, info = step_eco_loop((global_state, info))        
+
+        def do_n_steps(global_state, info):
+            # Method : native for loop
+            for _ in range(period_eval):
+                global_state, info = step_eco_loop((global_state, info))
+            
+            # # Method : native while loop
+            # while do_continue_eco_loop((global_state, info)):
+            #     global_state, info = step_eco_loop((global_state, info))
+            
+            # # Method : while_loop
+            # return while_loop(lambda x: do_continue_eco_loop(x), lambda x: step_eco_loop(x), (global_state, info))
+            
+            # # Method : Fori_loop
+            # return jax.lax.fori_loop(0, period_eval, lambda i, x: step_eco_loop(x), (global_state, info))
+            
+            # # Method : scan loop
+            # (global_state, info), elems = jax.lax.scan(f=lambda x, el: (step_eco_loop(x), None), init=(global_state, info), xs=None, length=period_eval)
+            
+            return global_state, info
         
-        do_simulation = True
-        while do_simulation:
+        while do_continue_eco_loop((global_state, info)):
             # Render every period_eval steps
             with RuntimeMeter("render"):
                 render_eco_loop((global_state, info))
             # Run period_eval steps
-            for _ in range(period_eval):
-                with RuntimeMeter("step"):
-                    if do_continue_eco_loop((global_state, info)):
-                        global_state, info = step_eco_loop((global_state, info))
-                    else:
-                        do_simulation = False
-                        break
+            with RuntimeMeter("step", n_calls=period_eval):
+                global_state, info = do_n_steps(global_state, info)
+                
         # Final render
         with RuntimeMeter("render"):
             render_eco_loop((global_state, info))
             # jax.debug.callback(render_eco_loop, (global_state, info))
-                        
 
         print("End of simulation")
         print(f"Total runtime: {RuntimeMeter.get_total_runtime()}s")
@@ -252,7 +266,7 @@ def eco_loop(
 
     # Run the simulation
     _eco_loop(key_random)
-    
+
     # Close the loggers
     for logger in list_loggers:
         logger.close()

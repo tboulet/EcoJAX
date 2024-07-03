@@ -407,7 +407,7 @@ class GridworldEnv(EcoEnvironment):
             state,
             observations_agents,
             eco_information,
-            False,
+            jnp.array(False),
             {},
         )
 

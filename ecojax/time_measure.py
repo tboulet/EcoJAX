@@ -60,7 +60,7 @@ class RuntimeMeter:
 
         Args:
             stage_name (str): the name of the stage, as it was used in the context manager.
-
+                        
         Returns:
             float: the average time taken by the stage.
         """
@@ -101,8 +101,15 @@ class RuntimeMeter:
         """
         return sum(RuntimeMeter.stage_name_to_runtime.values())
 
-    def __init__(self, stage_name: str):
+    def __init__(self, stage_name: str, n_calls: int = 1):
+        """Initialize the RuntimeMeter.
+
+        Args:
+            stage_name (str): a string identifying the stage.
+            n_calls (int, optional): the number of calls to the stage. Defaults to 1.
+        """
         self.stage_name = stage_name
+        self.n_calls = n_calls
 
     def __enter__(self):
         self.start_time = time.time()
@@ -110,7 +117,7 @@ class RuntimeMeter:
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.stage_name_to_runtime[self.stage_name] += time.time() - self.start_time
-        self.stage_name_to_num_calls[self.stage_name] += 1
+        self.stage_name_to_num_calls[self.stage_name] += self.n_calls
 
 
 if __name__ == "__main__":

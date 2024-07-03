@@ -30,10 +30,10 @@ from jax.lax import while_loop
 # Project imports
 from ecojax.environment import EcoEnvironment, env_name_to_EnvClass
 from ecojax.agents import AgentSpecies, agent_name_to_AgentSpeciesClass
-from ecojax.metrics.utils import get_dicts_metrics
+from ecojax.metrics.utils import get_dict_metrics_by_type
 from ecojax.models import model_name_to_ModelClass
 from ecojax.core.eco_info import EcoInformation
-from ecojax.time_measure import RuntimeMeter
+from ecojax.time_measure import RuntimeMeter, get_runtime_metrics
 from ecojax.types import ObservationAgent, StateEnv, StateGlobal, StateSpecies
 from ecojax.utils import check_jax_device, is_array, is_scalar, try_get_seed
 
@@ -110,14 +110,13 @@ def eco_loop(
             env.render(state=global_state.state_env)
 
         # Log the metrics
-        metrics_global = info.get("metrics", {})
-        metrics_scalar, metrics_histogram = get_dicts_metrics(metrics_global)
+        metrics_global: dict = info.get("metrics", {}).copy()
+        metrics_global.update(get_runtime_metrics())
+        metrics_scalar, metrics_histogram = get_dict_metrics_by_type(metrics_global)
         for logger in list_loggers:
             logger.log_scalars(metrics_scalar, t)
             logger.log_histograms(metrics_histogram, t)
             logger.log_eco_metrics(global_state.eco_information, t)
-
-        return x
 
     @jax.jit
     def step_eco_loop(x: Tuple[StateGlobal, Dict[str, Any]]) -> jnp.ndarray:
@@ -200,7 +199,7 @@ def eco_loop(
 
         # Initial logging of the metrics
         metrics_global = info.get("metrics", {})
-        metrics_scalar, metrics_histogram = get_dicts_metrics(metrics_global)
+        metrics_scalar, metrics_histogram = get_dict_metrics_by_type(metrics_global)
         for logger in list_loggers:
             logger.log_scalars(metrics_scalar, timestep=0)
             logger.log_histograms(metrics_histogram, timestep=0)
@@ -222,30 +221,40 @@ def eco_loop(
         for _ in range(2):
             with RuntimeMeter("warmup steps"):
                 if do_continue_eco_loop((global_state, info)):
-                    global_state, info = step_eco_loop((global_state, info))        
+                    global_state, info = step_eco_loop((global_state, info))
 
-        @jax.jit
+        # @jax.jit # only works with while_loop, scan, and fori_loop
         def do_n_steps(global_state, info):
             # Method : native for loop
             for _ in range(period_eval):
                 global_state, info = step_eco_loop((global_state, info))
             return global_state, info
-            
+
             # # Method : native while loop
-            # while do_continue_eco_loop((global_state, info)):
+            # t = 0
+            # while do_continue_eco_loop((global_state, info)) and t < period_eval:
             #     global_state, info = step_eco_loop((global_state, info))
+            #     t += 1
             # return global_state, info
-            
-            # # Method : while_loop TODO : include period_eval in the condition
-            # return while_loop(lambda x: do_continue_eco_loop(x), lambda x: step_eco_loop(x), (global_state, info))
-            
-            # # Method : Fori_loop
-            # return jax.lax.fori_loop(0, period_eval, lambda i, x: step_eco_loop(x), (global_state, info))
-            
+
+            # # Method : while_loop
+            # x0 = (global_state, info)
+            # (x0, i) = while_loop(
+            #     lambda x: do_continue_eco_loop(x[0]) and x[1] < period_eval,
+            #     lambda x: (step_eco_loop(x[0]), x[1] + 1),
+            #     (x0, 0),
+            # )
+            # return x0
+
+            # # Method : fori_loop
+            # return jax.lax.fori_loop(
+            #     0, period_eval, lambda i, x: step_eco_loop(x), (global_state, info)
+            # )
+
             # # Method : scan loop
             # (global_state, info), elems = jax.lax.scan(f=lambda x, el: (step_eco_loop(x), None), init=(global_state, info), xs=None, length=period_eval)
             # return global_state, info
-        
+
         while do_continue_eco_loop((global_state, info)):
             # Render every period_eval steps
             with RuntimeMeter("render"):
@@ -253,7 +262,7 @@ def eco_loop(
             # Run period_eval steps
             with RuntimeMeter("step", n_calls=period_eval):
                 global_state, info = do_n_steps(global_state, info)
-                
+
         # Final render
         with RuntimeMeter("render"):
             render_eco_loop((global_state, info))

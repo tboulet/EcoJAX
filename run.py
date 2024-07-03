@@ -13,9 +13,10 @@ from ecojax.loggers.wandb import LoggerWandB
 # Config system
 import hydra
 from omegaconf import OmegaConf, DictConfig
-from ecojax.metrics.utils import get_dicts_metrics
+from ecojax.metrics.utils import get_dict_metrics_by_type
 from ecojax.register_hydra import register_hydra_resolvers
 from ecojax.types import ObservationAgent, StateEnv, StateGlobal, StateSpecies
+
 register_hydra_resolvers()
 
 # Utils
@@ -43,14 +44,14 @@ from ecojax.utils import check_jax_device, is_array, is_scalar, try_get_seed
 
 @hydra.main(config_path="configs", config_name="default.yaml")
 def main(config: DictConfig):
-        
+
     # Print informations
     print(f"Current working directory: {os.getcwd()}")
     check_jax_device()
     print("Configuration used :")
     print(OmegaConf.to_yaml(config))
     config = OmegaConf.to_container(config, resolve=True)
-    
+
     # Run in a snakeviz profile
     runner = Runner(config)
     runner.run()
@@ -70,25 +71,27 @@ class Runner:
         model_name = self.config["model"]["name"]
 
         # ================ Initialization ================
-        
+
         # Seed
         seed = try_get_seed(self.config)
         print(f"Using seed: {seed}")
         np.random.seed(seed)
         key_random = random.PRNGKey(seed)
-    
+
         # Run name
         run_name = f"[{agent_species_name}_{model_name}_{env_name}]_{datetime.datetime.now().strftime('%dth%mmo_%Hh%Mmin%Ss')}_seed{seed}"
+        run_name = self.config.get("name", run_name)
         self.config["run_name"] = run_name
-        
-        
+
         # Create the env
         EnvClass = env_name_to_EnvClass[env_name]
-        if not self.config["do_global_log"]: 
+        if not self.config["do_global_log"]:
             dir_videos = f"./logs/videos/{run_name}"
         else:
             dir_videos = "./logs/videos"
-        self.config["env"]["dir_videos"] = dir_videos # I add this line to force the dir_videos to be the one I want
+        self.config["env"][
+            "dir_videos"
+        ] = dir_videos  # I add this line to force the dir_videos to be the one I want
         env = EnvClass(
             config=self.config["env"],
             n_agents_max=self.config["n_agents_max"],

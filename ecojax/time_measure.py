@@ -120,6 +120,18 @@ class RuntimeMeter:
         self.stage_name_to_num_calls[self.stage_name] += self.n_calls
 
 
+def get_runtime_metrics():
+    """Return the metrics of the runtimes.
+
+    Returns:
+        Dict[str, float]: a dictionnary mapping the stage names to the cumulative and averaged time taken by the stage.
+    """
+    dict_runtime_metrics = {}
+    for stage_name in RuntimeMeter.stage_name_to_runtime:
+        dict_runtime_metrics[f"runtime/{stage_name}"] = RuntimeMeter.get_stage_runtime(stage_name)
+        dict_runtime_metrics[f"runtime/{stage_name}_avg"] = RuntimeMeter.get_averaged_stage_runtime(stage_name)
+    return dict_runtime_metrics
+    
 if __name__ == "__main__":
     import time
     import random

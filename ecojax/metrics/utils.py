@@ -4,7 +4,8 @@ from ecojax.utils import is_array, is_scalar
 import jax.numpy as jnp
 import numpy as np
 
-def get_dicts_metrics(metrics : Dict[str, Any]):
+
+def get_dict_metrics_by_type(metrics: Dict[str, Any]):
     metrics_scalar = {}
     metrics_histogram = {}
     for key, value in metrics.items():

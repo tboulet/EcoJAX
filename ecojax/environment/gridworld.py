@@ -255,6 +255,10 @@ class GridworldEnv(BaseEcoEnvironment):
             if "do_reproduce" in self.list_actions:
                 do_reproduce: jnp.ndarray
 
+            # Whether the agent wants to transfer energy to another agent, of shape () and in {0, 1}.
+            if "do_transfer" in self.list_actions:
+                do_transfer: jnp.ndarray
+
         self.ActionAgentGridworld = ActionAgentGridworld
 
         # Create the action space
@@ -265,6 +269,8 @@ class GridworldEnv(BaseEcoEnvironment):
             self.action_space_dict["do_eat"] = Discrete(n=2)
         if "do_reproduce" in self.list_actions:
             self.action_space_dict["do_reproduce"] = Discrete(n=2)
+        if "do_transfer" in self.list_actions:
+            self.action_space_dict["do_transfer"] = Discrete(n=2)
 
         # Agent's internal dynamics
         self.age_max: int = config["age_max"]
@@ -273,6 +279,8 @@ class GridworldEnv(BaseEcoEnvironment):
         self.energy_thr_death: float = config["energy_thr_death"]
         self.energy_req_reprod: float = config["energy_req_reprod"]
         self.energy_cost_reprod: float = config["energy_cost_reprod"]
+        self.energy_transfer_loss: float = config.get("energy_transfer_loss", 0.0)
+        self.energy_transfer_gain: float = config.get("energy_transfer_gain", 0.0)
         # Other
         self.fill_value: int = self.n_agents_max
 
@@ -423,6 +431,11 @@ class GridworldEnv(BaseEcoEnvironment):
 
         # Set metrics to numpy arrays for logging
         if timestep % self.period_logging == 0:
+            # putting this here as a temporary hack bc i don't yet have a jit-able way to compute the average group size
+            idx_agents = self.dict_name_channel_to_idx["agents"]
+            group_sizes = compute_group_sizes(self.state.map[..., idx_agents])
+            info["metrics"]["average_group_size"] = group_sizes.mean()
+            info["metrics"]["max_group_size"] = group_sizes.max()
             info["metrics"] = {
                 key: np.array(value) for key, value in info["metrics"].items()
             }
@@ -513,9 +526,7 @@ class GridworldEnv(BaseEcoEnvironment):
                 map_agents_new
             ),
             timestep=state_new.timestep + 1,
-            agents=state_new.agents.replace(
-                age_agents=state_new.agents.age_agents + 1
-            ),
+            agents=state_new.agents.replace(age_agents=state_new.agents.age_agents + 1),
         )
         # Extract the observations of the agents
         observations_agents, dict_measures = self.get_observations_agents(
@@ -525,7 +536,8 @@ class GridworldEnv(BaseEcoEnvironment):
 
         # ============ (4) Get the ecological information ============
         are_just_dead_agents = state_new.agents.are_existing_agents & (
-            ~state_new.agents.are_existing_agents | (state_new.agents.age_agents < state_new.agents.age_agents)
+            ~state_new.agents.are_existing_agents
+            | (state_new.agents.age_agents < state_new.agents.age_agents)
         )
         eco_information = EcoInformation(
             are_newborns_agents=are_newborns_agents,
@@ -839,7 +851,6 @@ class GridworldEnv(BaseEcoEnvironment):
         key_random: jnp.ndarray,
     ) -> Tuple[StateEnvGridworld, Dict[str, jnp.ndarray]]:
         """Modify the state of the environment by applying the actions of the agents."""
-
         H, W, C = state.map.shape
         idx_plants = self.dict_name_channel_to_idx["plants"]
         idx_agents = self.dict_name_channel_to_idx["agents"]
@@ -863,6 +874,8 @@ class GridworldEnv(BaseEcoEnvironment):
         are_agents_eating = state.agents.are_existing_agents
         if "do_eat" in self.list_actions:
             are_agents_eating &= actions.do_eat
+        if "do_transfer" in self.list_actions:
+            are_agents_eating &= 1 - actions.do_transfer
         map_agents_try_eating = (
             jnp.zeros_like(map_agents)
             .at[positions_agents_new[:, 0], positions_agents_new[:, 1]]
@@ -882,6 +895,51 @@ class GridworldEnv(BaseEcoEnvironment):
         # Remove plants that have been eaten
         map_plants -= map_agents_try_eating * map_plants
         map_plants = jnp.clip(map_plants, 0, 1)
+
+        # ====== Handle any energy transfer actions ======
+        if "do_transfer" in self.list_actions:
+            # compute pairwise manhattan distance between agents
+            distances = jnp.sum(
+                jnp.abs(positions_agents_new[:, None] - positions_agents_new[None, :]),
+                axis=-1,
+            )
+
+            def per_agent_helper_fn(i):
+                # don't allow both eating and transferring in one timestep
+                is_transfer = (
+                    state.agents.are_existing_agents[i]
+                    & actions.do_transfer[i]
+                    & (1 - actions.do_eat[i])
+                )
+
+                # energy can only be transferred to agents on the same or a directly adjacent tile
+                are_receiving = state.agents.are_existing_agents & (
+                    distances[i, :] <= 1
+                )
+
+                # ensure there are other agents to transfer to, i.e. don't allow self-transfer
+                is_transfer &= jnp.sum(are_receiving) > 1
+
+                loss = is_transfer * self.energy_transfer_loss
+                gain = (
+                    is_transfer
+                    * self.energy_transfer_gain
+                    / jnp.maximum(1, jnp.sum(are_receiving))
+                )
+                return jnp.zeros_like(state.agents.energy_agents).at[i].add(-loss) + (
+                    gain * are_receiving
+                ).astype(jnp.float32)
+
+            transfer_delta_energy = jax.vmap(per_agent_helper_fn, in_axes=0)(
+                jnp.arange(state.agents.energy_agents.size)
+            ).sum(axis=0)
+            energy_agents_new += transfer_delta_energy
+
+            # log the net energy transfer (should always be >= 0)
+            if "net_energy_transfer_per_capita" in self.names_measures:
+                dict_measures["net_energy_transfer_per_capita"] = (
+                    transfer_delta_energy.sum() / state.agents.are_existing_agents.sum()
+                )
 
         # ====== Update the physical status of the agents ======
         energy_agents_new -= 1
@@ -1000,9 +1058,9 @@ class GridworldEnv(BaseEcoEnvironment):
         energy_agents_new = energy_agents_new.at[indices_newborn_agents_FILLED].set(
             self.energy_initial
         )
-        age_agents_new = state.agents.age_agents.at[
-            indices_newborn_agents_FILLED
-        ].set(0)
+        age_agents_new = state.agents.age_agents.at[indices_newborn_agents_FILLED].set(
+            0
+        )
         positions_agents_new = state.agents.positions_agents.at[
             indices_newborn_agents_FILLED
         ].set(state.agents.positions_agents[indices_had_reproduced_FILLED])
@@ -1013,8 +1071,11 @@ class GridworldEnv(BaseEcoEnvironment):
         )
         appearance_agents_new = state.agents.appearance_agents.at[
             indices_newborn_agents_FILLED
-        ].set(state.agents.appearance_agents[indices_had_reproduced_FILLED] + noise_appearances)
-        
+        ].set(
+            state.agents.appearance_agents[indices_had_reproduced_FILLED]
+            + noise_appearances
+        )
+
         # Update the state
         agents_new = state.agents.replace(
             energy_agents=energy_agents_new,
@@ -1087,12 +1148,8 @@ class GridworldEnv(BaseEcoEnvironment):
             )  # (H, W, C_map + 1)
 
             # Get the visual field of the agent
-            visual_field_x = (
-                agents.positions_agents[0] + self.grid_indexes_vision_x
-            )
-            visual_field_y = (
-                agents.positions_agents[1] + self.grid_indexes_vision_y
-            )
+            visual_field_x = agents.positions_agents[0] + self.grid_indexes_vision_x
+            visual_field_y = agents.positions_agents[1] + self.grid_indexes_vision_y
             vis_field = map_vis_field[
                 visual_field_x % H,
                 visual_field_y % W,
@@ -1177,6 +1234,8 @@ class GridworldEnv(BaseEcoEnvironment):
                 and "do_reproduce" in self.list_actions
             ):
                 raise NotImplementedError("Do action reproduce is not implemented yet")
+            elif name_measure == "do_action_transfer":
+                measures = actions.do_transfer
             elif name_measure == "do_action_forward":
                 measures = actions.direction == 0
             elif name_measure == "do_action_left":
@@ -1211,3 +1270,36 @@ class GridworldEnv(BaseEcoEnvironment):
 
         # Return the dictionary of measures
         return dict_measures
+
+
+# ================== Helper functions ==================
+
+
+def compute_group_sizes(agent_map: jnp.ndarray) -> float:
+    H, W = agent_map.shape
+    done = set()
+
+    def dfs(i, j):
+        if (i, j) in done:
+            return 0
+        done.add((i, j))
+
+        if i < 0 or j < 0 or i >= H or j >= W or agent_map[i, j] == 0:
+            return 0
+
+        return (
+            int(agent_map[i, j])
+            + dfs(i + 1, j)
+            + dfs(i - 1, j)
+            + dfs(i, j + 1)
+            + dfs(i, j - 1)
+            + dfs(i - 1, j - 1)
+            + dfs(i - 1, j + 1)
+            + dfs(i + 1, j - 1)
+            + dfs(i + 1, j + 1)
+        )
+
+    groups = jnp.array(
+        [dfs(i, j) for i in range(H) for j in range(W) if agent_map[i, j] > 0]
+    )
+    return groups[groups > 0]

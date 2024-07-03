@@ -224,16 +224,19 @@ def eco_loop(
                 if do_continue_eco_loop((global_state, info)):
                     global_state, info = step_eco_loop((global_state, info))        
 
+        @jax.jit
         def do_n_steps(global_state, info):
             # Method : native for loop
             for _ in range(period_eval):
                 global_state, info = step_eco_loop((global_state, info))
+            return global_state, info
             
             # # Method : native while loop
             # while do_continue_eco_loop((global_state, info)):
             #     global_state, info = step_eco_loop((global_state, info))
+            # return global_state, info
             
-            # # Method : while_loop
+            # # Method : while_loop TODO : include period_eval in the condition
             # return while_loop(lambda x: do_continue_eco_loop(x), lambda x: step_eco_loop(x), (global_state, info))
             
             # # Method : Fori_loop
@@ -241,8 +244,7 @@ def eco_loop(
             
             # # Method : scan loop
             # (global_state, info), elems = jax.lax.scan(f=lambda x, el: (step_eco_loop(x), None), init=(global_state, info), xs=None, length=period_eval)
-            
-            return global_state, info
+            # return global_state, info
         
         while do_continue_eco_loop((global_state, info)):
             # Render every period_eval steps

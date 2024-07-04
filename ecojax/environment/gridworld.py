@@ -694,34 +694,32 @@ class GridworldEnv(BaseEcoEnvironment):
                 with pixel values between 0 and 1
         """
         # Initialize an empty array to store the blended image
-        blended_image = jnp.zeros(images.shape[:2] + (3,), dtype=jnp.float32)
-
-        # Iterate over each channel and apply the corresponding color
-        for channel_idx, color_tag in dict_idx_channel_to_color_tag.items():
-            # Get the color components
-            color = jnp.array(DICT_COLOR_TAG_TO_RGB[color_tag], dtype=jnp.float32)
-
-            # Normalize the color components
-            # color /= jnp.max(color)
-
-            blended_image += color * images[:, :, channel_idx][:, :, None]
-
-        # Clip the pixel values to be between 0 and 1
-        blended_image = jnp.clip(blended_image, 0, 1)
-
-        # Turn black pixels (value of 0 in the 3 channels) to "color_background" pixels
-        tag_color_background = try_get(self.config, "color_background", default="gray")
+        color_tag_background = try_get(self.config, "color_background", default="white")
         assert (
-            tag_color_background in DICT_COLOR_TAG_TO_RGB
-        ), f"Unknown color tag: {tag_color_background}"
-        color_empty = DICT_COLOR_TAG_TO_RGB[tag_color_background]
-        blended_image = jnp.where(
-            jnp.sum(blended_image, axis=-1, keepdims=True) == 0,
-            jnp.array(color_empty, dtype=jnp.float32) * jnp.ones_like(blended_image),
-            blended_image,
+            color_tag_background in DICT_COLOR_TAG_TO_RGB
+        ), f"Unknown color tag: {color_tag_background}"
+        background = jnp.array(
+            DICT_COLOR_TAG_TO_RGB[color_tag_background], dtype=jnp.float32
+        )
+        blended_image = background * jnp.ones(
+            images.shape[:2] + (3,), dtype=jnp.float32
         )
 
-        return blended_image
+        # Iterate over each channel and apply the corresponding color.
+        # For each channel, we set the color at each tile to the channel colour
+        # with an intensity proportional to the number of entities (of that channel)
+        # in the tile, with nonzero intensities scaled to be between 0.3 and 1
+        for channel_idx, color_tag in dict_idx_channel_to_color_tag.items():
+            delta = jnp.array(
+                DICT_COLOR_TAG_TO_RGB[color_tag], dtype=jnp.float32
+            ) - jnp.array([1, 1, 1], dtype=jnp.float32)
+            img = images[:, :, channel_idx][:, :, None]
+            intensity = jnp.where(img > 0, img / jnp.maximum(1, jnp.max(img)), 0)
+            intensity = jnp.where(intensity > 0, (intensity * 0.7) + 0.3, 0)
+            blended_image += delta * intensity
+
+        # Clip all rgb values to be between 0 and 1
+        return jnp.clip(blended_image, 0, 1)
 
     def step_grow_plants(
         self, state: StateEnvGridworld, key_random: jnp.ndarray

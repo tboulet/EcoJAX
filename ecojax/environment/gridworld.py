@@ -16,7 +16,7 @@ from jax.debug import breakpoint as jbreakpoint
 
 from ecojax.core.eco_info import EcoInformation
 from ecojax.environment import EcoEnvironment
-from ecojax.metrics.new import Aggregator
+from ecojax.metrics.aggregators import Aggregator
 from ecojax.spaces import EcojaxSpace, Discrete, Continuous
 from ecojax.types import ActionAgent, ObservationAgent, StateEnv
 from ecojax.utils import (
@@ -136,7 +136,9 @@ class GridworldEnv(EcoEnvironment):
             "plants",
             "agents",
         ]
-        self.list_names_channels += [f"appearance_{i}" for i in range(config["dim_appearance"])]
+        self.list_names_channels += [
+            f"appearance_{i}" for i in range(config["dim_appearance"])
+        ]
         self.dict_name_channel_to_idx: Dict[str, int] = {
             name_channel: idx_channel
             for idx_channel, name_channel in enumerate(self.list_names_channels)
@@ -168,7 +170,9 @@ class GridworldEnv(EcoEnvironment):
         self.dict_idx_channel_to_color_tag: Dict[int, str] = {}
         for name_channel, idx_channel in self.dict_name_channel_to_idx.items():
             if name_channel in self.dict_name_channel_to_color_tag:
-                self.dict_idx_channel_to_color_tag[idx_channel] = self.dict_name_channel_to_color_tag[name_channel]
+                self.dict_idx_channel_to_color_tag[idx_channel] = (
+                    self.dict_name_channel_to_color_tag[name_channel]
+                )
             else:
                 self.dict_idx_channel_to_color_tag[idx_channel] = self.color_tag_unknown_channel
         # Sun Parameters
@@ -380,14 +384,14 @@ class GridworldEnv(EcoEnvironment):
         self.aggregators_lifespan: List[Aggregator] = []
         list_metrics_lifespan: List[PyTreeNode] = []
         for config_agg in self.config["metrics"]["aggregators_lifespan"]:
-            agg : Aggregator = instantiate_class(**config_agg)
+            agg: Aggregator = instantiate_class(**config_agg)
             self.aggregators_lifespan.append(agg)
             list_metrics_lifespan.append(agg.get_initial_metrics())
-            
+
         self.aggregators_population: List[Aggregator] = []
         list_metrics_population: List[PyTreeNode] = []
         for config_agg in self.config["metrics"]["aggregators_population"]:
-            agg : Aggregator = instantiate_class(**config_agg)
+            agg: Aggregator = instantiate_class(**config_agg)
             self.aggregators_population.append(agg)
             list_metrics_population.append(agg.get_initial_metrics())
 
@@ -476,7 +480,7 @@ class GridworldEnv(EcoEnvironment):
 
         H, W, C = state_new.map.shape
         idx_agents = self.dict_name_channel_to_idx["agents"]
-        
+
         # Recreate the map of agents
         map_agents_new = (
             jnp.zeros((H, W))
@@ -486,22 +490,21 @@ class GridworldEnv(EcoEnvironment):
             ]
             .add(state.agents.are_existing_agents)
         )
-        
+
         # Recreate the map of appearances
-        map_appearances_new = (
-            jnp.zeros((H, W, self.config["dim_appearance"]))
-        )
+        map_appearances_new = jnp.zeros((H, W, self.config["dim_appearance"]))
         map_appearances_new = map_appearances_new.at[
             state.agents.positions_agents[:, 0],
             state.agents.positions_agents[:, 1],
             :,
-        ].add(state.agents.appearance_agents * state.agents.are_existing_agents[:, None])
-        map_appearances_new /= jnp.maximum(
-            1, map_agents_new[:, :][:, :, None])
-        
+        ].add(
+            state.agents.appearance_agents * state.agents.are_existing_agents[:, None]
+        )
+        map_appearances_new /= jnp.maximum(1, map_agents_new[:, :][:, :, None])
+
         # Update the state
         map_new = state_new.map.at[:, :, idx_agents].set(map_agents_new)
-        map_new = map_new.at[:, :, idx_agents + 1:].set(map_appearances_new)
+        map_new = map_new.at[:, :, idx_agents + 1 :].set(map_appearances_new)
         state_new: StateEnvGridworld = state_new.replace(
             map=map_new,
             timestep=state_new.timestep + 1,
@@ -577,7 +580,7 @@ class GridworldEnv(EcoEnvironment):
         """The rendering function of the environment. It saves the RGB map of the environment as a video."""
         if not self.cfg_video["do_video"]:
             return
-        return # TODO : stack frames in state and at this function save the video from the stack of frames
+        return  # TODO : stack frames in state and at this function save the video from the stack of frames
         t = state.timestep
         if t % self.n_steps_between_videos == 0:
             self.video_writer = VideoRecorder(
@@ -1247,19 +1250,17 @@ def compute_group_sizes(agent_map: jnp.ndarray) -> float:
             ~state_new.agents.are_existing_agents
             | (state_new.agents.age_agents < state_new.agents.age_agents)
         )
-        
+
         dict_metrics_lifespan = {}
         new_list_metrics_lifespan = []
-        for (agg, metrics) in zip(
-            self.aggregators_lifespan, state.metrics_lifespan
-        ):
+        for agg, metrics in zip(self.aggregators_lifespan, state.metrics_lifespan):
             new_metrics = agg.update_metrics(
                 metrics=metrics,
                 dict_measures=dict_measures,
                 are_alive=state_new.agents.are_existing_agents,
                 are_just_dead=are_just_dead_agents,
                 ages=state_new.agents.age_agents,
-                )
+            )
             dict_metrics_lifespan.update(agg.get_dict_metrics(new_metrics))
             new_list_metrics_lifespan.append(new_metrics)
         state_new_new = state_new.replace(metrics_lifespan=new_list_metrics_lifespan)
@@ -1267,20 +1268,20 @@ def compute_group_sizes(agent_map: jnp.ndarray) -> float:
         # Aggregate the measures over the population
         dict_metrics_population = {}
         new_list_metrics_population = []
-        for (agg, metrics) in zip(
-            self.aggregators_population, state.metrics_population
-        ):
+        for agg, metrics in zip(self.aggregators_population, state.metrics_population):
             new_metrics = agg.update_metrics(
                 metrics=metrics,
                 dict_measures=dict_measures,
                 are_alive=state_new.agents.are_existing_agents,
                 are_just_dead=are_just_dead_agents,
                 ages=state_new.agents.age_agents,
-                )
+            )
             dict_metrics_population.update(agg.get_dict_metrics(new_metrics))
             new_list_metrics_population.append(new_metrics)
-        state_new_new = state_new_new.replace(metrics_population=new_list_metrics_population)
-        
+        state_new_new = state_new_new.replace(
+            metrics_population=new_list_metrics_population
+        )
+
         # Get the final metrics
         dict_metrics = {
             **dict_measures,

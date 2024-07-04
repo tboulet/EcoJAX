@@ -34,21 +34,11 @@ aggregators_lifespan:
       keys_measures : ${merge:${env.metrics.measures.immediate}, ${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
       n_agents : ${n_agents_max}
       prefix_metric : life_avg
-  - class_string : ecojax.metrics.aggregators:AggregatorLifespanIncrementalChange
-    config:
-      keys_measures : ${merge:${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
-      n_agents : ${n_agents_max}
-      prefix_metric : inc
-  - class_string : ecojax.metrics.aggregators:AggregatorLifespanAbsoluteChange
+  - class_string : ecojax.metrics.aggregators:AggregatorLifespanVariation
     config:
       keys_measures : ${merge:${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
       n_agents : ${n_agents_max}
       prefix_metric : life_var
-  - class_string : ecojax.metrics.aggregators:AggregatorLifespanFinal
-    config:
-      keys_measures : ${merge:${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
-      n_agents : ${n_agents_max}
-      prefix_metric : last_final
 
 aggregators_population:
   - class_string : ecojax.metrics.aggregators:AggregatorPopulationMean
@@ -57,13 +47,6 @@ aggregators_population:
       keys_measures_prefix : [life, last_final]
       n_agents : ${n_agents_max}
       prefix_metric : pop_mean
-  - class_string : ecojax.metrics.aggregators:AggregatorPopulationMovingMean
-    config:
-      keys_measures : ${merge:${env.metrics.measures.behavior}, ${env.metrics.measures.state}}
-      keys_measures_prefix : []
-      n_agents : ${n_agents_max}
-      prefix_metric : pop_moving_mean
-      learning_rate : 0.05
   - class_string : ecojax.metrics.aggregators:AggregatorPopulationStd
     config:
       keys_measures : ${merge:${env.metrics.measures.behavior}, ${env.metrics.measures.state}}

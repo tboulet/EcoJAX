@@ -23,36 +23,36 @@ measures:
   behavior: []
 
 aggregators_lifespan:
-  - class_string : ecojax.metrics.new:AggregatorLifespanCumulative
+  - class_string : ecojax.metrics.aggregators:AggregatorLifespanCumulative
     config:
       keys_measures : ${env.metrics.measures.immediate}
       n_agents : ${n_agents_max}
       prefix_metric : life_cum
       log_final : true
-  # - class_string : ecojax.metrics.aggregators:AggregatorLifespanAverage
-  #   config:
-  #     keys_measures : ${merge:${env.metrics.measures.immediate}, ${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
-  #     n_agents : ${n_agents_max}
-  #     prefix_metric : life_avg
-  # - class_string : ecojax.metrics.aggregators:AggregatorLifespanFinal
-  #   config:
-  #     keys_measures : ${merge:${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
-  #     n_agents : ${n_agents_max}
-  #     prefix_metric : last_final
+  - class_string : ecojax.metrics.aggregators:AggregatorLifespanAverage
+    config:
+      keys_measures : ${merge:${env.metrics.measures.immediate}, ${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
+      n_agents : ${n_agents_max}
+      prefix_metric : life_avg
+  - class_string : ecojax.metrics.aggregators:AggregatorLifespanVariation
+    config:
+      keys_measures : ${merge:${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
+      n_agents : ${n_agents_max}
+      prefix_metric : life_var
 
-aggregators_population: []
-  # - class_string : ecojax.metrics.aggregators:AggregatorPopulationMean
-  #   config:
-  #     keys_measures : ${merge:${env.metrics.measures.immediate}, ${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
-  #     keys_measures_prefix : [life, last_final]
-  #     n_agents : ${n_agents_max}
-  #     prefix_metric : pop_mean
-  # - class_string : ecojax.metrics.aggregators:AggregatorPopulationStd
-  #   config:
-  #     keys_measures : ${merge:${env.metrics.measures.behavior}, ${env.metrics.measures.state}}
-  #     keys_measures_prefix : [life, last_final]
-  #     n_agents : ${n_agents_max}
-  #     prefix_metric : pop_std
+aggregators_population:
+  - class_string : ecojax.metrics.aggregators:AggregatorPopulationMean
+    config:
+      keys_measures : ${merge:${env.metrics.measures.immediate}, ${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
+      keys_measures_prefix : [life, last_final]
+      n_agents : ${n_agents_max}
+      prefix_metric : pop_mean
+  - class_string : ecojax.metrics.aggregators:AggregatorPopulationStd
+    config:
+      keys_measures : ${merge:${env.metrics.measures.behavior}, ${env.metrics.measures.state}}
+      keys_measures_prefix : [life, last_final]
+      n_agents : ${n_agents_max}
+      prefix_metric : pop_std
 
 
 

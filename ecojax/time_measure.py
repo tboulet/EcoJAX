@@ -32,7 +32,8 @@ class RuntimeMeter:
     eval_time = RuntimeMeter.get_runtime("eval")
     """
 
-    stage_name_to_runtime: Dict[str, float] = defaultdict(lambda: 0)
+    stage_name_to_cum_runtime: Dict[str, float] = defaultdict(lambda: 0)
+    stage_name_to_last_runtime: Dict[str, float] = defaultdict(lambda: None)
     stage_name_to_num_calls: Dict[str, int] = defaultdict(lambda: 0)
 
     @staticmethod
@@ -48,11 +49,11 @@ class RuntimeMeter:
             float: the cumulative time taken by the stage.
         """
         if stage_name == "total":
-            return sum(RuntimeMeter.stage_name_to_runtime.values())
-        elif stage_name not in RuntimeMeter.stage_name_to_runtime:
+            return sum(RuntimeMeter.stage_name_to_cum_runtime.values())
+        elif stage_name not in RuntimeMeter.stage_name_to_cum_runtime:
             return 0
         else:
-            return RuntimeMeter.stage_name_to_runtime[stage_name]
+            return RuntimeMeter.stage_name_to_cum_runtime[stage_name]
 
     @staticmethod
     def get_averaged_stage_runtime(stage_name: str) -> float:
@@ -64,13 +65,25 @@ class RuntimeMeter:
         Returns:
             float: the average time taken by the stage.
         """
-        if stage_name not in RuntimeMeter.stage_name_to_runtime:
+        if stage_name not in RuntimeMeter.stage_name_to_cum_runtime:
             return 0
         return (
-            RuntimeMeter.stage_name_to_runtime[stage_name]
+            RuntimeMeter.stage_name_to_cum_runtime[stage_name]
             / RuntimeMeter.stage_name_to_num_calls[stage_name]
         )
 
+    @staticmethod
+    def get_last_stage_runtime(stage_name: str) -> float:
+        """Return the time taken by the last call to the stage.
+
+        Args:
+            stage_name (str): the name of the stage, as it was used in the context manager.
+
+        Returns:
+            float: the time taken by the last call to the stage.
+        """
+        return RuntimeMeter.stage_name_to_last_runtime[stage_name]
+    
     @staticmethod
     def get_runtimes() -> Dict[str, float]:
         """Return a dictionnary mapping the stage names to the cumulative time taken by the stage.
@@ -78,7 +91,7 @@ class RuntimeMeter:
         Returns:
             Dict[str, float]: the dictionnary mapping the stage names to the cumulative time taken by the stage.
         """
-        return dict(RuntimeMeter.stage_name_to_runtime)
+        return dict(RuntimeMeter.stage_name_to_cum_runtime)
 
     @staticmethod
     def get_average_runtimes() -> Dict[str, float]:
@@ -89,9 +102,18 @@ class RuntimeMeter:
         """
         return {
             stage_name: RuntimeMeter.get_averaged_stage_runtime(stage_name)
-            for stage_name in RuntimeMeter.stage_name_to_runtime
+            for stage_name in RuntimeMeter.stage_name_to_cum_runtime
         }
-        
+    
+    @staticmethod
+    def get_last_runtimes() -> Dict[str, float]:
+        """Return a dictionnary mapping the stage names to the time taken by the last call to the stage.
+
+        Returns:
+            Dict[str, float]: the dictionnary mapping the stage names to the time taken by the last call to the stage.
+        """
+        return dict(RuntimeMeter.stage_name_to_last_runtime)
+    
     @staticmethod
     def get_total_runtime() -> float:
         """Return the total time taken by all stages.
@@ -99,7 +121,7 @@ class RuntimeMeter:
         Returns:
             float: the total time taken by all stages.
         """
-        return sum(RuntimeMeter.stage_name_to_runtime.values())
+        return sum(RuntimeMeter.stage_name_to_cum_runtime.values())
 
     def __init__(self, stage_name: str, n_calls: int = 1):
         """Initialize the RuntimeMeter.
@@ -116,7 +138,8 @@ class RuntimeMeter:
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        self.stage_name_to_runtime[self.stage_name] += time.time() - self.start_time
+        self.stage_name_to_cum_runtime[self.stage_name] += time.time() - self.start_time
+        self.stage_name_to_last_runtime[self.stage_name] = time.time() - self.start_time
         self.stage_name_to_num_calls[self.stage_name] += self.n_calls
 
 
@@ -127,9 +150,12 @@ def get_runtime_metrics():
         Dict[str, float]: a dictionnary mapping the stage names to the cumulative and averaged time taken by the stage.
     """
     dict_runtime_metrics = {}
-    for stage_name in RuntimeMeter.stage_name_to_runtime:
+    for stage_name in RuntimeMeter.stage_name_to_cum_runtime:
         dict_runtime_metrics[f"runtime/{stage_name}"] = RuntimeMeter.get_stage_runtime(stage_name)
         dict_runtime_metrics[f"runtime/{stage_name}_avg"] = RuntimeMeter.get_averaged_stage_runtime(stage_name)
+        time_last_call = RuntimeMeter.get_last_stage_runtime(stage_name)
+        if time_last_call is not None:
+            dict_runtime_metrics[f"runtime/{stage_name}_last"] = time_last_call
     return dict_runtime_metrics
     
 if __name__ == "__main__":

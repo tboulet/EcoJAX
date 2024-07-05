@@ -577,7 +577,7 @@ class GridworldEnv(EcoEnvironment):
         )
         # Add the new frame to the video
         video = state_new.video.at[t % self.n_steps_per_video].set(
-            self.get_RGB_map(state=state_new)
+            self.get_RGB_map(images=state_new.map)
         )
         # Update the state
         state_new = state_new.replace(video=video)
@@ -624,26 +624,10 @@ class GridworldEnv(EcoEnvironment):
     # ================== Helper functions ==================
 
     @partial(jax.jit, static_argnums=(0,))
-    def get_RGB_map(self, state: StateEnvGridworld) -> Any:
-        """A function for rendering the environment. It returns the RGB map of the environment.
-
-        Args:
-            state (StateEnvGridworld): the state of the environment
-
-        Returns:
-            Any: the RGB map of the environment
-        """
-        image = self.blend_images(
-            images=state.map,
-            dict_idx_channel_to_color_tag=self.dict_idx_channel_to_color_tag,
-        )
-        H, W, C = image.shape
-        return image
-
-    def blend_images(
-        self, images: jnp.ndarray, dict_idx_channel_to_color_tag: Dict[int, tuple]
+    def get_RGB_map(
+        self, images: jnp.ndarray
     ) -> jnp.ndarray:
-        """Apply a color to each channel of a list of grey images and blend them together
+        """Get the RGB map by applying a color to each channel of a list of grey images and blend them together
 
         Args:
             images (np.ndarray): the array of grey images, of shape (height, width, channels)
@@ -669,7 +653,7 @@ class GridworldEnv(EcoEnvironment):
         # For each channel, we set the color at each tile to the channel colour
         # with an intensity proportional to the number of entities (of that channel)
         # in the tile, with nonzero intensities scaled to be between 0.3 and 1
-        for channel_idx, color_tag in dict_idx_channel_to_color_tag.items():
+        for channel_idx, color_tag in self.dict_idx_channel_to_color_tag.items():
             delta = jnp.array(
                 DICT_COLOR_TAG_TO_RGB[color_tag], dtype=jnp.float32
             ) - jnp.array([1, 1, 1], dtype=jnp.float32)

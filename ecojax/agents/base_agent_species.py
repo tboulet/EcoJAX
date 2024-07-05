@@ -32,7 +32,12 @@ class AgentSpecies(ABC):
         config: Dict,
         n_agents_max: int,
         n_agents_initial: int,
-        model: nn.Module,
+        observation_space_dict: Dict[str, EcojaxSpace],
+        action_space_dict: Dict[str, EcojaxSpace],
+        observation_class: Type[ObservationAgent],
+        action_class: Type[ActionAgent],
+        model_class: Type[BaseModel],
+        config_model: Dict,
     ):
         """The constructor of the AgentSpecies class. It initializes the species of agents with the configuration.
         Elements allowing the interactions with the environment are also given as input : the numbers of agents, and the observation and action spaces.
@@ -48,7 +53,15 @@ class AgentSpecies(ABC):
         self.config = config
         self.n_agents_max = n_agents_max
         self.n_agents_initial = n_agents_initial
-        self.model: BaseModel = model
+        self.model: BaseModel = model_class(
+            observation_space_dict=observation_space_dict,
+            action_space_dict=action_space_dict,
+            observation_class=observation_class,
+            action_class=action_class,
+            mode_return=self.mode_return,
+            **config_model,
+        )
+        print(self.model.get_table_summary())
 
     @abstractmethod
     def reset(self, key_random: jnp.ndarray) -> StateSpecies:

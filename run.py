@@ -104,14 +104,7 @@ class Runner:
 
         # Create the model
         ModelClass = model_name_to_ModelClass[model_name]
-        model = ModelClass(
-            observation_space_dict=observation_space_dict,
-            action_space_dict=action_space_dict,
-            observation_class=observation_class,
-            action_class=action_class,
-            **self.config["model"],
-        )
-        print(model.get_table_summary())
+        # print(model.get_table_summary())
 
         # Create the agent's species
         AgentSpeciesClass = agent_name_to_AgentSpeciesClass[agent_species_name]
@@ -119,7 +112,12 @@ class Runner:
             config=self.config["agents"],
             n_agents_max=self.config["n_agents_max"],
             n_agents_initial=self.config["n_agents_initial"],
-            model=model,
+            observation_space_dict=observation_space_dict,
+            action_space_dict=action_space_dict,
+            observation_class=observation_class,
+            action_class=action_class,
+            model_class=ModelClass,
+            config_model=self.config["model"],
         )
 
         # ============== Simulation loop ===============

@@ -46,6 +46,8 @@ class StateSpeciesNE:
 class NeuroEvolutionAgentSpecies(AgentSpecies):
     """A species of agents that evolve their neural network weights."""
 
+    mode_return: str = "action_prob"
+    
     def reset(self, key_random: jnp.ndarray) -> StateSpeciesNE:
         # Initialize the state
         key_random, subkey = random.split(key_random)
@@ -196,6 +198,7 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
                 variables={"params": state_agent.params},
                 obs=obs,
                 key_random=key_random,
+                mode_return="action_prob",
             )
             # Learning part
             state_agent.replace(age=state_agent.age + 1)

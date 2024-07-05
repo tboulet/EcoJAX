@@ -26,9 +26,14 @@ class MLP_Model(BaseModel):
 
     hidden_dims: List[int]
 
-    @nn.compact
-    def __call__(self, obs: ObservationAgent, key_random: jnp.ndarray) -> ActionAgent:
-
+    def setup(self):
+        """Initializes the model with the MLP layers."""
+        for i, hidden_dim in enumerate(self.hidden_dims):
+            setattr(self, f"layer_{i}", nn.Dense(features=hidden_dim))
+        
+    def obs_to_encoding(self, obs: ObservationAgent, key_random: jnp.ndarray) -> jnp.ndarray:
+        """Converts the observation to a vector encoding that can be processed by the MLP."""
+        
         # Flatten and concatenate observation inputs
         list_vectors = []
         for name_observation_component, space in self.observation_space_dict.items():
@@ -44,10 +49,8 @@ class MLP_Model(BaseModel):
         x = jnp.concatenate(list_vectors, axis=-1)
 
         # Process the concatenated output with a final MLP
-        for hidden_dim in self.hidden_dims:
-            x = nn.Dense(features=hidden_dim)(x)
+        for i, hidden_dim in enumerate(self.hidden_dims):
+            x = getattr(self, f"layer_{i}")(x)
             x = nn.relu(x)
-
-        # Return the output in the right format
-        action, prob = self.get_action_and_prob(x, key_random)
-        return action, prob
+            
+        return x

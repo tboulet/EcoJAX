@@ -57,6 +57,8 @@ class StateSpeciesRL:
 class RL_AgentSpecies(AgentSpecies):
     """A species of agents that learn with reinforcement learning."""
 
+    mode_return: str = "q_values"
+    
     def reset(self, key_random: jnp.ndarray) -> StateSpeciesRL:
         # Initialize the state
         key_random, subkey = random.split(key_random)
@@ -235,10 +237,11 @@ class RL_AgentSpecies(AgentSpecies):
             obs: jnp.ndarray,
         ) -> jnp.ndarray:
             # Inference part
-            action, prob_action = self.model.apply(
+            q_values = self.model.apply(
                 variables={"params": state_agent.params},
                 obs=obs,
                 key_random=key_random,
+                mode_return="q_values",
             )
             # Learning part
             state_agent.replace(age=state_agent.age + 1)

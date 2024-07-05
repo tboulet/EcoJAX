@@ -118,6 +118,7 @@ def eco_loop(
             logger.log_histograms(metrics_histogram, t)
             logger.log_eco_metrics(global_state.eco_information, t)
 
+    @jax.jit
     def step_eco_loop(x: Tuple[StateGlobal, Dict[str, Any]]) -> jnp.ndarray:
         print("Running step_eco_loop...")
         global_state, info = x
@@ -189,20 +190,21 @@ def eco_loop(
     state_species = agent_species.reset(key_random=subkey)
     info_species = {"metrics": {}}
 
-    # Initialize the metrics
+    # Initialize the metrics and log them
+    print("Initializing metrics...")
     metrics_env = info_env.get("metrics", {})
     metrics_species = info_species.get("metrics", {})
     metrics_global = {**metrics_env, **metrics_species}
-    info = {"metrics": metrics_global}
-
-    # Initial logging of the metrics
-    metrics_global = info.get("metrics", {})
     metrics_scalar, metrics_histogram = get_dict_metrics_by_type(metrics_global)
     for logger in list_loggers:
         logger.log_scalars(metrics_scalar, timestep=0)
         logger.log_histograms(metrics_histogram, timestep=0)
         logger.log_eco_metrics(eco_information, timestep=0)
+    info = {"metrics": metrics_global}
 
+    # Run the simulation
+    print("Running the simulation...")
+    
     global_state = StateGlobal(
         state_env=state_env,
         state_species=state_species,
@@ -212,9 +214,7 @@ def eco_loop(
         done=done,
         key_random=subkey,
     )
-
-    print("Running the simulation...")
-
+    
     # Do (some?) first step(s) to get global_state and info at the right structure
     for _ in range(1):
         with RuntimeMeter("warmup steps"):
@@ -227,7 +227,7 @@ def eco_loop(
     
     # @jax.jit # only works with while_loop, scan, and fori_loop
     def do_n_steps(global_state, info):
-        # Method : native for loop
+        # Method : native for loop (apparently the fastest method for this case)
         for _ in range(period_eval):
             global_state, info = step_eco_loop((global_state, info))
         return global_state, info
@@ -239,12 +239,12 @@ def eco_loop(
         #     t += 1
         # return global_state, info
 
-        # # Method : fori_loop
+        # # Method : JAX's fori_loop
         # return jax.lax.fori_loop(
         #     0, period_eval, lambda i, x: step_eco_loop(x), (global_state, info)
         # )
 
-        # # Method : scan loop
+        # # Method : JAX's scan
         # (global_state, info), elems = jax.lax.scan(f=lambda x, el: (step_eco_loop(x), None), init=(global_state, info), xs=None, length=period_eval)
         # return global_state, info
 

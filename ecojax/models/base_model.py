@@ -30,7 +30,6 @@ class BaseModel(nn.Module, ABC):
     observation_class: Type[ObservationAgent]
     action_class: Type[ActionAgent]
     mode_return: str
-    
 
     def obs_to_encoding(
         self, obs: ObservationAgent, key_random: jnp.ndarray
@@ -112,7 +111,7 @@ class BaseModel(nn.Module, ABC):
     def get_q_values(self, x: jnp.ndarray) -> jnp.ndarray:
         """Computes the Q-values of the actions given the input x."""
         return nn.Dense(features=self.action_space_dict["action"].n)(x)
-    
+
     @nn.compact
     def __call__(
         self, obs: ObservationAgent, key_random: jnp.ndarray, mode_return: str
@@ -151,4 +150,4 @@ class BaseModel(nn.Module, ABC):
         for key_dict, space in self.observation_space_dict.items():
             kwargs_obs[key_dict] = space.sample(key_random=key_random)
         obs = self.observation_class(**kwargs_obs)
-        return f"Model summary: {nn.tabulate(self, rngs=key_random)(obs, key_random, mode_return='action')}"
+        return f"Model summary: {nn.tabulate(self, rngs=key_random)(obs, key_random, mode_return=self.mode_return)}"

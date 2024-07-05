@@ -53,6 +53,15 @@ class AgentGriworld:
 
 
 @dataclass
+class VideoMemory:
+    # The current frame of the video
+    idx_end_of_video: int
+    
+    # The last 
+    
+    
+    
+@dataclass
 class StateEnvGridworld(StateEnv):
     # The current timestep of the environment
     timestep: int
@@ -69,6 +78,9 @@ class StateEnvGridworld(StateEnv):
     # The lifespan and population aggregators
     metrics_lifespan: List[PyTreeNode]
     metrics_population: List[PyTreeNode]
+    
+    # The last n_steps_per_video frames of the video
+    video : jnp.ndarray  # (n_steps_per_video, height, width, 3) in [0, 1]
 
 
 class GridworldEnv(EcoEnvironment):
@@ -151,12 +163,7 @@ class GridworldEnv(EcoEnvironment):
         # Video parameters
         self.cfg_video = config["metrics"]["config_video"]
         self.do_video: bool = self.cfg_video["do_video"]
-        self.n_steps_between_videos: int = self.cfg_video["n_steps_between_videos"]
         self.n_steps_per_video: int = self.cfg_video["n_steps_per_video"]
-        self.n_steps_between_frames: int = self.cfg_video["n_steps_between_frames"]
-        assert (
-            self.n_steps_per_video <= self.n_steps_between_videos
-        ) or not self.do_video, "len_video must be less than or equal to freq_video"
         self.fps_video: int = self.cfg_video["fps_video"]
         self.dir_videos: str = self.cfg_video["dir_videos"]
         os.makedirs(self.dir_videos, exist_ok=True)
@@ -395,6 +402,9 @@ class GridworldEnv(EcoEnvironment):
             self.aggregators_population.append(agg)
             list_metrics_population.append(agg.get_initial_metrics())
 
+        # Initialize the video memory
+        video = jnp.zeros((self.n_steps_per_video, H, W, 3))
+        
         # Initialize ecological informations
         are_newborns_agents = jnp.zeros(self.n_agents_max, dtype=jnp.bool_)
         are_dead_agents = jnp.zeros(self.n_agents_max, dtype=jnp.bool_)
@@ -413,6 +423,7 @@ class GridworldEnv(EcoEnvironment):
             agents=agents,
             metrics_lifespan=list_metrics_lifespan,
             metrics_population=list_metrics_population,
+            video=video,
         )
 
         # Return the information required by the agents
@@ -458,7 +469,8 @@ class GridworldEnv(EcoEnvironment):
 
         # Initialize the measures dictionnary. This will be used to store the measures of the environment at this step.
         dict_measures_all: Dict[str, jnp.ndarray] = {}
-
+        t = state.timestep
+        
         # ============ (1) Agents interaction with the environment ============
         # Apply the actions of the agents on the environment
         key_random, subkey = jax.random.split(key_random)
@@ -507,7 +519,7 @@ class GridworldEnv(EcoEnvironment):
         map_new = map_new.at[:, :, idx_agents + 1 :].set(map_appearances_new)
         state_new: StateEnvGridworld = state_new.replace(
             map=map_new,
-            timestep=state_new.timestep + 1,
+            timestep=t + 1,
             agents=state_new.agents.replace(age_agents=state_new.agents.age_agents + 1),
         )
         # Extract the observations of the agents
@@ -555,6 +567,21 @@ class GridworldEnv(EcoEnvironment):
         )
         info = {"metrics": dict_metrics}
 
+        # ============ (7) Manage the video ============
+        # Reset the video to empty if t = 0 mod n_steps_per_video
+        video = jax.lax.cond(
+            t % self.n_steps_per_video == 0,
+            lambda _: jnp.zeros((self.n_steps_per_video, H, W, 3)),
+            lambda _: state_new.video,
+            operand=None,
+        )
+        # Add the new frame to the video
+        video = state_new.video.at[t % self.n_steps_per_video].set(
+            self.get_RGB_map(state=state_new)
+        )
+        # Update the state
+        state_new = state_new.replace(video=video)
+        
         # Return the new state and observations
         return (
             state_new,
@@ -580,25 +607,23 @@ class GridworldEnv(EcoEnvironment):
         """The rendering function of the environment. It saves the RGB map of the environment as a video."""
         if not self.cfg_video["do_video"]:
             return
-        return  # TODO : stack frames in state and at this function save the video from the stack of frames
         t = state.timestep
-        if t % self.n_steps_between_videos == 0:
-            self.video_writer = VideoRecorder(
+        
+        print(f"Rendering video at timestep {t}...")
+        video_writer = VideoRecorder(
                 filename=f"{self.dir_videos}/video_t{t}.mp4",
                 fps=self.fps_video,
             )
-        t_current_video = (
-            t - (t // self.n_steps_between_videos) * self.n_steps_between_videos
-        )
-        if (t_current_video < self.n_steps_per_video) and (
-            t_current_video % self.n_steps_between_frames == 0
-        ):
-            self.video_writer.add(self.get_RGB_map(state=state))
-        if t_current_video == self.n_steps_per_video - 1:
-            self.video_writer.close()
+        for t_ in range(self.n_steps_per_video):
+            image = state.video[t_]
+            image = self.upscale_image(image)
+            video_writer.add(image)
+        video_writer.close()
+
 
     # ================== Helper functions ==================
 
+    @partial(jax.jit, static_argnums=(0,))
     def get_RGB_map(self, state: StateEnvGridworld) -> Any:
         """A function for rendering the environment. It returns the RGB map of the environment.
 
@@ -608,20 +633,12 @@ class GridworldEnv(EcoEnvironment):
         Returns:
             Any: the RGB map of the environment
         """
-        RGB_image_blended = self.blend_images(
+        image = self.blend_images(
             images=state.map,
             dict_idx_channel_to_color_tag=self.dict_idx_channel_to_color_tag,
         )
-        H, W, C = RGB_image_blended.shape
-        upscale_factor = min(self.height_max_video / H, self.width_max_video / W)
-        upscale_factor = int(upscale_factor)
-        assert upscale_factor >= 1, "The upscale factor must be at least 1"
-        RGB_image_upscaled = jax.image.resize(
-            RGB_image_blended,
-            shape=(H * upscale_factor, W * upscale_factor, C),
-            method="nearest",
-        )
-        return RGB_image_upscaled
+        H, W, C = image.shape
+        return image
 
     def blend_images(
         self, images: jnp.ndarray, dict_idx_channel_to_color_tag: Dict[int, tuple]
@@ -664,6 +681,27 @@ class GridworldEnv(EcoEnvironment):
         # Clip all rgb values to be between 0 and 1
         return jnp.clip(blended_image, 0, 1)
 
+    def upscale_image(self, image: jnp.ndarray) -> jnp.ndarray:
+        """Upscale an image to a maximum size while keeping the aspect ratio.
+
+        Args:
+            image (jnp.ndarray): the image to scale, of shape (H, W, C)
+
+        Returns:
+            jnp.ndarray: the scaled image, of shape (H', W', C), with H' <= self.height_max_video and W' <= self.width_max_video
+        """
+        H, W, C = image.shape
+        upscale_factor = min(self.height_max_video / H, self.width_max_video / W)
+        upscale_factor = int(upscale_factor)
+        assert upscale_factor >= 1, "The upscale factor must be at least 1"
+        image_upscaled = jax.image.resize(
+            image,
+            shape=(H * upscale_factor, W * upscale_factor, C),
+            method="nearest",
+        )
+        return image_upscaled
+        
+        
     def step_grow_plants(
         self, state: StateEnvGridworld, key_random: jnp.ndarray
     ) -> jnp.ndarray:

@@ -21,7 +21,7 @@ class Aggregator(ABC):
         self.keys_measures: List[str] = config["keys_measures"]
         self.keys_measures_prefix: List[str] = config.get("keys_measures_prefix", [])
         self.n_agents: str = config["n_agents"]
-        self.prefix_metric: str = config.get("prefix_metric", None)
+        self.prefix_metric: str = config["prefix_metric"]
         self.log_final: bool = config.get("log_final", False)
 
     @abstractmethod

@@ -547,7 +547,7 @@ class GridworldEnv(EcoEnvironment):
 
         # ============ (6) Compute the metrics ============
 
-        # Compute some additional measures
+        # Compute some measures
         dict_measures = self.compute_measures(
             state=state, actions=actions, state_new=state_new, key_random=subkey
         )
@@ -561,7 +561,8 @@ class GridworldEnv(EcoEnvironment):
                     measures,
                     jnp.nan,
                 )
-        # Compute the metrics
+                
+        # Update and compute the metrics
         state_new, dict_metrics = self.compute_metrics(
             state=state, state_new=state_new, dict_measures=dict_measures_all
         )
@@ -608,6 +609,8 @@ class GridworldEnv(EcoEnvironment):
         if not self.cfg_video["do_video"]:
             return
         t = state.timestep
+        if t < self.n_steps_per_video:
+            return # Not enough frames to render a video
         
         print(f"Rendering video at timestep {t}...")
         video_writer = VideoRecorder(
@@ -1220,37 +1223,6 @@ class GridworldEnv(EcoEnvironment):
         return dict_measures
 
 
-# ================== Helper functions ==================
-
-
-def compute_group_sizes(agent_map: jnp.ndarray) -> float:
-    H, W = agent_map.shape
-    done = set()
-
-    def dfs(i, j):
-        if (i, j) in done:
-            return 0
-        done.add((i, j))
-
-        if i < 0 or j < 0 or i >= H or j >= W or agent_map[i, j] == 0:
-            return 0
-
-        return (
-            int(agent_map[i, j])
-            + dfs(i + 1, j)
-            + dfs(i - 1, j)
-            + dfs(i, j + 1)
-            + dfs(i, j - 1)
-            + dfs(i - 1, j - 1)
-            + dfs(i - 1, j + 1)
-            + dfs(i + 1, j - 1)
-            + dfs(i + 1, j + 1)
-        )
-
-    groups = jnp.array(
-        [dfs(i, j) for i in range(H) for j in range(W) if agent_map[i, j] > 0]
-    )
-    return groups[groups > 0]
     def compute_metrics(
         self,
         state: StateEnvGridworld,
@@ -1321,3 +1293,37 @@ def compute_group_sizes(agent_map: jnp.ndarray) -> float:
             dict_metrics[name_metric_new] = dict_metrics.pop(name_metric)
 
         return state_new_new, dict_metrics
+    
+    
+    
+# ================== Helper functions ==================
+
+
+def compute_group_sizes(agent_map: jnp.ndarray) -> float:
+    H, W = agent_map.shape
+    done = set()
+
+    def dfs(i, j):
+        if (i, j) in done:
+            return 0
+        done.add((i, j))
+
+        if i < 0 or j < 0 or i >= H or j >= W or agent_map[i, j] == 0:
+            return 0
+
+        return (
+            int(agent_map[i, j])
+            + dfs(i + 1, j)
+            + dfs(i - 1, j)
+            + dfs(i, j + 1)
+            + dfs(i, j - 1)
+            + dfs(i - 1, j - 1)
+            + dfs(i - 1, j + 1)
+            + dfs(i + 1, j - 1)
+            + dfs(i + 1, j + 1)
+        )
+
+    groups = jnp.array(
+        [dfs(i, j) for i in range(H) for j in range(W) if agent_map[i, j] > 0]
+    )
+    return groups[groups > 0]

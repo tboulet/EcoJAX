@@ -3,8 +3,12 @@ measures:
   environmental:
     - n_agents
     - n_plants
+    - net_energy_transfer_per_capita
+    - average_group_size
+    - max_group_size
   immediate:
     - do_action_eat
+    - do_action_transfer
     # - do_action_reproduce
     - do_action_forward
     - amount_food_eaten

@@ -13,6 +13,7 @@ from jax import random
 from jax.scipy.signal import convolve2d
 from flax.struct import PyTreeNode, dataclass
 from jax.debug import breakpoint as jbreakpoint
+from tqdm import tqdm
 
 from ecojax.core.eco_info import EcoInformation
 from ecojax.environment import EcoEnvironment
@@ -610,9 +611,9 @@ class GridworldEnv(EcoEnvironment):
             return
         t = state.timestep
         if t < self.n_steps_per_video:
-            return # Not enough frames to render a video
-        
-        print(f"Rendering video at timestep {t}...")
+            return  # Not enough frames to render a video
+
+        tqdm.write(f"Rendering video at timestep {t}...")
         video_writer = VideoRecorder(
                 filename=f"{self.dir_videos}/video_t{t}.mp4",
                 fps=self.fps_video,
@@ -657,6 +658,10 @@ class GridworldEnv(EcoEnvironment):
         # with an intensity proportional to the number of entities (of that channel)
         # in the tile, with nonzero intensities scaled to be between 0.3 and 1
         for channel_idx, color_tag in self.dict_idx_channel_to_color_tag.items():
+            channel_name = self.list_names_channels[channel_idx]
+            if channel_name not in self.dict_name_channel_to_color_tag:
+                continue
+
             delta = jnp.array(
                 DICT_COLOR_TAG_TO_RGB[color_tag], dtype=jnp.float32
             ) - jnp.array([1, 1, 1], dtype=jnp.float32)

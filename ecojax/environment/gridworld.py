@@ -353,7 +353,7 @@ class GridworldEnv(EcoEnvironment):
             .set(1)
         )
 
-        # Initialize the state
+        # Initialize the agents
         agents = AgentGriworld(
             positions_agents=positions_agents,
             orientation_agents=orientation_agents,
@@ -1166,6 +1166,7 @@ class GridworldEnv(EcoEnvironment):
         """
         dict_measures = {}
         idx_plants = self.dict_name_channel_to_idx["plants"]
+        idx_agents = self.dict_name_channel_to_idx["agents"]
         for name_measure in self.names_measures:
             # Environment measures
             if name_measure == "n_agents":
@@ -1173,10 +1174,10 @@ class GridworldEnv(EcoEnvironment):
             elif name_measure == "n_plants":
                 measures = jnp.sum(state.map[..., idx_plants])
             elif name_measure == "group_size":
-                idx_agents = self.dict_name_channel_to_idx["agents"]
                 group_sizes = compute_group_sizes(state.map[..., idx_agents])
                 dict_measures["average_group_size"] = group_sizes.mean()
                 dict_measures["max_group_size"] = group_sizes.max()
+                continue
             # Immediate measures
             elif name_measure.startswith("do_action_"):
                 str_action = name_measure[len("do_action_") :]
@@ -1250,10 +1251,11 @@ class GridworldEnv(EcoEnvironment):
         # Aggregate the measures over the population
         dict_metrics_population = {}
         new_list_metrics_population = []
+        dict_measures_and_metrics_lifespan = {**dict_measures, **dict_metrics_lifespan}
         for agg, metrics in zip(self.aggregators_population, state.metrics_population):
             new_metrics = agg.update_metrics(
                 metrics=metrics,
-                dict_measures=dict_measures,
+                dict_measures=dict_measures_and_metrics_lifespan,
                 are_alive=state_new.agents.are_existing_agents,
                 are_just_dead=are_just_dead_agents,
                 ages=state_new.agents.age_agents,

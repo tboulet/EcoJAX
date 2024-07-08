@@ -125,15 +125,12 @@ def eco_loop(
         
         # Agents step
         key_random, subkey = random.split(key_random)
-        new_state_species, actions = agent_species.react(
+        new_state_species, actions, info_species = agent_species.react(
             state=global_state.state_species,
             batch_observations=global_state.observations,
             eco_information=global_state.eco_information,
             key_random=subkey,
         )
-        info_species = (
-            {}
-        )  # TODO: replace this by AgentSpecies.react also returning info
 
         # Env step
         key_random, subkey = random.split(key_random)

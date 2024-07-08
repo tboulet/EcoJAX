@@ -1,0 +1,45 @@
+# ======================== Measures ========================
+measures:
+  global: 
+    []
+    # - group_size # commented for now cause it's only implemented through a non jittable function
+  immediate:
+    []
+  state:
+    - hp
+    # - density_agents_observed
+    # - density_plants_observed
+  behavior: []
+
+aggregators_lifespan:
+  []
+
+aggregators_population:
+  - class_string : ecojax.metrics.aggregators:AggregatorPopulationMean
+    config:
+      keys_measures : ${merge:${env.metrics.measures.immediate}, ${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
+      keys_measures_prefix : []
+      n_agents : ${n_agents_max}
+      prefix_metric : pop_mean
+  - class_string : ecojax.metrics.aggregators:AggregatorPopulationStd
+    config:
+      keys_measures : ${merge:${env.metrics.measures.immediate}, ${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
+      keys_measures_prefix : []
+      n_agents : ${n_agents_max}
+      prefix_metric : pop_std
+
+
+
+# ======================== Video parameters ========================
+config_video:
+  do_video : True
+  n_steps_per_video : 100
+  fps_video : 20
+  dir_videos : logs
+  height_max_video : 500
+  width_max_video : 500
+  dict_name_channel_to_color_tag:
+    "sun" : "yellow"
+    "plants" : "green"
+    "agents" : "blue"
+  color_background : "gray"

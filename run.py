@@ -103,7 +103,6 @@ class Runner:
 
         # Create the model
         ModelClass = model_name_to_ModelClass[model_name]
-        # print(model.get_table_summary())
 
         # Create the agent's species
         AgentSpeciesClass = agent_name_to_AgentSpeciesClass[agent_species_name]

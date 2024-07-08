@@ -6,3 +6,9 @@ hp_initial:
   strength_mutation: 0.001
 innate: False
 name_exploration: epsilon_greedy
+
+
+# ======================== Defaults sub-configs and other Hydra config ========================
+defaults:
+  - _self_
+  - metrics : basic

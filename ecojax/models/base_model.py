@@ -42,6 +42,15 @@ class BaseModel(nn.Module, ABC):
             "The method obs_to_encoding must be implemented in the subclass."
         )
 
+    def sample_observation(self, key_random: jnp.ndarray) -> ObservationAgent:
+        # Sample the observation from the different spaces
+        kwargs_obs: Dict[str, np.ndarray] = {}
+        for key_dict, space in self.observation_space_dict.items():
+            key_random, subkey = random.split(key_random)
+            kwargs_obs[key_dict] = space.sample(key_random=subkey)
+        return self.observation_class(**kwargs_obs)
+        
+        
     def get_initialized_variables(
         self, key_random: jnp.ndarray
     ) -> Dict[str, jnp.ndarray]:
@@ -49,19 +58,16 @@ class BaseModel(nn.Module, ABC):
         This is a wrapper around the init method of nn.Module, which creates an observation for initializing the model.
         """
         # Sample the observation from the different spaces
-        kwargs_obs: Dict[str, np.ndarray] = {}
-        for key_dict, space in self.observation_space_dict.items():
-            key_random, subkey = random.split(key_random)
-            kwargs_obs[key_dict] = space.sample(key_random=subkey)
-        obs = self.observation_class(**kwargs_obs)
+        key_random, subkey = random.split(key_random)
+        obs = self.sample_observation(subkey)
 
         # Run the forward pass to initialize the model
-        key_random, key_random2 = random.split(key_random)
+        key_random, subkey = random.split(key_random)
         return nn.Module.init(
             self,
             key_random,
             obs=obs,
-            key_random=key_random2,
+            key_random=subkey,
         )
 
     def get_action_and_prob(

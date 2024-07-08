@@ -10,6 +10,7 @@ from flax import struct
 import flax.linen as nn
 import optax
 from flax.training import train_state
+from flax.struct import PyTreeNode, dataclass
 
 
 from ecojax.agents.base_agent_species import AgentSpecies
@@ -21,9 +22,9 @@ import ecojax.spaces as spaces
 from ecojax.utils import jprint
 
 
-@struct.dataclass
+@dataclass
 class HyperParametersRL:
-    # The learning rate of the agent
+    # The learning rate of the agentnt
     lr: float
     # The discount factor of the agent
     gamma: float
@@ -33,8 +34,8 @@ class HyperParametersRL:
     strength_mutation: float
 
 
-@struct.dataclass
-class AgentRL:
+@dataclass
+class AgentRL(PyTreeNode):
     # The age of the agent, in number of timesteps
     age: int
 
@@ -43,9 +44,15 @@ class AgentRL:
 
     # The hyperparameters of the agent
     hp: HyperParametersRL
+    
+    # The last observation of the agent
+    obs_last: jnp.ndarray
+    
+    # The last action of the agent
+    action_last: int
 
 
-@struct.dataclass
+@dataclass
 class StateSpeciesRL:
     # The agents of the species
     agents: AgentRL  # Batched
@@ -86,7 +93,9 @@ class RL_AgentSpecies(AgentSpecies):
             **config_model,
         )
         print(self.model.get_table_summary())
-    
+        self.innate : bool = self.config["innate"]
+        self.name_exploration : str = self.config["name_exploration"]
+        
     def reset(self, key_random: jnp.ndarray) -> StateSpeciesRL:
         # Initialize the state
         key_random, subkey = random.split(key_random)
@@ -119,14 +128,18 @@ class RL_AgentSpecies(AgentSpecies):
             AgentRL: the new agent
         """
         if params is None:
-            variables = self.model.get_initialized_variables(key_random)
+            key_random, subkey = random.split(key_random)
+            variables = self.model.get_initialized_variables(subkey)
             params = variables.get("params", {})
         if hp is None:
             hp = self.init_hp()
+        key_random, subkey = random.split(key_random)
         return AgentRL(
             age=0,
             params=params,
             hp=hp,
+            obs_last=self.model.sample_observation(subkey),
+            action_last=0, # dummy action
         )
 
     def init_tr_state(self, agent: AgentRL) -> train_state.TrainState:
@@ -202,7 +215,7 @@ class RL_AgentSpecies(AgentSpecies):
 
         # Agent-wise reaction
         key_random, subkey = random.split(key_random)
-        new_state_species, batch_actions = self.act_agents(
+        new_state_species, batch_actions = self.react_agents(
             key_random=subkey,
             state_species=new_state_species,
             batch_observations=batch_observations,
@@ -230,7 +243,7 @@ class RL_AgentSpecies(AgentSpecies):
         )
 
         # If "innate" learning is enable, inherit the parameters from the parents with a small mutation
-        if self.config["innate"]:
+        if self.innate:
             key_random, subkey = random.split(key_random)
             params = mutation_gaussian_noise(
                 arr=agent.params,
@@ -249,37 +262,78 @@ class RL_AgentSpecies(AgentSpecies):
                 hp=hp,
             )
 
-    # =============== Agent creation methods =================
+    # =============== Agent inference & learning methods =================
 
-    def act_agents(
+    def react_agents(
         self,
         key_random: jnp.ndarray,
         state_species: StateSpeciesRL,
         batch_observations: ObservationAgent,  # Batched
     ) -> jnp.ndarray:
 
-        def act_single_agent(
+        def react_single_agent(
             key_random: jnp.ndarray,
-            state_agent: AgentRL,
+            agent: AgentRL,
             tr_state: train_state.TrainState,
             obs: jnp.ndarray,
         ) -> jnp.ndarray:
-            # Inference part
-            q_values = self.model.apply(
-                variables={"params": state_agent.params},
+            # =============== Inference part =================
+            # Compute Q values
+            q_values, = self.model.apply(
+                variables={"params": agent.params},
                 obs=obs,
                 key_random=key_random,
             )
-            # Learning part
-            state_agent.replace(age=state_agent.age + 1)
+            # Pick an action using the exploration method
+            if self.name_exploration == "epsilon_greedy":
+                key_random, subkey1, subkey2 = random.split(key_random, 3)
+                action = jax.lax.cond(
+                    random.uniform(subkey1) < agent.hp.epsilon,
+                    lambda _: random.randint(subkey2, shape=(), minval=0, maxval=self.n_actions),
+                    lambda _: jnp.argmax(q_values),
+                    operand=None,
+                )
+            elif self.name_exploration == "greedy":
+                action = jnp.argmax(q_values)
+            elif self.name_exploration == "softmax":
+                key_random, subkey = random.split(key_random)
+                action = random.categorical(subkey, logits=q_values)
+            else:
+                raise NotImplementedError(
+                    f"Exploration method {self.name_exploration} not implemented"
+                )
+            # ============== Learning part =================
+            # Compute the reward
+            reward_last = 0.1 # TODO: Implement the reward
+            # Perform the learning step
+            def loss_fn(params):
+                q_values_last, = self.model.apply(
+                    variables={"params": params},
+                    obs=agent.obs_last,
+                    key_random=key_random,
+                )
+                q_value_last = q_values_last[agent.action_last]
+                target = reward_last + agent.hp.gamma * jnp.max(q_values)
+                loss = (q_value_last - target) ** 2
+                return loss
+            grad_fn = jax.value_and_grad(loss_fn)
+            loss, grads = grad_fn(tr_state.params)
+            tr_state = tr_state.apply_gradients(grads=grads)
+            # Update the agent's state
+            agent.replace(
+                params=tr_state.params,
+                age=agent.age + 1,
+                obs_last=obs,
+                action_last=action,
+                )
             pass  # TODO: Implement the learning part
             # Update the agent's state and act
-            return state_agent, tr_state, action
+            return agent, tr_state, action
 
         batch_keys = random.split(key_random, self.n_agents_max)
-        batch_agents, batch_tr_state, batch_actions = jax.vmap(act_single_agent)(
+        batch_agents, batch_tr_state, batch_actions = jax.vmap(react_single_agent)(
             key_random=batch_keys,
-            state_agent=state_species.agents,
+            agent=state_species.agents,
             tr_state=state_species.tr_state,
             obs=batch_observations,
         )

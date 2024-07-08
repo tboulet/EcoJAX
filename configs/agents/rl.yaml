@@ -5,3 +5,4 @@ hp_initial:
   epsilon: 0.1
   strength_mutation: 0.001
 innate: False
+name_exploration: epsilon_greedy

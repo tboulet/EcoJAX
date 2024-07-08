@@ -4,7 +4,7 @@ from collections import defaultdict
 from functools import partial
 import os
 from time import sleep
-from typing import Any, Dict, List, Tuple, Type, TypeVar
+from typing import Any, Callable, Dict, List, Tuple, Type, TypeVar
 
 import jax
 import jax.numpy as jnp
@@ -19,7 +19,7 @@ from ecojax.core.eco_info import EcoInformation
 from ecojax.environment import EcoEnvironment
 from ecojax.metrics.aggregators import Aggregator
 from ecojax.spaces import EcojaxSpace, Discrete, Continuous
-from ecojax.types import ActionAgent, ObservationAgent, StateEnv
+from ecojax.types import ObservationAgent, StateEnv
 from ecojax.utils import (
     DICT_COLOR_TAG_TO_RGB,
     instantiate_class,
@@ -57,11 +57,10 @@ class AgentGriworld:
 class VideoMemory:
     # The current frame of the video
     idx_end_of_video: int
-    
-    # The last 
-    
-    
-    
+
+    # The last
+
+
 @dataclass
 class StateEnvGridworld(StateEnv):
     # The current timestep of the environment
@@ -79,9 +78,9 @@ class StateEnvGridworld(StateEnv):
     # The lifespan and population aggregators
     metrics_lifespan: List[PyTreeNode]
     metrics_population: List[PyTreeNode]
-    
+
     # The last n_steps_per_video frames of the video
-    video : jnp.ndarray  # (n_steps_per_video, height, width, 3) in [0, 1]
+    video: jnp.ndarray  # (n_steps_per_video, height, width, 3) in [0, 1]
 
 
 class GridworldEnv(EcoEnvironment):
@@ -173,8 +172,12 @@ class GridworldEnv(EcoEnvironment):
         self.dict_name_channel_to_color_tag: Dict[str, str] = self.cfg_video[
             "dict_name_channel_to_color_tag"
         ]
-        self.color_tag_background = try_get(self.config, "color_background", default="white")
-        self.color_tag_unknown_channel = try_get(self.config, "color_unknown_channel", default="black")
+        self.color_tag_background = try_get(
+            self.config, "color_background", default="white"
+        )
+        self.color_tag_unknown_channel = try_get(
+            self.config, "color_unknown_channel", default="black"
+        )
         self.dict_idx_channel_to_color_tag: Dict[int, str] = {}
         for name_channel, idx_channel in self.dict_name_channel_to_idx.items():
             if name_channel in self.dict_name_channel_to_color_tag:
@@ -182,7 +185,9 @@ class GridworldEnv(EcoEnvironment):
                     self.dict_name_channel_to_color_tag[name_channel]
                 )
             else:
-                self.dict_idx_channel_to_color_tag[idx_channel] = self.color_tag_unknown_channel
+                self.dict_idx_channel_to_color_tag[idx_channel] = (
+                    self.color_tag_unknown_channel
+                )
         # Sun Parameters
         self.period_sun: int = config["period_sun"]
         self.method_sun: str = config["method_sun"]
@@ -259,40 +264,10 @@ class GridworldEnv(EcoEnvironment):
         # Actions
         self.list_actions: List[str] = config["list_actions"]
         assert len(self.list_actions) > 0, "The list of actions must be non-empty"
-
-        @dataclass
-        class ActionAgentGridworld(ActionAgent):
-            # The direction of the agent, of shape () and in {0, 3}. direction represents the direction the agent wants to take.
-            assert (
-                "direction" in self.list_actions
-            ), "The direction action must be present in the actions"
-            direction: jnp.ndarray
-
-            # Whether the agent wants to eat, of shape () and in {0, 1}. eat represents whether the agent wants to eat the plant on its cell.
-            # If an agent eats, it won't be able to move this turn.
-            if "do_eat" in self.list_actions:
-                do_eat: jnp.ndarray
-
-            # Whether the agent wants to reproduce, of shape () and in {0, 1}. It represents whether the agent wants to reproduce with another agent.
-            if "do_reproduce" in self.list_actions:
-                do_reproduce: jnp.ndarray
-
-            # Whether the agent wants to transfer energy to another agent, of shape () and in {0, 1}.
-            if "do_transfer" in self.list_actions:
-                do_transfer: jnp.ndarray
-
-        self.ActionAgentGridworld = ActionAgentGridworld
-
-        # Create the action space
-        self.action_space_dict = {}
-        if "direction" in self.list_actions:
-            self.action_space_dict["direction"] = Discrete(n=4)
-        if "do_eat" in self.list_actions:
-            self.action_space_dict["do_eat"] = Discrete(n=2)
-        if "do_reproduce" in self.list_actions:
-            self.action_space_dict["do_reproduce"] = Discrete(n=2)
-        if "do_transfer" in self.list_actions:
-            self.action_space_dict["do_transfer"] = Discrete(n=2)
+        self.action_to_idx: Dict[str, int] = {
+            action: idx for idx, action in enumerate(self.list_actions)
+        }
+        self.n_actions = len(self.list_actions)
 
         # Agent's internal dynamics
         self.age_max: int = config["age_max"]
@@ -405,7 +380,7 @@ class GridworldEnv(EcoEnvironment):
 
         # Initialize the video memory
         video = jnp.zeros((self.n_steps_per_video, H, W, 3))
-        
+
         # Initialize ecological informations
         are_newborns_agents = jnp.zeros(self.n_agents_max, dtype=jnp.bool_)
         are_dead_agents = jnp.zeros(self.n_agents_max, dtype=jnp.bool_)
@@ -471,7 +446,7 @@ class GridworldEnv(EcoEnvironment):
         # Initialize the measures dictionnary. This will be used to store the measures of the environment at this step.
         dict_measures_all: Dict[str, jnp.ndarray] = {}
         t = state.timestep
-        
+
         # ============ (1) Agents interaction with the environment ============
         # Apply the actions of the agents on the environment
         key_random, subkey = jax.random.split(key_random)
@@ -562,7 +537,7 @@ class GridworldEnv(EcoEnvironment):
                     measures,
                     jnp.nan,
                 )
-                
+
         # Update and compute the metrics
         state_new, dict_metrics = self.compute_metrics(
             state=state, state_new=state_new, dict_measures=dict_measures_all
@@ -583,7 +558,7 @@ class GridworldEnv(EcoEnvironment):
         )
         # Update the state
         state_new = state_new.replace(video=video)
-        
+
         # Return the new state and observations
         return (
             state_new,
@@ -596,14 +571,11 @@ class GridworldEnv(EcoEnvironment):
     def get_observation_space_dict(self) -> Dict[str, EcojaxSpace]:
         return self.observation_space_dict
 
-    def get_action_space_dict(self) -> Dict[str, EcojaxSpace]:
-        return self.action_space_dict
-
     def get_class_observation_agent(self) -> Type[ObservationAgent]:
         return self.ObservationAgentGridworld
 
-    def get_class_action_agent(self) -> Type[ActionAgent]:
-        return self.ActionAgentGridworld
+    def get_n_actions(self) -> int:
+        return self.n_actions
 
     def render(self, state: StateEnvGridworld) -> None:
         """The rendering function of the environment. It saves the RGB map of the environment as a video."""
@@ -615,22 +587,19 @@ class GridworldEnv(EcoEnvironment):
 
         tqdm.write(f"Rendering video at timestep {t}...")
         video_writer = VideoRecorder(
-                filename=f"{self.dir_videos}/video_t{t}.mp4",
-                fps=self.fps_video,
-            )
+            filename=f"{self.dir_videos}/video_t{t}.mp4",
+            fps=self.fps_video,
+        )
         for t_ in range(self.n_steps_per_video):
             image = state.video[t_]
             image = self.upscale_image(image)
             video_writer.add(image)
         video_writer.close()
 
-
     # ================== Helper functions ==================
 
     @partial(jax.jit, static_argnums=(0,))
-    def get_RGB_map(
-        self, images: jnp.ndarray
-    ) -> jnp.ndarray:
+    def get_RGB_map(self, images: jnp.ndarray) -> jnp.ndarray:
         """Get the RGB map by applying a color to each channel of a list of grey images and blend them together
 
         Args:
@@ -692,8 +661,7 @@ class GridworldEnv(EcoEnvironment):
             method="nearest",
         )
         return image_upscaled
-        
-        
+
     def step_grow_plants(
         self, state: StateEnvGridworld, key_random: jnp.ndarray
     ) -> jnp.ndarray:
@@ -781,44 +749,68 @@ class GridworldEnv(EcoEnvironment):
         self,
         agent_position: jnp.ndarray,
         agent_orientation: jnp.ndarray,
-        action: ActionAgent,
+        action: int,
     ) -> Tuple[jnp.ndarray, jnp.ndarray]:
         """Get the new position and orientation of a single agent.
         Args:
             agent_position (jnp.ndarray): the position of the agent, of shape (2,)
             agent_orientation (jnp.ndarray): the orientation of the agent, of shape ()
-            action (ActionAgent): the action of the agent, as a ActionAgent of components of shape ()
+            action (int): the action of the agent, an integer between 0 and self.n_actions - 1
 
         Returns:
             jnp.ndarray: the new position of the agent, of shape (2,)
             jnp.ndarray: the new orientation of the agent, of shape ()
         """
-        # Compute the new position and orientation of the agent
         H, W = self.height, self.width
-        direction = action.direction
-        agent_orientation_new = (agent_orientation + direction) % 4
-        angle_new = agent_orientation_new * jnp.pi / 2
-        d_position = jnp.array([jnp.cos(angle_new), -jnp.sin(angle_new)]).astype(
-            jnp.int32
+        condlist: List[jnp.ndarray] = []
+        choicelist_position: List[jnp.ndarray] = []
+        choicelist_orientation: List[jnp.ndarray] = []
+        for name_action_move in ["forward", "backward", "left", "right"]:
+            # Check if the action is a move action
+            if name_action_move in self.list_actions:
+                # Add the action to the list of possible actions related to moving
+                condlist.append(action == self.action_to_idx[name_action_move])
+                # Add the new orientation to the list of possible orientations
+                if name_action_move == "forward":
+                    direction = 0
+                elif name_action_move == "backward":
+                    direction = 2
+                elif name_action_move == "left":
+                    direction = 1
+                elif name_action_move == "right":
+                    direction = 3
+                else:
+                    raise ValueError(f"Incorrect implementation")
+                agent_orientation_new = (agent_orientation + direction) % 4
+                choicelist_orientation.append(agent_orientation_new)
+                # Add the new position to the list of possible positions
+                angle_new = agent_orientation_new * jnp.pi / 2
+                d_position = jnp.array(
+                    [jnp.cos(angle_new), -jnp.sin(angle_new)]
+                ).astype(jnp.int32)
+                agent_position_new = agent_position + d_position
+                agent_position_new = agent_position_new % jnp.array([H, W])
+                choicelist_position.append(agent_position_new)
+
+        # Select the new position and orientation of the agent based on the action
+        agent_position_new = jnp.select(
+            condlist=condlist,
+            choicelist=choicelist_position,
+            default=agent_position,
         )
-        agent_position_new = agent_position + d_position
-        agent_position_new = agent_position_new % jnp.array([H, W])
 
-        # If agent is eating, it won't move
-        if "do_eat" in self.list_actions:
-            do_eat = action.do_eat
-            agent_position_new = jnp.where(do_eat, agent_position, agent_position_new)
-            agent_orientation_new = jnp.where(
-                do_eat, agent_orientation, agent_orientation_new
-            )
+        agent_orientation_new = jnp.select(
+            condlist=condlist,
+            choicelist=choicelist_orientation,
+            default=agent_orientation,
+        )
 
-        # Return the new position and orientation of the agent
         return agent_position_new, agent_orientation_new
 
     def step_action_agents(
         self,
         state: StateEnvGridworld,
-        actions: ActionAgent,
+        actions: jnp.ndarray,
         key_random: jnp.ndarray,
     ) -> Tuple[StateEnvGridworld, Dict[str, jnp.ndarray]]:
         """Modify the state of the environment by applying the actions of the agents."""
@@ -842,33 +834,36 @@ class GridworldEnv(EcoEnvironment):
         )
 
         # ====== Perform the eating action of the agents ======
-        are_agents_eating = state.agents.are_existing_agents
-        if "do_eat" in self.list_actions:
-            are_agents_eating &= actions.do_eat
-        if "do_transfer" in self.list_actions:
-            are_agents_eating &= 1 - actions.do_transfer
-        map_agents_try_eating = (
-            jnp.zeros_like(map_agents)
-            .at[positions_agents_new[:, 0], positions_agents_new[:, 1]]
-            .add(are_agents_eating)
-        )  # map of the number of (existing) agents trying to eat at each cell
+        if "eat" in self.list_actions:
+            are_agents_eating = state.agents.are_existing_agents & (
+                actions == self.action_to_idx["eat"]
+            )
+            map_agents_try_eating = (
+                jnp.zeros_like(map_agents)
+                .at[positions_agents_new[:, 0], positions_agents_new[:, 1]]
+                .add(are_agents_eating)
+            )  # map of the number of (existing) agents trying to eat at each cell
 
-        map_food_energy_bonus_available_per_agent = (
-            self.energy_food * map_plants / jnp.maximum(1, map_agents_try_eating)
-        )  # map of the energy available at each cell per (existing) agent trying to eat
-        food_energy_bonus = map_food_energy_bonus_available_per_agent[
-            positions_agents_new[:, 0], positions_agents_new[:, 1]
-        ]
-        if "amount_food_eaten" in self.names_measures:
-            dict_measures["amount_food_eaten"] = food_energy_bonus
-        energy_agents_new = state.agents.energy_agents + food_energy_bonus
+            map_food_energy_bonus_available_per_agent = (
+                self.energy_food * map_plants / jnp.maximum(1, map_agents_try_eating)
+            )  # map of the energy available at each cell per (existing) agent trying to eat
+            food_energy_bonus = map_food_energy_bonus_available_per_agent[
+                positions_agents_new[:, 0], positions_agents_new[:, 1]
+            ]
+            if "amount_food_eaten" in self.names_measures:
+                dict_measures["amount_food_eaten"] = food_energy_bonus
+            energy_agents_new = state.agents.energy_agents + food_energy_bonus
 
-        # Remove plants that have been eaten
-        map_plants -= map_agents_try_eating * map_plants
-        map_plants = jnp.clip(map_plants, 0, 1)
+            # Remove plants that have been eaten
+            map_plants -= map_agents_try_eating * map_plants
+            map_plants = jnp.clip(map_plants, 0, 1)
 
         # ====== Handle any energy transfer actions ======
-        if "do_transfer" in self.list_actions:
+        if "transfer" in self.list_actions:
+            # Check if any agents are transferring energy
+            are_agents_transferring = state.agents.are_existing_agents & (
+                actions == self.action_to_idx["transfer"]
+            )
             # compute pairwise manhattan distance between agents
             distances = jnp.sum(
                 jnp.abs(positions_agents_new[:, None] - positions_agents_new[None, :]),
@@ -878,9 +873,7 @@ class GridworldEnv(EcoEnvironment):
             def per_agent_helper_fn(i):
                 # don't allow both eating and transferring in one timestep
                 is_transfer = (
-                    state.agents.are_existing_agents[i]
-                    & actions.do_transfer[i]
-                    & (1 - actions.do_eat[i])
+                    state.agents.are_existing_agents[i] & are_agents_transferring[i]
                 )
 
                 # energy can only be transferred to agents on the same or a directly adjacent tile
@@ -949,7 +942,7 @@ class GridworldEnv(EcoEnvironment):
     def step_reproduce_agents(
         self,
         state: StateEnvGridworld,
-        actions: ActionAgent,
+        actions: jnp.ndarray,
         key_random: jnp.ndarray,
     ) -> Tuple[StateEnvGridworld, jnp.ndarray, jnp.ndarray]:
         """Reproduce the agents in the environment."""
@@ -1156,7 +1149,7 @@ class GridworldEnv(EcoEnvironment):
     def compute_measures(
         self,
         state: StateEnvGridworld,
-        actions: ActionAgent,
+        actions: jnp.ndarray,
         state_new: StateEnvGridworld,
         key_random: jnp.ndarray,
     ) -> Dict[str, jnp.ndarray]:
@@ -1164,7 +1157,7 @@ class GridworldEnv(EcoEnvironment):
 
         Args:
             state (StateEnvGridworld): the state of the environment
-            actions (ActionAgent): the actions of the agents
+            actions (jnp.ndarray): the actions of the agents
             state_new (StateEnvGridworld): the new state of the environment
             key_random (jnp.ndarray): the random key
 
@@ -1185,21 +1178,12 @@ class GridworldEnv(EcoEnvironment):
                 dict_measures["average_group_size"] = group_sizes.mean()
                 dict_measures["max_group_size"] = group_sizes.max()
             # Immediate measures
-            elif name_measure == "do_action_eat" and "do_eat" in self.list_actions:
-                measures = actions.do_eat
-            elif (
-                name_measure == "do_action_reproduce"
-                and "do_reproduce" in self.list_actions
-            ):
-                measures = actions.do_reproduce
-            elif name_measure == "do_action_forward":
-                measures = actions.direction == 0
-            elif name_measure == "do_action_left":
-                measures = actions.direction == 1
-            elif name_measure == "do_action_right":
-                measures = actions.direction == 3
-            elif name_measure == "do_action_backward":
-                measures = actions.direction == 2
+            elif name_measure.startswith("do_action_"):
+                str_action = name_measure[len("do_action_") :]
+                if str_action in self.list_actions:
+                    measures = (actions == self.action_to_idx[str_action]).astype(
+                        jnp.float32
+                    )
             # State measures
             elif name_measure == "energy":
                 measures = state.agents.energy_agents
@@ -1226,7 +1210,6 @@ class GridworldEnv(EcoEnvironment):
 
         # Return the dictionary of measures
         return dict_measures
-
 
     def compute_metrics(
         self,
@@ -1298,9 +1281,8 @@ class GridworldEnv(EcoEnvironment):
             dict_metrics[name_metric_new] = dict_metrics.pop(name_metric)
 
         return state_new_new, dict_metrics
-    
-    
-    
+
+
 # ================== Helper functions ==================
 
 

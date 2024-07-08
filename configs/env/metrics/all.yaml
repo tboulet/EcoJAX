@@ -3,9 +3,11 @@ measures:
   environmental:
     - n_agents
     - n_plants
+    - net_energy_transfer_per_capita
+    # - group_size # commented for now cause it's only implemented through a non jittable function
   immediate:
     - do_action_eat
-    # - do_action_reproduce
+    - do_action_reproduce
     - do_action_forward
     - do_action_left
     - do_action_right

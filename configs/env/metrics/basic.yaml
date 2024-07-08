@@ -4,8 +4,7 @@ measures:
     - n_agents
     - n_plants
     - net_energy_transfer_per_capita
-    - average_group_size
-    - max_group_size
+    # - group_size # commented for now cause it's only implemented through a non jittable function
   immediate:
     - do_action_eat
     - do_action_transfer

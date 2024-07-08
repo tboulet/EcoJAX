@@ -46,8 +46,36 @@ class StateSpeciesNE:
 class NeuroEvolutionAgentSpecies(AgentSpecies):
     """A species of agents that evolve their neural network weights."""
 
-    mode_return: str = "action_prob"
-    
+    def __init__(
+        self,
+        config: Dict,
+        n_agents_max: int,
+        n_agents_initial: int,
+        observation_space_dict: Dict[str, spaces.EcojaxSpace],
+        observation_class: Type[ObservationAgent],
+        n_actions: int,
+        model_class: Type[BaseModel],
+        config_model: Dict,
+    ):
+        super().__init__(
+            config=config,
+            n_agents_max=n_agents_max,
+            n_agents_initial=n_agents_initial,
+            observation_space_dict=observation_space_dict,
+            observation_class=observation_class,
+            n_actions=n_actions,
+            model_class=model_class,
+            config_model=config_model,
+        )
+        self.model = model_class(
+            observation_space_dict=observation_space_dict,
+            observation_class=observation_class,
+            n_actions=n_actions,
+            return_modes=["logits"],
+            **config_model,
+        )
+        print(self.model.get_table_summary())
+
     def reset(self, key_random: jnp.ndarray) -> StateSpeciesNE:
         # Initialize the state
         key_random, subkey = random.split(key_random)
@@ -160,12 +188,9 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
 
         return new_state_species, batch_actions
 
-
     # =============== Mutation methods =================
 
-    def mutate_state_agent(
-        self, agent: AgentNE, key_random: jnp.ndarray
-    ) -> AgentNE:
+    def mutate_state_agent(self, agent: AgentNE, key_random: jnp.ndarray) -> AgentNE:
         key_random, *subkeys = random.split(key_random, 5)
         return agent.replace(
             age=0,
@@ -174,9 +199,13 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
                 strength_mutation=agent.hp.strength_mutation,
                 key_random=key_random,
             ),
-            hp=HyperParametersNE(strength_mutation=mutate_scalar(
-                value=agent.hp.strength_mutation, range=(0, None), key_random=subkeys[3]
-            ))
+            hp=HyperParametersNE(
+                strength_mutation=mutate_scalar(
+                    value=agent.hp.strength_mutation,
+                    range=(0, None),
+                    key_random=subkeys[3],
+                )
+            ),
         )
 
     # =============== Agent creation methods =================
@@ -194,12 +223,14 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
             obs: jnp.ndarray,
         ) -> jnp.ndarray:
             # Inference part
-            action, prob_action = self.model.apply(
+            key_random, subkey = random.split(key_random)
+            logits, = self.model.apply(
                 variables={"params": state_agent.params},
                 obs=obs,
-                key_random=key_random,
-                mode_return="action_prob",
+                key_random=subkey,
             )
+            key_random, subkey = random.split(key_random)
+            action = random.categorical(key_random, logits=logits)
             # Learning part
             state_agent.replace(age=state_agent.age + 1)
             pass  # TODO: Implement the learning part

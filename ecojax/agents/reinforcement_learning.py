@@ -57,7 +57,35 @@ class StateSpeciesRL:
 class RL_AgentSpecies(AgentSpecies):
     """A species of agents that learn with reinforcement learning."""
 
-    mode_return: str = "q_values"
+    def __init__(
+        self,
+        config: Dict,
+        n_agents_max: int,
+        n_agents_initial: int,
+        observation_space_dict: Dict[str, spaces.EcojaxSpace],
+        observation_class: Type[ObservationAgent],
+        n_actions: int,
+        model_class: Type[BaseModel],
+        config_model: Dict,
+    ):
+        super().__init__(
+            config=config,
+            n_agents_max=n_agents_max,
+            n_agents_initial=n_agents_initial,
+            observation_space_dict=observation_space_dict,
+            observation_class=observation_class,
+            n_actions=n_actions,
+            model_class=model_class,
+            config_model=config_model,
+        )
+        self.model = model_class(
+            observation_space_dict=observation_space_dict,
+            observation_class=observation_class,
+            n_actions=n_actions,
+            return_modes=["q_values"],
+            **config_model,
+        )
+        print(self.model.get_table_summary())
     
     def reset(self, key_random: jnp.ndarray) -> StateSpeciesRL:
         # Initialize the state
@@ -241,7 +269,6 @@ class RL_AgentSpecies(AgentSpecies):
                 variables={"params": state_agent.params},
                 obs=obs,
                 key_random=key_random,
-                mode_return="q_values",
             )
             # Learning part
             state_agent.replace(age=state_agent.age + 1)

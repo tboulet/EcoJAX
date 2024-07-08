@@ -20,16 +20,19 @@ class BaseModel(nn.Module, ABC):
 
     Args:
         observation_space_dict (Dict[str, EcojaxSpace]): a dictionary of the observation spaces. The keys are the names of the observation components, and the values are the corresponding spaces.
-        action_space_dict (Dict[str, EcojaxSpace]): a dictionary of the action spaces. The keys are the names of the action components, and the values are the corresponding spaces.
         observation_class (Type[ObservationAgent]): the JAX class of the observation agent
-        action_class (Type[ActionAgent]): the JAX class of the action agent
+        n_actions (int): the number of possible actions of the agent
+        return_modes (List[str]): the list of the possible return modes of the model. Can contain (and at least 1 of) the following strings:
+            1) "probs" : the model returns the probabilities of the actions.
+            2) "logits" : the model returns the logits of the actions. Incompatible with "probs".
+            3) "q_values" : the model returns the Q-values of the actions.
+            4) "state_value" : the model returns the state value, as a scalar.
     """
 
     observation_space_dict: Dict[str, EcojaxSpace]
-    action_space_dict: Dict[str, EcojaxSpace]
     observation_class: Type[ObservationAgent]
-    action_class: Type[ActionAgent]
-    mode_return: str
+    n_actions: int
+    return_modes: List[str]
 
     def obs_to_encoding(
         self, obs: ObservationAgent, key_random: jnp.ndarray
@@ -59,7 +62,6 @@ class BaseModel(nn.Module, ABC):
             key_random,
             obs=obs,
             key_random=key_random2,
-            mode_return=self.mode_return,
         )
 
     def get_action_and_prob(
@@ -108,39 +110,44 @@ class BaseModel(nn.Module, ABC):
         # Return the action
         return self.action_class(**kwargs_action), prob_action_sampled
 
-    def get_q_values(self, x: jnp.ndarray) -> jnp.ndarray:
-        """Computes the Q-values of the actions given the input x."""
-        return nn.Dense(features=self.action_space_dict["action"].n)(x)
-
     @nn.compact
     def __call__(
-        self, obs: ObservationAgent, key_random: jnp.ndarray, mode_return: str
-    ) -> Any:
-        """The forward pass of the model.
+        self, obs: ObservationAgent, key_random: jnp.ndarray,
+    ) -> Tuple[jnp.ndarray]:
+        """The forward pass of the model. It maps the observation to the output in the right format.
+        The observation input is given as an ObservationAgent object, ie a JAX dataclass of component in the corresponding observation space.
+        The output can be returned in three different modes and with or without the probabilit(y/ies) of the action(s).
 
         Args:
             obs (ObservationAgent): the observation of the agent
             key_random (jnp.ndarray): the random key used for any random operation in the forward pass
-            mode_return (str): the mode of the return of the model. Can be :
-                1) "action": the model returns an action
-                2) "action_prob": the model returns an action and the probability of taking that action
-                3) "q_values": the model returns the Q-values of the actions
+            
+        Returns:
+            Tuple[jnp.ndarray]: a tuple of the requested outputs
         """
 
         # Convert the observation to a vector encoding
         x = self.obs_to_encoding(obs, key_random)
 
-        # Return the output in the right format
-        if mode_return == "action":
-            action, _ = self.get_action_and_prob(x, key_random)
-            return action
-        elif mode_return == "action_prob":
-            action, prob = self.get_action_and_prob(x, key_random)
-            return action, prob
-        elif mode_return == "q_values":
-            return self.get_q_values(x)
-        else:
-            raise ValueError(f"Unknown mode_return: {mode_return}")
+        # Return the output as a tuple of the requested modes
+        list_outputs : List[jnp.ndarray] = []
+        for mode in self.return_modes:
+            if mode == "probs":
+                probs = nn.softmax(nn.Dense(features=self.n_actions)(x))
+                list_outputs.append(probs)
+            elif mode == "logits":
+                assert "probs" not in self.return_modes, "Cannot return both logits and probs"
+                logits = nn.Dense(features=self.n_actions)(x)
+                list_outputs.append(logits)
+            elif mode == "q_values":
+                q_values = nn.Dense(features=self.n_actions)(x)
+                list_outputs.append(q_values)
+            elif mode == "state_value":
+                state_value = nn.Dense(features=1)(x)
+                list_outputs.append(state_value)
+            else:
+                raise ValueError(f"Unknown return mode: {mode}")
+        return tuple(list_outputs)
 
     def get_table_summary(self) -> Dict[str, Any]:
         """Returns a table that summarizes the model's parameters and shapes."""
@@ -150,4 +157,4 @@ class BaseModel(nn.Module, ABC):
         for key_dict, space in self.observation_space_dict.items():
             kwargs_obs[key_dict] = space.sample(key_random=key_random)
         obs = self.observation_class(**kwargs_obs)
-        return f"Model summary: {nn.tabulate(self, rngs=key_random)(obs, key_random, mode_return=self.mode_return)}"
+        return f"Model summary: {nn.tabulate(self, rngs=key_random)(obs, key_random)}"

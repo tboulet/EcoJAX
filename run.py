@@ -98,9 +98,8 @@ class Runner:
             n_agents_initial=self.config["n_agents_initial"],
         )
         observation_space_dict = env.get_observation_space_dict()
-        action_space_dict = env.get_action_space_dict()
+        n_actions = env.get_n_actions()
         observation_class = env.get_class_observation_agent()
-        action_class = env.get_class_action_agent()
 
         # Create the model
         ModelClass = model_name_to_ModelClass[model_name]
@@ -113,9 +112,8 @@ class Runner:
             n_agents_max=self.config["n_agents_max"],
             n_agents_initial=self.config["n_agents_initial"],
             observation_space_dict=observation_space_dict,
-            action_space_dict=action_space_dict,
             observation_class=observation_class,
-            action_class=action_class,
+            n_actions=n_actions,
             model_class=ModelClass,
             config_model=self.config["model"],
         )

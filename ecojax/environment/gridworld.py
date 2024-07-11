@@ -142,6 +142,9 @@ class GridworldEnv(EcoEnvironment):
         self.width: int = config["width"]
         self.height: int = config["height"]
         self.is_terminal: bool = config["is_terminal"]
+        self.allow_multiple_agents_per_tile = config.get(
+            "allow_multiple_agents_per_tile", True
+        )
         self.period_logging: int = int(max(1, self.config["period_logging"]))
         self.list_names_channels: List[str] = [
             "sun",
@@ -443,6 +446,21 @@ class GridworldEnv(EcoEnvironment):
             info (Dict[str, Any]): additional information about the environment at timestep t
         """
 
+        H, W, C = state.map.shape
+        idx_agents = self.dict_name_channel_to_idx["agents"]
+
+        # Helper func to update agent map
+        def update_agent_map(state: StateEnvGridworld) -> StateEnvGridworld:
+            map_agents_new = (
+                jnp.zeros((H, W))
+                .at[
+                    state.agents.positions_agents[:, 0],
+                    state.agents.positions_agents[:, 1],
+                ]
+                .add(state.agents.are_existing_agents)
+            )
+            return state.replace(map=state.map.at[:, :, idx_agents].set(map_agents_new))
+
         # Initialize the measures dictionnary. This will be used to store the measures of the environment at this step.
         dict_measures_all: Dict[str, jnp.ndarray] = {}
         t = state.timestep
@@ -454,6 +472,7 @@ class GridworldEnv(EcoEnvironment):
             state=state, actions=actions, key_random=subkey
         )
         dict_measures_all.update(dict_measures)
+        state_new = update_agent_map(state_new)
 
         # ============ (2) Agents reproduce ============
         key_random, subkey = jax.random.split(key_random)
@@ -463,21 +482,9 @@ class GridworldEnv(EcoEnvironment):
             )
         )
         dict_measures_all.update(dict_measures)
+        state_new = update_agent_map(state_new)
 
         # ============ (3) Extract the observations of the agents (and some updates) ============
-
-        H, W, C = state_new.map.shape
-        idx_agents = self.dict_name_channel_to_idx["agents"]
-
-        # Recreate the map of agents
-        map_agents_new = (
-            jnp.zeros((H, W))
-            .at[
-                state.agents.positions_agents[:, 0],
-                state.agents.positions_agents[:, 1],
-            ]
-            .add(state.agents.are_existing_agents)
-        )
 
         # Recreate the map of appearances
         map_appearances_new = jnp.zeros((H, W, self.config["dim_appearance"]))
@@ -488,13 +495,13 @@ class GridworldEnv(EcoEnvironment):
         ].add(
             state.agents.appearance_agents * state.agents.are_existing_agents[:, None]
         )
-        map_appearances_new /= jnp.maximum(1, map_agents_new[:, :][:, :, None])
+        map_appearances_new /= jnp.maximum(
+            1, state.map[..., idx_agents][:, :][:, :, None]
+        )
 
         # Update the state
-        map_new = state_new.map.at[:, :, idx_agents].set(map_agents_new)
-        map_new = map_new.at[:, :, idx_agents + 1 :].set(map_appearances_new)
         state_new: StateEnvGridworld = state_new.replace(
-            map=map_new,
+            map=state_new.map.at[:, :, idx_agents + 1 :].set(map_appearances_new),
             timestep=t + 1,
             agents=state_new.agents.replace(age_agents=state_new.agents.age_agents + 1),
         )
@@ -553,9 +560,8 @@ class GridworldEnv(EcoEnvironment):
             operand=None,
         )
         # Add the new frame to the video
-        video = state_new.video.at[t % self.n_steps_per_video].set(
-            self.get_RGB_map(images=state_new.map)
-        )
+        rgb_map = self.get_RGB_map(images=state_new.map)
+        video = state_new.video.at[t % self.n_steps_per_video].set(rgb_map)
         # Update the state
         state_new = state_new.replace(video=video)
 
@@ -597,7 +603,6 @@ class GridworldEnv(EcoEnvironment):
         video_writer.close()
 
     # ================== Helper functions ==================
-
     @partial(jax.jit, static_argnums=(0,))
     def get_RGB_map(self, images: jnp.ndarray) -> jnp.ndarray:
         """Get the RGB map by applying a color to each channel of a list of grey images and blend them together
@@ -618,6 +623,7 @@ class GridworldEnv(EcoEnvironment):
         background = jnp.array(
             DICT_COLOR_TAG_TO_RGB[self.color_tag_background], dtype=jnp.float32
         )
+
         blended_image = background * jnp.ones(
             images.shape[:2] + (3,), dtype=jnp.float32
         )
@@ -745,67 +751,94 @@ class GridworldEnv(EcoEnvironment):
             ),
         )
 
-    def get_single_agent_new_position_and_orientation(
-        self,
-        agent_position: jnp.ndarray,
-        agent_orientation: jnp.ndarray,
-        action: int,
-    ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        """Get the new position and orientation of a single agent.
-        Args:
-            agent_position (jnp.ndarray): the position of the agent, of shape (2,)
-            agent_orientation (jnp.ndarray): the orientation of the agent, of shape ()
-            action (int): the action of the agent, an integer between 0 and self.n_actions - 1
+    def get_facing_pos(self, position, orientation) -> jnp.ndarray:
+        angle = orientation * jnp.pi / 2
+        d_pos = jnp.array([jnp.cos(angle), -jnp.sin(angle)]).astype(jnp.int32)
+        return (position + d_pos) % jnp.array([self.height, self.width])
 
-        Returns:
-            jnp.ndarray: the new position of the agent, of shape (2,)
-            jnp.ndarray: the new orientation of the agent, of shape ()
-        """
-        H, W = self.height, self.width
+    def compute_new_position_and_orientation(
+        self, curr_pos: jnp.ndarray, curr_ori: jnp.ndarray, action: int
+    ) -> Tuple[jnp.ndarray, jnp.ndarray]:
         condlist: List[jnp.ndarray] = []
         choicelist_position: List[jnp.ndarray] = []
         choicelist_orientation: List[jnp.ndarray] = []
+
         for name_action_move in ["forward", "backward", "left", "right"]:
             # Check if the action is a move action
-            if name_action_move in self.list_actions:
-                # Add the action to the list of possible actions related to moving
-                condlist.append(action == self.action_to_idx[name_action_move])
-                # Add the new orientation to the list of possible orientations
-                if name_action_move == "forward":
-                    direction = 0
-                elif name_action_move == "backward":
-                    direction = 2
-                elif name_action_move == "left":
-                    direction = 1
-                elif name_action_move == "right":
-                    direction = 3
-                else:
-                    raise ValueError(f"Incorrect implementation")
-                agent_orientation_new = (agent_orientation + direction) % 4
-                choicelist_orientation.append(agent_orientation_new)
-                # Add the new position to the list of possible positions
-                angle_new = agent_orientation_new * jnp.pi / 2
-                d_position = jnp.array(
-                    [jnp.cos(angle_new), -jnp.sin(angle_new)]
-                ).astype(jnp.int32)
-                agent_position_new = agent_position + d_position
-                agent_position_new = agent_position_new % jnp.array([H, W])
-                choicelist_position.append(agent_position_new)
+            if name_action_move not in self.list_actions:
+                continue
+
+            # Add the action to the list of possible actions related to moving
+            condlist.append(action == self.action_to_idx[name_action_move])
+
+            # Add the new orientation to the list of possible orientations
+            direction = ["forward", "left", "backward", "right"].index(name_action_move)
+            new_ori = (curr_ori + direction) % 4
+            choicelist_orientation.append(new_ori)
+
+            # Add the new position to the list of possible positions
+            new_pos = self.get_facing_pos(curr_pos, new_ori)
+            choicelist_position.append(new_pos)
 
         # Select the new position and orientation of the agent based on the action
-        agent_position_new = jnp.select(
+        new_pos = jnp.select(
             condlist=condlist,
             choicelist=choicelist_position,
-            default=agent_position,
+            default=curr_pos,
         )
 
-        agent_orientation_new = jnp.select(
+        new_ori = jnp.select(
             condlist=condlist,
             choicelist=choicelist_orientation,
-            default=agent_orientation,
+            default=curr_ori,
         )
 
-        return agent_position_new, agent_orientation_new
+        return new_pos, new_ori
+
+    def move_agents_allow_multiple_occupancy(
+        self, state: StateEnvGridworld, actions: jnp.ndarray
+    ):
+        return jax.vmap(self.compute_new_position_and_orientation, in_axes=(0, 0, 0))(
+            state.agents.positions_agents,
+            state.agents.orientation_agents,
+            actions,
+        )
+
+    def move_agents_enforce_single_occupancy(
+        self, state: StateEnvGridworld, actions: jnp.ndarray
+    ):
+        def process_single_agent(agent_map, agent_input):
+            pos_r, pos_c, curr_ori, action = agent_input
+            curr_pos = jnp.array([pos_r, pos_c], dtype=jnp.int32)
+            new_pos, new_ori = self.compute_new_position_and_orientation(
+                curr_pos, curr_ori, action
+            )
+
+            # check whether new position is occupied - if so, agent stays in place
+            new_pos = jnp.where(
+                agent_map[new_pos[0], new_pos[1]] > 0,
+                curr_pos,
+                new_pos,
+            )
+
+            agent_map = agent_map.at[new_pos[0], new_pos[1]].set(1)
+            return agent_map, jnp.array([new_pos[0], new_pos[1], new_ori])
+
+        input_array = jnp.concatenate(
+            [
+                state.agents.positions_agents,
+                state.agents.orientation_agents[:, None],
+                actions[:, None],
+            ],
+            axis=1,
+        )
+        agent_map = state.map[..., self.dict_name_channel_to_idx["agents"]]
+        agent_map, outputs = jax.lax.scan(process_single_agent, agent_map, input_array)
+
+        return (
+            outputs[:, :2],
+            outputs[:, 2],
+        )
 
     def step_action_agents(
         self,
@@ -822,16 +855,12 @@ class GridworldEnv(EcoEnvironment):
         dict_measures: Dict[str, jnp.ndarray] = {}
 
         # ====== Compute the new positions and orientations of all the agents ======
-        get_many_agents_new_position_and_orientation = jax.vmap(
-            self.get_single_agent_new_position_and_orientation, in_axes=(0, 0, 0)
+        move_func = (
+            self.move_agents_allow_multiple_occupancy
+            if self.allow_multiple_agents_per_tile
+            else self.move_agents_enforce_single_occupancy
         )
-        positions_agents_new, orientation_agents_new = (
-            get_many_agents_new_position_and_orientation(
-                state.agents.positions_agents,
-                state.agents.orientation_agents,
-                actions,
-            )
-        )
+        positions_agents_new, orientation_agents_new = move_func(state, actions)
 
         # ====== Perform the eating action of the agents ======
         if "eat" in self.list_actions:
@@ -864,25 +893,15 @@ class GridworldEnv(EcoEnvironment):
             are_agents_transferring = state.agents.are_existing_agents & (
                 actions == self.action_to_idx["transfer"]
             )
-            # compute pairwise manhattan distance between agents
-            distances = jnp.sum(
-                jnp.abs(positions_agents_new[:, None] - positions_agents_new[None, :]),
-                axis=-1,
-            )
 
             def per_agent_helper_fn(i):
-                # don't allow both eating and transferring in one timestep
-                is_transfer = (
-                    state.agents.are_existing_agents[i] & are_agents_transferring[i]
+                target_pos = self.get_facing_pos(
+                    positions_agents_new[i], orientation_agents_new[i]
                 )
-
-                # energy can only be transferred to agents on the same or a directly adjacent tile
-                are_receiving = state.agents.are_existing_agents & (
-                    distances[i, :] <= 1
+                are_receiving = (
+                    (positions_agents_new == target_pos).all(axis=1).astype(jnp.int32)
                 )
-
-                # ensure there are other agents to transfer to, i.e. don't allow self-transfer
-                is_transfer &= jnp.sum(are_receiving) > 1
+                is_transfer = are_agents_transferring[i] & jnp.any(are_receiving)
 
                 loss = is_transfer * self.energy_transfer_loss
                 gain = (
@@ -890,6 +909,7 @@ class GridworldEnv(EcoEnvironment):
                     * self.energy_transfer_gain
                     / jnp.maximum(1, jnp.sum(are_receiving))
                 )
+
                 return jnp.zeros_like(state.agents.energy_agents).at[i].add(-loss) + (
                     gain * are_receiving
                 ).astype(jnp.float32)
@@ -899,7 +919,7 @@ class GridworldEnv(EcoEnvironment):
             ).sum(axis=0)
             energy_agents_new += transfer_delta_energy
 
-            # log the net energy transfer (should always be >= 0)
+            # log the net energy transfer per capita
             if "net_energy_transfer_per_capita" in self.names_measures:
                 dict_measures["net_energy_transfer_per_capita"] = (
                     transfer_delta_energy.sum() / state.agents.are_existing_agents.sum()
@@ -954,7 +974,7 @@ class GridworldEnv(EcoEnvironment):
             state.agents.energy_agents > self.energy_req_reprod
         ) & are_existing_agents
         if "do_reproduce" in self.list_actions:
-            are_agents_trying_reprod &= actions.do_reproduce
+            are_agents_trying_reprod &= actions == self.action_to_idx["do_reproduce"]
 
         # # For test
         # are_existing_agents = jnp.array([False, False, False, False, True, True, True, True, True, False])
@@ -1029,9 +1049,38 @@ class GridworldEnv(EcoEnvironment):
         age_agents_new = state.agents.age_agents.at[indices_newborn_agents_FILLED].set(
             0
         )
+
+        # Initialize the newborn agents' position
+        H, W = self.height, self.width
+        dummy_val = 2 * jnp.maximum(H, W)
+
+        def place_newborn_in_empty_tile(empty_locs, newborn_idx):
+            # find the nearest free square to the newborn's parent
+            # and place them there
+            parent_loc = state.agents.positions_agents[agents_parents[newborn_idx]]
+            closest_idx = jnp.argmin(jnp.sum(jnp.abs(empty_locs - parent_loc), axis=1))
+            closest_loc = empty_locs[closest_idx]
+            empty_locs = empty_locs.at[closest_idx].set([dummy_val, dummy_val])
+            return empty_locs, closest_loc
+
+        if self.allow_multiple_agents_per_tile:
+            newborn_positions = state.agents.positions_agents[
+                indices_had_reproduced_FILLED
+            ]
+        else:
+            agent_map = state.map[..., self.dict_name_channel_to_idx["agents"]]
+            empty_locs = jnp.stack(
+                jnp.where(agent_map == 0, size=H * W, fill_value=dummy_val), axis=1
+            )
+            _, newborn_positions = jax.lax.scan(
+                place_newborn_in_empty_tile, empty_locs, indices_newborn_agents_FILLED
+            )
+
         positions_agents_new = state.agents.positions_agents.at[
             indices_newborn_agents_FILLED
-        ].set(state.agents.positions_agents[indices_had_reproduced_FILLED])
+        ].set(newborn_positions)
+
+        # Initialize the newborn agents' appearances
         key_random, subkey = jax.random.split(key_random)
         noise_appearances = (
             jax.random.normal(

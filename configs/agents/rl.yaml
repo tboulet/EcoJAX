@@ -4,9 +4,10 @@ hp_initial:
   gamma: 0.99
   epsilon: 0.1
   strength_mutation: 0.001
-innate: False
+mode_weights_transmission: final # initial, final, none
 name_exploration: epsilon_greedy
-
+reward_model:
+  func_weight_diff: constant # constant, linear, exponential
 
 # ======================== Defaults sub-configs and other Hydra config ========================
 defaults:

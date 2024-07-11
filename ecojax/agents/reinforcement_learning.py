@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from functools import partial
-from typing import Callable, Dict, List, Tuple, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 import jax
 from jax import random, tree_map
@@ -39,19 +39,16 @@ class HyperParametersRL:
 class AgentRL(PyTreeNode):
     # The age of the agent, in number of timesteps
     age: int
-
-    # The initial parameters of the neural networ
+    # The initial parameters of the neural network
     params: Dict[str, jnp.ndarray]
-
     # The hyperparameters of the agent
     hp: HyperParametersRL
-
+    # The parameters of the reward model (not necessarily a NN, can be a more simple model)
+    params_reward: Dict[str, jnp.ndarray]
     # Whether the agent is existing
     do_exist: bool
-
     # The last observation of the agent
     obs_last: jnp.ndarray
-
     # The last action of the agent
     action_last: int
 
@@ -69,6 +66,98 @@ class StateSpeciesRL:
     metrics_population: List[PyTreeNode]
 
 
+class RewardModel(nn.Module):
+    """The reward model of the agent. It maps the observation to the reward."""
+
+    observation_space_dict: Dict[str, spaces.EcojaxSpace]
+    observation_class: Type[ObservationAgent]
+    func_weight_diff: str
+
+    def sample_dict_input(self, key_random: jnp.ndarray) -> Dict[str, ObservationAgent]:
+        # Concatenate the observations from each scalar space
+        kwargs_obs: Dict[str, np.ndarray] = {}
+        for key_dict, space in self.observation_space_dict.items():
+            key_random, subkey = random.split(key_random)
+            kwargs_obs[key_dict] = space.sample(key_random=subkey)
+        obs = self.observation_class(**kwargs_obs)
+        return {
+            "obs": obs,
+            "obs_next": obs,
+        }  # return twice the same observation as a dummy observation
+
+    def get_initialized_variables(
+        self, key_random: jnp.ndarray
+    ) -> Dict[str, jnp.ndarray]:
+        """Initializes the model's variables and returns them as a dictionary.
+        This is a wrapper around the init method of nn.Module, which creates an observation for initializing the model.
+        """
+        # Sample the observation from the different spaces
+        key_random, subkey = random.split(key_random)
+        dict_input = self.sample_dict_input(subkey)
+
+        # Run the forward pass to initialize the model
+        key_random, subkey = random.split(key_random)
+        return RewardModel.init(
+            self,
+            subkey,
+            dict_input=dict_input,
+        )
+
+    @nn.compact
+    def __call__(
+        self,
+        dict_input: Dict[str, jnp.ndarray],
+    ) -> Tuple[jnp.ndarray]:
+        """The forward pass of the reward model. It receives as input a dictionnary containing the following :
+
+        - "obs" : the observation of the agent
+        - "obs_next" : the next observation of the agent
+
+        It will then extract the scalar components of the observations and compute the reward from them only.
+
+        Args:
+            dict_input (Dict[str, jnp.ndarray]): a dictionnary containing the observations of the agent
+
+        Returns:
+            jnp.ndarray: the reward of the agent
+        """
+        reward = 0.0
+        for name_space, space in self.observation_space_dict.items():
+            if (
+                isinstance(space, spaces.Continuous) and space.shape == ()
+            ):  # Scalar space
+                obs_component = getattr(dict_input["obs"], name_space)
+                obs_component_next = getattr(dict_input["obs_next"], name_space)
+                diff_obs = obs_component_next - obs_component
+                alpha_diff = self.param(
+                    name=f"alpha_diff_{name_space}",
+                    init_fn=nn.initializers.ones,
+                    shape=(),
+                    dtype=jnp.float32,
+                )
+                if self.func_weight_diff == "constant":
+                    reward += alpha_diff * diff_obs
+                elif self.func_weight_diff == "linear":
+                    beta_diff = self.param(
+                        name=f"beta_diff_{name_space}",
+                        init_fn=nn.initializers.ones,
+                        shape=(),
+                        dtype=jnp.float32,
+                    )
+                    reward += (alpha_diff + obs_component * beta_diff) * diff_obs
+                else:
+                    raise NotImplementedError(
+                        f"Function {self.func_weight_diff} not implemented"
+                    )
+        return reward
+
+    def get_table_summary(self) -> Dict[str, Any]:
+        """Returns a table that summarizes the model's parameters and shapes."""
+        key_random = random.PRNGKey(0)
+        dict_input = self.sample_dict_input(key_random)
+        return nn.tabulate(self, rngs=key_random)(dict_input)
+
+
 class RL_AgentSpecies(AgentSpecies):
     """A species of agents that learn with reinforcement learning."""
 
@@ -81,7 +170,7 @@ class RL_AgentSpecies(AgentSpecies):
         observation_class: Type[ObservationAgent],
         n_actions: int,
         model_class: Type[BaseModel],
-        config_model: Dict,
+        config_model: Dict[str, Any],
     ):
         super().__init__(
             config=config,
@@ -101,9 +190,16 @@ class RL_AgentSpecies(AgentSpecies):
             return_modes=["q_values"],
             **config_model,
         )
-        print(self.model.get_table_summary())
+        print(f"Model: {self.model.get_table_summary()}")
+        # Reward model
+        self.reward_model = RewardModel(
+            observation_space_dict=observation_space_dict,
+            observation_class=observation_class,
+            **config["reward_model"],
+        )
+        print(f"Reward model: {self.reward_model.get_table_summary()}")
         # Hyperparameters
-        self.innate: bool = self.config["innate"]
+        self.mode_weights_transmission: str = self.config["mode_weights_transmission"]
         self.name_exploration: str = self.config["name_exploration"]
         # Metrics parameters
         self.names_measures: List[str] = sum(
@@ -150,8 +246,9 @@ class RL_AgentSpecies(AgentSpecies):
         self,
         key_random: jnp.ndarray,
         do_exist: bool = True,
-        params: Dict[str, jnp.ndarray] = None,
-        hp: HyperParametersRL = None,
+        params: Optional[Dict[str, jnp.ndarray]] = None,
+        hp: Optional[HyperParametersRL] = None,
+        params_reward: Optional[Dict[str, jnp.ndarray]] = None,
     ) -> AgentRL:
         """Create a new agent.
 
@@ -160,6 +257,7 @@ class RL_AgentSpecies(AgentSpecies):
             do_exist (bool, optional): whether the agent actually exists in the simulation. Defaults to True.
             params (Dict[str, jnp.ndarray], optional): the NN parameters. Defaults to None (will be initialized randomly)
             hp (HyperParametersRL, optional): the hyperparameters of the agent. Defaults to None (will be initialized from the config).
+            params_reward (Dict[str, jnp.ndarray], optional): the parameters of the reward model. Defaults to None (will be initialized randomly).
 
         Returns:
             AgentRL: the new agent
@@ -170,19 +268,26 @@ class RL_AgentSpecies(AgentSpecies):
             params = variables.get("params", {})
         if hp is None:
             hp = self.init_hp()
+        if params_reward is None:
+            key_random, subkey = random.split(key_random)
+            variables = self.reward_model.get_initialized_variables(subkey)
+            params_reward = variables.get("params", {})
         key_random, subkey = random.split(key_random)
         return AgentRL(
             age=0,
             params=params,
             hp=hp,
+            params_reward=params_reward,
             do_exist=do_exist,
-            obs_last=self.model.sample_observation(subkey),
+            obs_last=self.model.sample_observation(subkey),  # dummy observation
             action_last=-1,  # dummy action
         )
 
     def init_tr_state(self, agent: AgentRL) -> train_state.TrainState:
         """Initialize the training state of the agent."""
-        tx = optax.adam(learning_rate=1) # set tx's learning rate as 1 and scale loss for pseudo-learning rate
+        tx = optax.adam(
+            learning_rate=1
+        )  # set tx's learning rate as 1 and scale loss for pseudo-learning rate
         tr_state = train_state.TrainState.create(
             apply_fn=self.model.apply, params=agent.params, tx=tx
         )
@@ -299,7 +404,7 @@ class RL_AgentSpecies(AgentSpecies):
 
         # Mutate the hyperparameters
         key_random, *subkeys = random.split(key_random, 5)
-        hp = HyperParametersRL(
+        new_hp = HyperParametersRL(
             lr=mutate_scalar(value=agent.hp.lr, range=(0, None), key_random=subkeys[0]),
             gamma=mutate_scalar(
                 value=agent.hp.gamma, range=(0, 1), key_random=subkeys[1]
@@ -312,24 +417,48 @@ class RL_AgentSpecies(AgentSpecies):
             ),
         )
 
-        # If "innate" learning is enable, inherit the parameters from the parents with a small mutation
-        if self.innate:
+        # Mutate the reward model
+        key_random, subkey = random.split(key_random)
+        new_params_reward = mutation_gaussian_noise(
+            arr=agent.params_reward,
+            strength_mutation=agent.hp.strength_mutation,
+            key_random=subkey,
+        )
+
+        # Transmit (or not) the weights according to the mode
+        if self.mode_weights_transmission == "initial":
+            raise NotImplementedError("Mode 'initial' not implemented yet")
+            # Transmit the initial weights, slightly mutated
             key_random, subkey = random.split(key_random)
-            params = mutation_gaussian_noise(
+            new_params = mutation_gaussian_noise(
                 arr=agent.params,
                 strength_mutation=agent.hp.strength_mutation,
                 key_random=subkey,
             )
             return self.init_agent(
                 key_random=key_random,
-                params=params,
-                hp=hp,
+                params=new_params,
+                hp=new_hp,
+                params_reward=new_params_reward,
             )
-        # Else, reset the parameters
-        else:
+        elif self.mode_weights_transmission == "final":
+            # Transmit the final weights
             return self.init_agent(
                 key_random=key_random,
-                hp=hp,
+                params=agent.params,
+                hp=new_hp,
+                params_reward=new_params_reward,
+            )
+        elif self.mode_weights_transmission == "none":
+            # Do not transmit the weights
+            return self.init_agent(
+                key_random=key_random,
+                hp=new_hp,
+                params_reward=new_params_reward,
+            )
+        else:
+            raise NotImplementedError(
+                f"Mode {self.mode_weights_transmission} not implemented"
             )
 
     # =============== Agent inference & learning methods =================
@@ -374,16 +503,20 @@ class RL_AgentSpecies(AgentSpecies):
                 action = jnp.argmax(q_values)
             elif self.name_exploration == "softmax":
                 key_random, subkey = random.split(key_random)
-                action = random.categorical(subkey, logits=q_values)
+                temperature = self.config.get("temperature_softmax", 1.0)
+                action = random.categorical(subkey, logits=q_values / temperature)
             else:
                 raise NotImplementedError(
                     f"Exploration method {self.name_exploration} not implemented"
                 )
             # ============== Learning part =================
             # Compute the reward
-            reward_last = 0.1  # TODO: Implement the reward
+            reward_last = self.reward_model.apply(
+                variables={"params": agent.params_reward},
+                dict_input={"obs": agent.obs_last, "obs_next": obs},
+            )
 
-            # Perform the learning step
+            # Perform the RL step (1-step memory DQN)
             def loss_fn(params):
                 (q_values_last,) = self.model.apply(
                     variables={"params": params},
@@ -393,32 +526,48 @@ class RL_AgentSpecies(AgentSpecies):
                 q_value_last = q_values_last[agent.action_last]
                 target = reward_last + agent.hp.gamma * jnp.max(q_values)
                 loss_q = (q_value_last - target) ** 2
-                loss_q *= agent.hp.lr  # Scale the loss by the learning rate to simulate learning rate
-                loss_q *= (agent.age >= 1) # Only at age 1 (and more) when you have already seen a transition
+                loss_q *= (
+                    agent.hp.lr
+                )  # Scale the loss by the learning rate to simulate learning rate
+                loss_q *= (
+                    agent.age >= 1
+                )  # Only at age 1 (and more) when you have already seen a transition
                 return loss_q
 
             grad_fn = jax.value_and_grad(loss_fn)
             loss_q, grads = grad_fn(tr_state.params)
             tr_state = tr_state.apply_gradients(grads=grads)
+            
             # Update the agent's state
-            agent=agent.replace(
+            agent = agent.replace(
                 params=tr_state.params,
                 age=agent.age + 1,
                 obs_last=obs,
                 action_last=action,
             )
-            # Add the measure
-            dict_measures = {"loss_q" : loss_q}
+
+            # Add the measures
+            dict_measures = {
+                "loss_q": loss_q,
+                "q_values_max": jnp.max(q_values),
+                "q_values_mean": jnp.mean(q_values),
+                "q_values_min": jnp.min(q_values),
+                "target": reward_last + agent.hp.gamma * jnp.max(q_values), 
+                "reward": reward_last,
+            }
             # Update the agent's state and act
             return agent, tr_state, action, dict_measures
 
         batch_keys = random.split(key_random, self.n_agents_max)
-        new_agents, batch_tr_state, batch_actions, dict_measures = jax.vmap(react_single_agent)(
+        new_agents, batch_tr_state, batch_actions, dict_measures = jax.vmap(
+            react_single_agent
+        )(
             key_random=batch_keys,
             agent=state.agents,
             tr_state=state.tr_state,
             obs=batch_observations,
         )
+        dict_measures.update(**new_agents.params_reward)
 
         new_state = state.replace(
             agents=new_agents,

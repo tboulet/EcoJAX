@@ -177,12 +177,12 @@ class RL_AgentSpecies(AgentSpecies):
             hp=hp,
             do_exist=do_exist,
             obs_last=self.model.sample_observation(subkey),
-            action_last=0,  # dummy action
+            action_last=-1,  # dummy action
         )
 
     def init_tr_state(self, agent: AgentRL) -> train_state.TrainState:
         """Initialize the training state of the agent."""
-        tx = optax.adam(learning_rate=agent.hp.lr)
+        tx = optax.adam(learning_rate=1) # set tx's learning rate as 1 and scale loss for pseudo-learning rate
         tr_state = train_state.TrainState.create(
             apply_fn=self.model.apply, params=agent.params, tx=tx
         )
@@ -198,6 +198,9 @@ class RL_AgentSpecies(AgentSpecies):
         StateSpeciesRL,
         ActionAgent,  # Batched
     ]:
+
+        # Initialize the measures dictionnary. This will be used to store the measures of the environment at this step.
+        dict_measures_all: Dict[str, jnp.ndarray] = {}
 
         # Apply the mutation
         batch_keys = random.split(key_random, self.n_agents_max)
@@ -255,13 +258,14 @@ class RL_AgentSpecies(AgentSpecies):
 
         new_state = state.replace(agents=new_agents)
 
-        # Agent-wise reaction
+        # ================== Agent-wise reaction ==================
         key_random, subkey = random.split(key_random)
-        new_state, batch_actions = self.react_agents(
+        new_state, batch_actions, dict_measures = self.react_agents(
             key_random=subkey,
             state=new_state,
             batch_observations=batch_observations,
         )
+        dict_measures_all.update(dict_measures)
 
         # ============ Compute the metrics ============
 
@@ -270,11 +274,12 @@ class RL_AgentSpecies(AgentSpecies):
         dict_measures = self.compute_measures(
             state=state, state_new=new_state, key_random=subkey
         )
+        dict_measures_all.update(dict_measures)
 
         # Set the measures to NaN for the agents that are not existing
-        for name_measure, measures in dict_measures.items():
+        for name_measure, measures in dict_measures_all.items():
             if name_measure not in self.config["metrics"]["measures"]["global"]:
-                dict_measures[name_measure] = jnp.where(
+                dict_measures_all[name_measure] = jnp.where(
                     new_state.agents.do_exist,
                     measures,
                     jnp.nan,
@@ -282,7 +287,7 @@ class RL_AgentSpecies(AgentSpecies):
 
         # Update and compute the metrics
         new_state, dict_metrics = self.compute_metrics(
-            state=state, state_new=new_state, dict_measures=dict_measures
+            state=state, state_new=new_state, dict_measures=dict_measures_all
         )
         info = {"metrics": dict_metrics}
 
@@ -341,7 +346,12 @@ class RL_AgentSpecies(AgentSpecies):
             agent: AgentRL,
             tr_state: train_state.TrainState,
             obs: jnp.ndarray,
-        ) -> jnp.ndarray:
+        ) -> Tuple[
+            AgentRL,
+            train_state.TrainState,
+            int,
+            Dict[str, jnp.ndarray],
+        ]:
             # =============== Inference part =================
             # Compute Q values
             (q_values,) = self.model.apply(
@@ -382,25 +392,28 @@ class RL_AgentSpecies(AgentSpecies):
                 )
                 q_value_last = q_values_last[agent.action_last]
                 target = reward_last + agent.hp.gamma * jnp.max(q_values)
-                loss = (q_value_last - target) ** 2
-                return loss
+                loss_q = (q_value_last - target) ** 2
+                loss_q *= agent.hp.lr  # Scale the loss by the learning rate to simulate learning rate
+                loss_q *= (agent.age >= 1) # Only at age 1 (and more) when you have already seen a transition
+                return loss_q
 
             grad_fn = jax.value_and_grad(loss_fn)
-            loss, grads = grad_fn(tr_state.params)
-            # tr_state = tr_state.apply_gradients(grads=grads)
+            loss_q, grads = grad_fn(tr_state.params)
+            tr_state = tr_state.apply_gradients(grads=grads)
             # Update the agent's state
-            agent.replace(
+            agent=agent.replace(
                 params=tr_state.params,
                 age=agent.age + 1,
                 obs_last=obs,
                 action_last=action,
             )
-            pass  # TODO: Implement the learning part
+            # Add the measure
+            dict_measures = {"loss_q" : loss_q}
             # Update the agent's state and act
-            return agent, tr_state, action
+            return agent, tr_state, action, dict_measures
 
         batch_keys = random.split(key_random, self.n_agents_max)
-        new_agents, batch_tr_state, batch_actions = jax.vmap(react_single_agent)(
+        new_agents, batch_tr_state, batch_actions, dict_measures = jax.vmap(react_single_agent)(
             key_random=batch_keys,
             agent=state.agents,
             tr_state=state.tr_state,
@@ -411,7 +424,7 @@ class RL_AgentSpecies(AgentSpecies):
             agents=new_agents,
             tr_state=batch_tr_state,
         )
-        return new_state, batch_actions
+        return new_state, batch_actions, dict_measures
 
     # =============== Metrics methods =================
 

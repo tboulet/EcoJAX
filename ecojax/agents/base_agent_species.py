@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from functools import partial
-from typing import Dict, List, Tuple, Type, Union
+from typing import Any, Dict, List, Tuple, Type, Union
 
 import jax
 from jax import random
@@ -94,3 +94,76 @@ class AgentSpecies(ABC):
             action (int): the action of the agent, as an integer
         """
         raise NotImplementedError
+
+    # ============== Helper methods ==============
+    
+    def compute_metrics(
+        self,
+        state: StateSpecies,
+        state_new: StateSpecies,
+        dict_measures: Dict[str, jnp.ndarray],
+    ):
+
+        # Set the measures to NaN for the agents that are not existing
+        for name_measure, measures in dict_measures.items():
+            if name_measure not in self.config["metrics"]["measures"]["global"]:
+                dict_measures[name_measure] = jnp.where(
+                    state_new.agents.do_exist,
+                    measures,
+                    jnp.nan,
+                )
+
+        # Aggregate the measures over the lifespan
+        are_just_dead_agents = state_new.agents.do_exist & (
+            ~state_new.agents.do_exist | (state_new.agents.age < state_new.agents.age)
+        )
+
+        dict_metrics_lifespan = {}
+        new_list_metrics_lifespan = []
+        for agg, metrics in zip(self.aggregators_lifespan, state.metrics_lifespan):
+            new_metrics = agg.update_metrics(
+                metrics=metrics,
+                dict_measures=dict_measures,
+                are_alive=state_new.agents.do_exist,
+                are_just_dead=are_just_dead_agents,
+                ages=state_new.agents.age,
+            )
+            dict_metrics_lifespan.update(agg.get_dict_metrics(new_metrics))
+            new_list_metrics_lifespan.append(new_metrics)
+        state_new_new = state_new.replace(metrics_lifespan=new_list_metrics_lifespan)
+
+        # Aggregate the measures over the population
+        dict_metrics_population = {}
+        new_list_metrics_population = []
+        dict_measures_and_metrics_lifespan = {**dict_measures, **dict_metrics_lifespan}
+        for agg, metrics in zip(self.aggregators_population, state.metrics_population):
+            new_metrics = agg.update_metrics(
+                metrics=metrics,
+                dict_measures=dict_measures_and_metrics_lifespan,
+                are_alive=state_new.agents.do_exist,
+                are_just_dead=are_just_dead_agents,
+                ages=state_new.agents.age,
+            )
+            dict_metrics_population.update(agg.get_dict_metrics(new_metrics))
+            new_list_metrics_population.append(new_metrics)
+        state_new_new = state_new_new.replace(
+            metrics_population=new_list_metrics_population
+        )
+
+        # Get the final metrics
+        dict_metrics = {
+            **dict_measures,
+            **dict_metrics_lifespan,
+            **dict_metrics_population,
+        }
+
+        # Arrange metrics in right format
+        for name_metric in list(dict_metrics.keys()):
+            *names, name_measure = name_metric.split("/")
+            if len(names) == 0:
+                name_metric_new = name_measure
+            else:
+                name_metric_new = f"{name_measure}/{' '.join(names[::-1])}"
+            dict_metrics[name_metric_new] = dict_metrics.pop(name_metric)
+
+        return state_new_new, dict_metrics

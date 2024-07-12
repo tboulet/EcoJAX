@@ -226,9 +226,9 @@ class RL_AgentSpecies(AgentSpecies):
         # Initialize the state
         key_random, subkey = random.split(key_random)
         batch_keys = jax.random.split(subkey, self.n_agents_max)
-        batch_agents = jax.vmap(self.init_agent)(batch_keys)
-        batch_agents = batch_agents.replace(
-            do_exist=jnp.arange(self.n_agents_max) < self.n_agents_initial
+        batch_agents = jax.vmap(self.init_agent)(
+            key_random=batch_keys,
+            do_exist=jnp.arange(self.n_agents_max) < self.n_agents_initial, # by convention, the first n_agents_initial agents exist
         )
         batch_tr_states = jax.vmap(self.init_tr_state)(batch_agents)
         return StateSpeciesRL(
@@ -537,7 +537,7 @@ class RL_AgentSpecies(AgentSpecies):
             grad_fn = jax.value_and_grad(loss_fn)
             loss_q, grads = grad_fn(tr_state.params)
             tr_state = tr_state.apply_gradients(grads=grads)
-            
+
             # Update the agent's state
             agent = agent.replace(
                 params=tr_state.params,
@@ -546,20 +546,20 @@ class RL_AgentSpecies(AgentSpecies):
                 action_last=action,
             )
 
-            # Add the measures
+            # ============== Measures ==============
             dict_measures = {
                 "loss_q": loss_q,
                 "q_values_max": jnp.max(q_values),
                 "q_values_mean": jnp.mean(q_values),
                 "q_values_min": jnp.min(q_values),
-                "target": reward_last + agent.hp.gamma * jnp.max(q_values), 
+                "target": reward_last + agent.hp.gamma * jnp.max(q_values),
                 "reward": reward_last,
             }
             # Update the agent's state and act
             return agent, tr_state, action, dict_measures
 
         batch_keys = random.split(key_random, self.n_agents_max)
-        new_agents, batch_tr_state, batch_actions, dict_measures = jax.vmap(
+        new_agents, batch_tr_state, actions, dict_measures = jax.vmap(
             react_single_agent
         )(
             key_random=batch_keys,
@@ -573,7 +573,7 @@ class RL_AgentSpecies(AgentSpecies):
             agents=new_agents,
             tr_state=batch_tr_state,
         )
-        return new_state, batch_actions, dict_measures
+        return new_state, actions, dict_measures
 
     # =============== Metrics methods =================
 
@@ -598,74 +598,3 @@ class RL_AgentSpecies(AgentSpecies):
             pass
 
         return dict_measures
-
-    def compute_metrics(
-        self,
-        state: StateSpeciesRL,
-        state_new: StateSpeciesRL,
-        dict_measures: Dict[str, jnp.ndarray],
-    ):
-
-        # Set the measures to NaN for the agents that are not existing
-        for name_measure, measures in dict_measures.items():
-            if name_measure not in self.config["metrics"]["measures"]["global"]:
-                dict_measures[name_measure] = jnp.where(
-                    state_new.agents.do_exist,
-                    measures,
-                    jnp.nan,
-                )
-
-        # Aggregate the measures over the lifespan
-        are_just_dead_agents = state_new.agents.do_exist & (
-            ~state_new.agents.do_exist | (state_new.agents.age < state_new.agents.age)
-        )
-
-        dict_metrics_lifespan = {}
-        new_list_metrics_lifespan = []
-        for agg, metrics in zip(self.aggregators_lifespan, state.metrics_lifespan):
-            new_metrics = agg.update_metrics(
-                metrics=metrics,
-                dict_measures=dict_measures,
-                are_alive=state_new.agents.do_exist,
-                are_just_dead=are_just_dead_agents,
-                ages=state_new.agents.age,
-            )
-            dict_metrics_lifespan.update(agg.get_dict_metrics(new_metrics))
-            new_list_metrics_lifespan.append(new_metrics)
-        state_new_new = state_new.replace(metrics_lifespan=new_list_metrics_lifespan)
-
-        # Aggregate the measures over the population
-        dict_metrics_population = {}
-        new_list_metrics_population = []
-        dict_measures_and_metrics_lifespan = {**dict_measures, **dict_metrics_lifespan}
-        for agg, metrics in zip(self.aggregators_population, state.metrics_population):
-            new_metrics = agg.update_metrics(
-                metrics=metrics,
-                dict_measures=dict_measures_and_metrics_lifespan,
-                are_alive=state_new.agents.do_exist,
-                are_just_dead=are_just_dead_agents,
-                ages=state_new.agents.age,
-            )
-            dict_metrics_population.update(agg.get_dict_metrics(new_metrics))
-            new_list_metrics_population.append(new_metrics)
-        state_new_new = state_new_new.replace(
-            metrics_population=new_list_metrics_population
-        )
-
-        # Get the final metrics
-        dict_metrics = {
-            **dict_measures,
-            **dict_metrics_lifespan,
-            **dict_metrics_population,
-        }
-
-        # Arrange metrics in right format
-        for name_metric in list(dict_metrics.keys()):
-            *names, name_measure = name_metric.split("/")
-            if len(names) == 0:
-                name_metric_new = name_measure
-            else:
-                name_metric_new = f"{name_measure}/{' '.join(names[::-1])}"
-            dict_metrics[name_metric_new] = dict_metrics.pop(name_metric)
-
-        return state_new_new, dict_metrics

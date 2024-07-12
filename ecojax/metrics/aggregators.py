@@ -9,7 +9,6 @@ from jax.tree_util import register_pytree_node
 from flax.struct import PyTreeNode, dataclass
 
 
-
 class Metric(PyTreeNode):
     """A class to represent a metric. It should be a PyTreeNode."""
 
@@ -74,8 +73,6 @@ class Aggregator(ABC):
             raise ValueError(f"Unknown mode {mode}.")
 
 
-
-
 # ================================ Population metrics ================================
 class AggregatorPopulationMean(Aggregator):
     """Sum of the values of the measures over the population.
@@ -96,8 +93,18 @@ class AggregatorPopulationMean(Aggregator):
         are_just_dead: jnp.ndarray,
         ages: jax.Array,
     ) -> Metric:
-
-        return {f"{self.prefix_metric}/{name_measure}": jnp.nanmean(value_measure) for name_measure, value_measure in dict_measures.items()}
+        dict_metrics_aggregated = {}
+        for name_measure in dict_measures.keys():
+            if (name_measure in self.keys_measures) or any(
+                [
+                    name_measure.startswith(prefix_measure)
+                    for prefix_measure in self.keys_measures_prefix
+                ]
+            ):
+                dict_metrics_aggregated[f"{self.prefix_metric}/{name_measure}"] = (
+                    jnp.nanmean(dict_measures[name_measure])
+                )
+        return dict_metrics_aggregated
 
     def get_dict_metrics(self, metrics: Metric) -> Dict[str, jnp.ndarray]:
         return metrics
@@ -123,8 +130,18 @@ class AggregatorPopulationStd(Aggregator):
         are_just_dead: jnp.ndarray,
         ages: jax.Array,
     ) -> Metric:
-
-        return {f"{self.prefix_metric}/{name_measure}": jnp.nanstd(value_measure) for name_measure, value_measure in dict_measures.items()}
+        dict_metrics_aggregated = {}
+        for name_measure in dict_measures.keys():
+            if (name_measure in self.keys_measures) or any(
+                [
+                    name_measure.startswith(prefix_measure)
+                    for prefix_measure in self.keys_measures_prefix
+                ]
+            ):
+                dict_metrics_aggregated[f"{self.prefix_metric}/{name_measure}"] = (
+                    jnp.nanstd(dict_measures[name_measure])
+                )
+        return dict_metrics_aggregated
 
     def get_dict_metrics(self, metrics: Metric) -> Dict[str, jnp.ndarray]:
         return metrics
@@ -133,12 +150,12 @@ class AggregatorPopulationStd(Aggregator):
 class AggregatorPopulationMovingMean(Aggregator):
     """Mean of the values of the measures over the population, but not only on the current
     timestep, but also to previous timesteps.
-    
+
     TODO: implement this aggregator
-    
+
     For doing this, we use the following formula:
     if m_t is not NaN:
-        f(m)_t += learning_rate * (m_t - f(m)_t) 
+        f(m)_t += learning_rate * (m_t - f(m)_t)
     """
 
     def __init__(
@@ -150,8 +167,8 @@ class AggregatorPopulationMovingMean(Aggregator):
         raise NotImplementedError
 
 
-
 # ================================ Lifespan metrics ================================
+
 
 class AggregatorLifespanCumulative(Aggregator):
     """Time-sum of the values of the measures over the lifespan of the agents.

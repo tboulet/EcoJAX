@@ -198,7 +198,7 @@ def eco_loop(
     info = {"metrics": metrics_global}
 
     # Run the simulation
-    print("Running the simulation...")
+    print("Starting the simulation...")
     
     global_state = StateGlobal(
         state_env=state_env,
@@ -211,7 +211,7 @@ def eco_loop(
     )
     
     # Do (some?) first step(s) to get global_state and info at the right structure
-    for _ in range(1):
+    for _ in range(2):
         with RuntimeMeter("warmup steps"):
             if do_continue_eco_loop((global_state, info)):
                 global_state, info = step_eco_loop((global_state, info))

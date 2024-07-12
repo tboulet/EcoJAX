@@ -156,6 +156,13 @@ class GridworldEnv(EcoEnvironment):
             for idx_channel, name_channel in enumerate(self.list_names_channels)
         }
         self.n_channels_map: int = len(self.dict_name_channel_to_idx)
+        self.list_indexes_channels_visual_field: List[int] = []
+        for name_channel in config["list_channels_visual_field"]:
+            assert name_channel in self.dict_name_channel_to_idx, "Channel not found"
+            self.list_indexes_channels_visual_field.append(
+                self.dict_name_channel_to_idx[name_channel]
+            )
+        self.n_channels_visual_field: int = len(self.list_indexes_channels_visual_field)
         # Metrics parameters
         self.names_measures: List[str] = sum(
             [names for type_measure, names in config["metrics"]["measures"].items()], []
@@ -164,6 +171,8 @@ class GridworldEnv(EcoEnvironment):
         self.cfg_video = config["metrics"]["config_video"]
         self.do_video: bool = self.cfg_video["do_video"]
         self.n_steps_per_video: int = self.cfg_video["n_steps_per_video"]
+        self.t_last_video_rendered: int = -self.n_steps_per_video
+        self.n_steps_min_between_videos = self.cfg_video["n_steps_min_between_videos"]
         self.fps_video: int = self.cfg_video["fps_video"]
         self.dir_videos: str = self.cfg_video["dir_videos"]
         os.makedirs(self.dir_videos, exist_ok=True)
@@ -222,9 +231,9 @@ class GridworldEnv(EcoEnvironment):
 
         @dataclass
         class ObservationAgentGridworld(ObservationAgent):
-            # The visual field of the agent, of shape (2v+1, 2v+1, n_channels_map) where n_channels_map is the number of channels used to represent the environment.
+            # The visual field of the agent, of shape (2v+1, 2v+1, n_channels_visual_field)
             if "visual_field" in self.list_observations:
-                visual_field: jnp.ndarray  # (2v+1, 2v+1, n_channels_map) in R
+                visual_field: jnp.ndarray  # (2v+1, 2v+1, n_channels_visual_field) in R
 
             # The energy level of an agent, of shape () and in [0, +inf).
             if "energy" in self.list_observations:
@@ -249,7 +258,7 @@ class GridworldEnv(EcoEnvironment):
                 shape=(
                     2 * self.vision_range_agent + 1,
                     2 * self.vision_range_agent + 1,
-                    self.n_channels_map,
+                    self.n_channels_visual_field,
                 ),
                 low=None,
                 high=None,
@@ -579,22 +588,25 @@ class GridworldEnv(EcoEnvironment):
 
     def render(self, state: StateEnvGridworld) -> None:
         """The rendering function of the environment. It saves the RGB map of the environment as a video."""
-        if not self.cfg_video["do_video"]:
-            return
         t = state.timestep
-        if t < self.n_steps_per_video:
-            return  # Not enough frames to render a video
 
-        tqdm.write(f"Rendering video at timestep {t}...")
-        video_writer = VideoRecorder(
-            filename=f"{self.dir_videos}/video_t{t}.mp4",
-            fps=self.fps_video,
-        )
-        for t_ in range(self.n_steps_per_video):
-            image = state.video[t_]
-            image = self.upscale_image(image)
-            video_writer.add(image)
-        video_writer.close()
+        # Render the video
+        if (
+            self.cfg_video["do_video"]
+            and t >= self.n_steps_per_video
+            and t >= self.t_last_video_rendered + self.n_steps_min_between_videos
+        ):
+            self.t_last_video_rendered = t
+            tqdm.write(f"Rendering video at timestep {t}...")
+            video_writer = VideoRecorder(
+                filename=f"{self.dir_videos}/video {t-self.n_steps_per_video}-{t}.mp4",
+                fps=self.fps_video,
+            )
+            for t_ in range(self.n_steps_per_video):
+                image = state.video[t_]
+                image = self.upscale_image(image)
+                video_writer.add(image)
+            video_writer.close()
 
     # ================== Helper functions ==================
 
@@ -835,28 +847,36 @@ class GridworldEnv(EcoEnvironment):
 
         # ====== Perform the eating action of the agents ======
         if "eat" in self.list_actions:
+            # If "eat" is in the list of actions, then the agents have to take the action "eat" to eat
             are_agents_eating = state.agents.are_existing_agents & (
                 actions == self.action_to_idx["eat"]
             )
-            map_agents_try_eating = (
-                jnp.zeros_like(map_agents)
-                .at[positions_agents_new[:, 0], positions_agents_new[:, 1]]
-                .add(are_agents_eating)
-            )  # map of the number of (existing) agents trying to eat at each cell
+        else:
+            # Else, agents are eating passively
+            are_agents_eating = state.agents.are_existing_agents
 
-            map_food_energy_bonus_available_per_agent = (
-                self.energy_food * map_plants / jnp.maximum(1, map_agents_try_eating)
-            )  # map of the energy available at each cell per (existing) agent trying to eat
-            food_energy_bonus = map_food_energy_bonus_available_per_agent[
+        map_agents_try_eating = (
+            jnp.zeros_like(map_agents)
+            .at[positions_agents_new[:, 0], positions_agents_new[:, 1]]
+            .add(are_agents_eating)
+        )  # map of the number of (existing) agents trying to eat at each cell
+
+        map_food_energy_bonus_available_per_agent = (
+            self.energy_food * map_plants / jnp.maximum(1, map_agents_try_eating)
+        )  # map of the energy available at each cell per (existing) agent trying to eat
+        food_energy_bonus = (
+            map_food_energy_bonus_available_per_agent[
                 positions_agents_new[:, 0], positions_agents_new[:, 1]
             ]
-            if "amount_food_eaten" in self.names_measures:
-                dict_measures["amount_food_eaten"] = food_energy_bonus
-            energy_agents_new = state.agents.energy_agents + food_energy_bonus
+            * are_agents_eating
+        )
+        if "amount_food_eaten" in self.names_measures:
+            dict_measures["amount_food_eaten"] = food_energy_bonus
+        energy_agents_new = state.agents.energy_agents + food_energy_bonus
 
-            # Remove plants that have been eaten
-            map_plants -= map_agents_try_eating * map_plants
-            map_plants = jnp.clip(map_plants, 0, 1)
+        # Remove plants that have been eaten
+        map_plants -= map_agents_try_eating * map_plants
+        map_plants = jnp.clip(map_plants, 0, 1)
 
         # ====== Handle any energy transfer actions ======
         if "transfer" in self.list_actions:
@@ -953,8 +973,8 @@ class GridworldEnv(EcoEnvironment):
         are_agents_trying_reprod = (
             state.agents.energy_agents > self.energy_req_reprod
         ) & are_existing_agents
-        if "do_reproduce" in self.list_actions:
-            are_agents_trying_reprod &= actions.do_reproduce
+        if "reproduce" in self.list_actions:
+            are_agents_trying_reprod &= actions == self.action_to_idx["reproduce"]
 
         # # For test
         # are_existing_agents = jnp.array([False, False, False, False, True, True, True, True, True, False])
@@ -1091,7 +1111,7 @@ class GridworldEnv(EcoEnvironment):
             H, W, C_map = state.map.shape
 
             # Construct the map of the visual field of the agent
-            map_vis_field = state.map  # (H, W, C_map)
+            map_vis_field = state.map[:, :, self.list_indexes_channels_visual_field]
 
             # Get the visual field of the agent
             visual_field_x = agents.positions_agents[0] + self.grid_indexes_vision_x
@@ -1185,6 +1205,8 @@ class GridworldEnv(EcoEnvironment):
                     measures = (actions == self.action_to_idx[str_action]).astype(
                         jnp.float32
                     )
+                else:
+                    continue
             # State measures
             elif name_measure == "energy":
                 measures = state.agents.energy_agents
@@ -1194,6 +1216,12 @@ class GridworldEnv(EcoEnvironment):
                 measures = state.agents.positions_agents[:, 0]
             elif name_measure == "y":
                 measures = state.agents.positions_agents[:, 1]
+            elif name_measure == "appearance":
+                for i in range(self.config["dim_appearance"]):
+                    dict_measures[f"appearance_{i}"] = state.agents.appearance_agents[
+                        :, i
+                    ]
+                continue
             elif name_measure == "density_agents_observed":
                 raise NotImplementedError(
                     "Density of agents observed is not implemented yet"

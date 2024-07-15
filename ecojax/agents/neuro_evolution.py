@@ -55,8 +55,7 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
         config: Dict,
         n_agents_max: int,
         n_agents_initial: int,
-        observation_space_dict: Dict[str, spaces.EcojaxSpace],
-        observation_class: Type[ObservationAgent],
+        observation_space: spaces.EcojaxSpace,
         n_actions: int,
         model_class: Type[BaseModel],
         config_model: Dict,
@@ -65,18 +64,15 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
             config=config,
             n_agents_max=n_agents_max,
             n_agents_initial=n_agents_initial,
-            observation_space_dict=observation_space_dict,
-            observation_class=observation_class,
+            observation_space=observation_space,
             n_actions=n_actions,
             model_class=model_class,
             config_model=config_model,
         )
         # Model
         self.model = model_class(
-            observation_space_dict=observation_space_dict,
-            observation_class=observation_class,
-            n_actions=n_actions,
-            return_modes=["logits"],
+            space_input=observation_space,
+            space_output=spaces.ContinuousSpace(shape=(n_actions,)),
             **config_model,
         )
         print(self.model.get_table_summary())
@@ -289,8 +285,8 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
         batch_observations: ObservationAgent,  # Batched
     ) -> Tuple[
         StateSpeciesNE,
-        ActionAgent, # Batched
-    ]:  
+        ActionAgent,  # Batched
+    ]:
 
         def react_single_agent(
             key_random: jnp.ndarray,
@@ -303,9 +299,9 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
         ]:
             # =============== Inference part =================
             key_random, subkey = random.split(key_random)
-            (logits,) = self.model.apply(
+            logits = self.model.apply(
                 variables={"params": agent.params},
-                obs=obs,
+                x=obs,
                 key_random=subkey,
             )
             key_random, subkey = random.split(key_random)

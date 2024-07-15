@@ -10,7 +10,7 @@ import flax.linen as nn
 
 from ecojax.models.base_model import BaseModel
 from ecojax.types import ObservationAgent, ActionAgent
-from ecojax.spaces import Continuous, Discrete
+from ecojax.spaces import ContinuousSpace, DiscreteSpace
 
 
 class MLP_Model(BaseModel):
@@ -30,18 +30,20 @@ class MLP_Model(BaseModel):
         """Initializes the model with the MLP layers."""
         for i, hidden_dim in enumerate(self.hidden_dims):
             setattr(self, f"layer_{i}", nn.Dense(features=hidden_dim))
-        
-    def obs_to_encoding(self, obs: ObservationAgent, key_random: jnp.ndarray) -> jnp.ndarray:
+
+    def obs_to_encoding(
+        self, obs: ObservationAgent, key_random: jnp.ndarray
+    ) -> jnp.ndarray:
         """Converts the observation to a vector encoding that can be processed by the MLP."""
-        
+
         # Flatten and concatenate observation inputs
+        list_spaces_and_values = self.space_input.get_list_spaces_and_values(obs)
         list_vectors = []
-        for name_observation_component, space in self.observation_space_dict.items():
-            x: jnp.ndarray = getattr(obs, name_observation_component)
-            if isinstance(space, Continuous):
+        for (space, x) in list_spaces_and_values:
+            if isinstance(space, ContinuousSpace):
                 x = x.reshape((-1,))
                 list_vectors.append(x)
-            elif isinstance(space, Discrete):
+            elif isinstance(space, DiscreteSpace):
                 one_hot_encoded = jax.nn.one_hot(x, space.n)
                 list_vectors.append(one_hot_encoded)
             else:
@@ -49,8 +51,8 @@ class MLP_Model(BaseModel):
         x = jnp.concatenate(list_vectors, axis=-1)
 
         # Process the concatenated output with a final MLP
-        for i, hidden_dim in enumerate(self.hidden_dims):
-            x = getattr(self, f"layer_{i}")(x)
+        for hidden_dim in self.hidden_dims:
+            x = nn.Dense(features=hidden_dim)(x)
             x = nn.relu(x)
-            
+
         return x

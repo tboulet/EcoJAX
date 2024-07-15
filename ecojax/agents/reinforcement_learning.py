@@ -66,49 +66,19 @@ class StateSpeciesRL:
     metrics_population: List[PyTreeNode]
 
 
-class RewardModel(nn.Module):
+class RewardModel(BaseModel):
     """The reward model of the agent. It maps the observation to the reward."""
 
-    observation_space_dict: Dict[str, spaces.EcojaxSpace]
-    observation_class: Type[ObservationAgent]
+    space_input: spaces.DictSpace
+    space_output: spaces.ContinuousSpace
     func_weight_diff: str
 
-    def sample_dict_input(self, key_random: jnp.ndarray) -> Dict[str, ObservationAgent]:
-        # Concatenate the observations from each scalar space
-        kwargs_obs: Dict[str, np.ndarray] = {}
-        for key_dict, space in self.observation_space_dict.items():
-            key_random, subkey = random.split(key_random)
-            kwargs_obs[key_dict] = space.sample(key_random=subkey)
-        obs = self.observation_class(**kwargs_obs)
-        return {
-            "obs": obs,
-            "obs_next": obs,
-        }  # return twice the same observation as a dummy observation
-
-    def get_initialized_variables(
-        self, key_random: jnp.ndarray
-    ) -> Dict[str, jnp.ndarray]:
-        """Initializes the model's variables and returns them as a dictionary.
-        This is a wrapper around the init method of nn.Module, which creates an observation for initializing the model.
-        """
-        # Sample the observation from the different spaces
-        key_random, subkey = random.split(key_random)
-        dict_input = self.sample_dict_input(subkey)
-
-        # Run the forward pass to initialize the model
-        key_random, subkey = random.split(key_random)
-        return RewardModel.init(
-            self,
-            subkey,
-            dict_input=dict_input,
-        )
-
-    @nn.compact
-    def __call__(
+    def obs_to_encoding(
         self,
-        dict_input: Dict[str, jnp.ndarray],
+        x: Dict[str, jnp.ndarray],
+        key_random: jnp.ndarray,
     ) -> Tuple[jnp.ndarray]:
-        """The forward pass of the reward model. It receives as input a dictionnary containing the following :
+        """The encoding of the reward model. It receives as input a dictionnary containing the following :
 
         - "obs" : the observation of the agent
         - "obs_next" : the next observation of the agent
@@ -116,18 +86,25 @@ class RewardModel(nn.Module):
         It will then extract the scalar components of the observations and compute the reward from them only.
 
         Args:
-            dict_input (Dict[str, jnp.ndarray]): a dictionnary containing the observations of the agent
+            x (Dict[str, jnp.ndarray]): a dictionnary containing the observations of the agent
 
         Returns:
             jnp.ndarray: the reward of the agent
         """
+        assert isinstance(
+            self.space_input, spaces.DictSpace
+        ), f"Expected a TupleSpace, got {self.space_input}"
+        space_obs: spaces.DictSpace = self.space_input.dict_space["obs"]
+        space_next_obs: spaces.DictSpace = self.space_input.dict_space["obs_next"]
+        # assert space_obs == space_next_obs, "The observation spaces must be the same"
+
         reward = 0.0
-        for name_space, space in self.observation_space_dict.items():
+        for name_space, space in space_obs.dict_space.items():
             if (
-                isinstance(space, spaces.Continuous) and space.shape == ()
+                isinstance(space, spaces.ContinuousSpace) and space.shape == ()
             ):  # Scalar space
-                obs_component = getattr(dict_input["obs"], name_space)
-                obs_component_next = getattr(dict_input["obs_next"], name_space)
+                obs_component = x["obs"][name_space]
+                obs_component_next = x["obs_next"][name_space]
                 diff_obs = obs_component_next - obs_component
                 alpha_diff = self.param(
                     name=f"alpha_diff_{name_space}",
@@ -151,11 +128,27 @@ class RewardModel(nn.Module):
                     )
         return reward
 
-    def get_table_summary(self) -> Dict[str, Any]:
-        """Returns a table that summarizes the model's parameters and shapes."""
-        key_random = random.PRNGKey(0)
-        dict_input = self.sample_dict_input(key_random)
-        return nn.tabulate(self, rngs=key_random)(dict_input)
+
+class DecisionModel(nn.Module):
+    """The decision model of the agent. It maps the sensor observation to the decision.
+
+    Currently, it is simply a linear combination of the sensor observation components.
+    """
+
+    @nn.compact
+    def __call__(
+        self,
+        obs: jnp.ndarray,
+    ) -> jnp.ndarray:
+        """The forward pass of the decision model. It maps the sensor observation to the decision.
+
+        Args:
+            obs (jnp.ndarray): the sensor observation of the agent
+
+        Returns:
+            jnp.ndarray: the decision of the agent
+        """
+        return nn.Dense(features=1)(obs)
 
 
 class RL_AgentSpecies(AgentSpecies):
@@ -166,35 +159,36 @@ class RL_AgentSpecies(AgentSpecies):
         config: Dict,
         n_agents_max: int,
         n_agents_initial: int,
-        observation_space_dict: Dict[str, spaces.EcojaxSpace],
-        observation_class: Type[ObservationAgent],
+        observation_space: spaces.EcojaxSpace,
         n_actions: int,
         model_class: Type[BaseModel],
-        config_model: Dict[str, Any],
+        config_model: Dict,
     ):
         super().__init__(
             config=config,
             n_agents_max=n_agents_max,
             n_agents_initial=n_agents_initial,
-            observation_space_dict=observation_space_dict,
-            observation_class=observation_class,
+            observation_space=observation_space,
             n_actions=n_actions,
             model_class=model_class,
             config_model=config_model,
         )
         # Model
-        self.model = model_class(
-            observation_space_dict=observation_space_dict,
-            observation_class=observation_class,
-            n_actions=n_actions,
-            return_modes=["q_values"],
+        self.model_sensor = model_class(
+            space_input=observation_space,
+            space_output=spaces.ContinuousSpace(n_actions),
             **config_model,
         )
-        print(f"Model: {self.model.get_table_summary()}")
+        print(f"Model: {self.model_sensor.get_table_summary()}")
         # Reward model
         self.reward_model = RewardModel(
-            observation_space_dict=observation_space_dict,
-            observation_class=observation_class,
+            space_input=spaces.DictSpace(
+                dict_space={
+                    "obs": observation_space,
+                    "obs_next": observation_space,
+                }
+            ),
+            space_output=spaces.ContinuousSpace(shape=(), low=None, high=None),
             **config["reward_model"],
         )
         print(f"Reward model: {self.reward_model.get_table_summary()}")
@@ -228,7 +222,8 @@ class RL_AgentSpecies(AgentSpecies):
         batch_keys = jax.random.split(subkey, self.n_agents_max)
         batch_agents = jax.vmap(self.init_agent)(
             key_random=batch_keys,
-            do_exist=jnp.arange(self.n_agents_max) < self.n_agents_initial, # by convention, the first n_agents_initial agents exist
+            do_exist=jnp.arange(self.n_agents_max)
+            < self.n_agents_initial,  # by convention, the first n_agents_initial agents exist
         )
         batch_tr_states = jax.vmap(self.init_tr_state)(batch_agents)
         return StateSpeciesRL(
@@ -264,7 +259,7 @@ class RL_AgentSpecies(AgentSpecies):
         """
         if params is None:
             key_random, subkey = random.split(key_random)
-            variables = self.model.get_initialized_variables(subkey)
+            variables = self.model_sensor.get_initialized_variables(subkey)
             params = variables.get("params", {})
         if hp is None:
             hp = self.init_hp()
@@ -279,17 +274,17 @@ class RL_AgentSpecies(AgentSpecies):
             hp=hp,
             params_reward=params_reward,
             do_exist=do_exist,
-            obs_last=self.model.sample_observation(subkey),  # dummy observation
+            obs_last=self.observation_space.sample(subkey),  # dummy observation
             action_last=-1,  # dummy action
         )
 
     def init_tr_state(self, agent: AgentRL) -> train_state.TrainState:
         """Initialize the training state of the agent."""
-        tx = optax.adam(
+        tx = optax.sgd(
             learning_rate=1
         )  # set tx's learning rate as 1 and scale loss for pseudo-learning rate
         tr_state = train_state.TrainState.create(
-            apply_fn=self.model.apply, params=agent.params, tx=tx
+            apply_fn=self.model_sensor.apply, params=agent.params, tx=tx
         )
         return tr_state
 
@@ -483,9 +478,9 @@ class RL_AgentSpecies(AgentSpecies):
         ]:
             # =============== Inference part =================
             # Compute Q values
-            (q_values,) = self.model.apply(
+            q_values = self.model_sensor.apply(
                 variables={"params": agent.params},
-                obs=obs,
+                x=obs,
                 key_random=key_random,
             )
             # Pick an action using the exploration method
@@ -511,16 +506,18 @@ class RL_AgentSpecies(AgentSpecies):
                 )
             # ============== Learning part =================
             # Compute the reward
+            key_random, subkey = random.split(key_random)
             reward_last = self.reward_model.apply(
                 variables={"params": agent.params_reward},
-                dict_input={"obs": agent.obs_last, "obs_next": obs},
+                x={"obs": agent.obs_last, "obs_next": obs},
+                key_random=subkey,
             )
 
             # Perform the RL step (1-step memory DQN)
             def loss_fn(params):
-                (q_values_last,) = self.model.apply(
+                q_values_last = self.model_sensor.apply(
                     variables={"params": params},
-                    obs=agent.obs_last,
+                    x=agent.obs_last,
                     key_random=key_random,
                 )
                 q_value_last = q_values_last[agent.action_last]
@@ -531,7 +528,7 @@ class RL_AgentSpecies(AgentSpecies):
                 )  # Scale the loss by the learning rate to simulate learning rate
                 loss_q *= (
                     agent.age >= 1
-                )  # Only at age 1 (and more) when you have already seen a transition
+                )  # Only learn at age 1 (and more) when you have already seen a transition
                 return loss_q
 
             grad_fn = jax.value_and_grad(loss_fn)

@@ -9,7 +9,7 @@ from flax import struct
 
 from ecojax.models.base_model import BaseModel
 from ecojax.types import ObservationAgent, ActionAgent
-from ecojax.spaces import Continuous, Discrete
+from ecojax.spaces import ContinuousSpace, DiscreteSpace
 
 
 class RandomModel(BaseModel):
@@ -22,13 +22,13 @@ class RandomModel(BaseModel):
         for name_action_component, space in self.action_space_dict.items():
             key_random, subkey = random.split(key_random)
 
-            if isinstance(space, Discrete):
+            if isinstance(space, DiscreteSpace):
                 action_component_sampled = random.randint(
                     subkey, shape=(), minval=0, maxval=space.n
                 )
                 action_component_prob = 1.0 / space.n
 
-            elif isinstance(space, Continuous):
+            elif isinstance(space, ContinuousSpace):
                 action_component_sampled = random.uniform(
                     subkey,
                     shape=space.shape,

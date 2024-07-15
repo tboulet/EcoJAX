@@ -29,4 +29,4 @@ matplotlib
 tqdm
 
 # Common libraries
-numpy
+numpy==1.26.4

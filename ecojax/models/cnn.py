@@ -11,7 +11,7 @@ import flax.linen as nn
 from ecojax.models.base_model import BaseModel
 from ecojax.models.neural_components import CNN, MLP
 from ecojax.types import ObservationAgent, ActionAgent
-from ecojax.spaces import Continuous, Discrete
+from ecojax.spaces import ContinuousSpace, DiscreteSpace
 
 
 class CNN_Model(BaseModel):
@@ -37,14 +37,15 @@ class CNN_Model(BaseModel):
     dim_cnn_output: int
     mlp_config: Dict[str, Any]
 
-    @nn.compact
-    def __call__(self, obs: ObservationAgent, key_random: jnp.ndarray) -> ActionAgent:
-        
+    def obs_to_encoding(
+        self, obs: ObservationAgent, key_random: jnp.ndarray
+    ) -> jnp.ndarray:
+
         # Apply the CNN to each observation component
         list_vectors = []
-        for name_observation_component, space in self.observation_space_dict.items():
+        for name_observation_component, space in self.space_input.items():
             x = getattr(obs, name_observation_component)
-            if isinstance(space, Continuous):
+            if isinstance(space, ContinuousSpace):
                 n_dim = len(space.shape)
                 if n_dim == 0:
                     list_vectors.append(jnp.expand_dims(x, axis=-1))
@@ -60,14 +61,14 @@ class CNN_Model(BaseModel):
                     raise ValueError(
                         f"Continuous observation spaces with more than 3 dimensions are not supported"
                     )
-            elif isinstance(space, Discrete):
+            elif isinstance(space, DiscreteSpace):
                 x = jax.nn.one_hot(x, space.n)
 
             else:
                 raise ValueError(
                     f"Unsupported space type for observation: {type(space)}"
                 )
-                
+
         # Concatenate the latent vectors
         x = jnp.concatenate(list_vectors, axis=-1)
 
@@ -75,4 +76,4 @@ class CNN_Model(BaseModel):
         x = MLP(**self.mlp_config)(x)
 
         # Return the action and the probability of the action
-        return self.get_action_and_prob(x, key_random=key_random)
+        return x

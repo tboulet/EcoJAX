@@ -95,7 +95,7 @@ class EcoEnvironment(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def get_observation_space_dict(self) -> Dict[str, EcojaxSpace]:
+    def get_observation_space(self) -> EcojaxSpace:
         """Return a dictionnary describing the observation space of the environment.
 
         The keys of the dictionnary are the names of the observation components.
@@ -107,44 +107,9 @@ class EcoEnvironment(ABC):
         Each agent will expect its observation to be an ObservationAgent object that contains each key as attribute, with the corresponding shape.
 
         Returns:
-            Dict[str, Space]: the observation space dictionnary
+            EcojaxSpace: the observation space of the environment
         """
         raise NotImplementedError
-
-    # @abstractmethod
-    # def get_action_space_dict(self) -> Dict[str, EcojaxSpace]:
-    #     """Return a dictionnary describing the action space of the environment.
-
-    #     The keys of the dictionnary are the names of the action components.
-
-    #     The values are the shapes of the action components.
-    #     If a value is an integer n, it means the action component will be an integer between 0 and n-1.
-    #     If a value is a tuple (n1, n2, ...), it means the action component will be an array of shape (n1, n2, ...).
-
-    #     The agents will be expected to send an ActionAgent object that contains each key as attribute, with the corresponding shape.
-
-    #     Returns:
-    #         Dict[str, Space]: the action space dictionnary
-    #     """
-    #     raise NotImplementedError
-
-    @abstractmethod
-    def get_class_observation_agent(self) -> Type[ObservationAgent]:
-        """Return the class of the observation of the agents.
-
-        Returns:
-            Type[ObservationAgent]: the class of the observation of the agents
-        """
-        raise NotImplementedError
-
-    # @abstractmethod
-    # def get_class_action_agent(self) -> Type[ActionAgent]:
-    #     """Return the class of the action of the agents.
-
-    #     Returns:
-    #         Type[ActionAgent]: the class of the action of the agents
-    #     """
-    #     raise NotImplementedError
 
     @abstractmethod
     def get_n_actions(self) -> int:
@@ -154,7 +119,7 @@ class EcoEnvironment(ABC):
             int: the number of possible actions for the agents
         """
         raise NotImplementedError
-    
+
     @abstractmethod
     def render(self, state: StateEnv) -> None:
         """Do the rendering of the environment. This can be a visual rendering or a logging of the state of any kind."""

@@ -32,8 +32,7 @@ class AgentSpecies(ABC):
         config: Dict,
         n_agents_max: int,
         n_agents_initial: int,
-        observation_space_dict: Dict[str, EcojaxSpace],
-        observation_class: Type[ObservationAgent],
+        observation_space: EcojaxSpace,
         n_actions: int,
         model_class: Type[BaseModel],
         config_model: Dict,
@@ -47,8 +46,7 @@ class AgentSpecies(ABC):
             config (Dict): the agent species configuration
             n_agents_max (int): the maximal number of agents allowed to exist in the simulation. This will also be the number of agents that are simulated every step (even if not all agents exist in the simulation at a given time)
             n_agents_initial (int): the initial number of agents in the simulation
-            observation_space_dict (Dict[str, EcojaxSpace]): a dictionary of the observation spaces. The keys are the names of the observation components, and the values are the corresponding spaces.
-            observation_class (Type[ObservationAgent]): the JAX class of the observation agent
+            observation_space_dict (EcojaxSpace): the observation space of the agents
             n_actions (int): the number of possible actions of the agent
             model_class (Type[BaseModel]): the class of the model used by the agents
             config_model (Dict): the configuration of the model used by the agents
@@ -56,12 +54,10 @@ class AgentSpecies(ABC):
         self.config = config
         self.n_agents_max = n_agents_max
         self.n_agents_initial = n_agents_initial
-        self.observation_space_dict = observation_space_dict
-        self.observation_class = observation_class
+        self.observation_space = observation_space
         self.n_actions = n_actions
         self.model_class = model_class
         self.config_model = config_model
-        
 
     @abstractmethod
     def reset(self, key_random: jnp.ndarray) -> StateSpecies:
@@ -96,7 +92,7 @@ class AgentSpecies(ABC):
         raise NotImplementedError
 
     # ============== Helper methods ==============
-    
+
     def compute_metrics(
         self,
         state: StateSpecies,

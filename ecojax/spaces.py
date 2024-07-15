@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import jax
 import jax.numpy as jnp
@@ -35,14 +35,20 @@ class EcojaxSpace(ABC):
         pass
 
     @abstractmethod
+    def get_list_spaces_and_values(self, x : Any) -> List[Tuple["EcojaxSpace", jnp.ndarray]]:
+        """Flatten the input x to a list of spaces and values.
+        """
+        pass
+    
+    @abstractmethod
     def __repr__(self) -> str:
         pass
 
 
-class Discrete(EcojaxSpace):
+class DiscreteSpace(EcojaxSpace):
 
     def __init__(self, n: int):
-        """The constructor of the Discrete class.
+        """A discrete space with n possible values.
 
         Args:
             n (int): the number of possible values
@@ -73,25 +79,30 @@ class Discrete(EcojaxSpace):
         """
         return jnp.logical_and(0 <= x < self.n, jnp.equal(x, jnp.floor(x)))
 
+    def get_list_spaces_and_values(self, x : int) -> List[Tuple["EcojaxSpace", int]]:
+        return [(self, x)]
+    
     def __repr__(self) -> str:
         return f"Discrete({self.n})"
 
 
-class Continuous(EcojaxSpace):
+class ContinuousSpace(EcojaxSpace):
 
     def __init__(
         self,
         shape: Union[int, Tuple[int]],
-        low: float,
-        high: float,
+        low: Optional[float] = None,
+        high: Optional[float] = None,
     ):
-        """The constructor of the Continuous class.
+        """A continuous space with a shape and bounds. For now this is restricted to having all dimensions with the same bounds (while in gym spaces, each dimension can have different bounds).
 
         Args:
-            shape (Union[int, Tuple[int]]): the shape of the space, as a tuple of non-negative integers
+            shape (Union[int, Tuple[int]]): the shape of the space, as a tuple of non-negative integers (or a single integer for 1D spaces)
             low (float): the lower bound of the space
             high (float): the upper bound of the space
         """
+        if isinstance(shape, int):
+            shape = (shape,)
         self.shape = shape
         self.low = low
         self.high = high
@@ -131,8 +142,118 @@ class Continuous(EcojaxSpace):
         if self.high != None and jnp.any(x > self.high):
             return False
         return True
+    
+    def get_list_spaces_and_values(self, x : float) -> List[Tuple["EcojaxSpace", float]]:
+        return [(self, x)]
 
     def __repr__(self) -> str:
         minval = self.low if self.low is not None else "-inf"
         maxval = self.high if self.high is not None else "inf"
         return f"Continuous({self.shape} in [{minval}, {maxval}])"
+
+
+class TupleSpace(EcojaxSpace):
+
+    def __init__(self, tuple_space: Tuple[EcojaxSpace]):
+        """A space that is the cartesian product of multiple spaces.
+
+        Args:
+            tuple_spaces (Tuple[EcojaxSpace]): the spaces to combine
+        """
+        self.tuple_spaces = tuple_space
+    
+    def sample(self, key_random: jnp.ndarray) -> Tuple[Any]:
+        return tuple(space.sample(key_random) for space in self.tuple_spaces)
+    
+    def contains(self, x: Tuple[Any]) -> bool:
+        return all(space.contains(x[i]) for i, space in enumerate(self.tuple_spaces))
+    
+    def get_list_spaces_and_values(self, x : Tuple[Any]) -> List[Tuple["EcojaxSpace", Any]]:
+        list_spaces_and_values = []
+        for i, space in enumerate(self.tuple_spaces):
+            list_spaces_and_values += space.get_list_spaces_and_values(x[i])
+        return list_spaces_and_values
+    
+    def __repr__(self) -> str:
+        return f"TupleSpace({', '.join([str(space) for space in self.tuple_spaces])})"
+
+
+class DictSpace(EcojaxSpace):
+
+    def __init__(self, dict_space: Dict[str, EcojaxSpace]):
+        """A space that is the dictionary of multiple spaces.
+
+        Args:
+            dict_space (Dict[str, EcojaxSpace]): the spaces to combine
+        """
+        self.dict_space = dict_space
+
+    def sample(self, key_random: jnp.ndarray) -> Dict[str, Any]:
+        return {key: space.sample(key_random) for key, space in self.dict_space.items()}
+    
+    def contains(self, x: Dict[str, Any]) -> bool:
+        return all(space.contains(x[key]) for key, space in self.dict_space.items())
+    
+    def get_list_spaces_and_values(self, x : Dict[str, Any]) -> List[Tuple["EcojaxSpace", Any]]:
+        list_spaces_and_values = []
+        for key, space in self.dict_space.items():
+            list_spaces_and_values += space.get_list_spaces_and_values(x[key])
+        return list_spaces_and_values
+    
+    def __repr__(self) -> str:
+        return f"DictSpace({', '.join([f'{key}: {str(space)}' for key, space in self.dict_space.items()])})"
+
+
+class ProbabilitySpace(ContinuousSpace):
+    
+    def __init__(self, shape: int | Tuple[int],):
+        """A probability space, i.e. a continuous space with values in [0, 1] and summing to 1."""
+        assert isinstance(shape, int) or len(shape) == 1, "The shape of the probability space must be an integer or a tuple of length 1."
+        super().__init__(shape, 0, 1)
+        
+    def sample(self, key_random: jnp.ndarray) -> jnp.ndarray:
+        x = super().sample(key_random) 
+        return jax.nn.softmax(x)
+    
+    def contains(self, x: jnp.ndarray) -> bool:
+        return super().contains(x) and jnp.allclose(jnp.sum(x), 1)
+    
+    def __repr__(self) -> str:
+        return f"ProbabilitySpace({self.shape})"
+    
+    
+# if __name__ == "__main__":
+#     # Test the spaces
+#     key_random = random.PRNGKey(0)
+#     discrete = Discrete(5)
+#     assert discrete.contains(0)
+#     assert discrete.contains(1)
+#     assert discrete.contains(2)
+#     assert discrete.contains(3)
+#     assert discrete.contains(4)
+#     assert not discrete.contains(5)
+#     assert not discrete.contains(-1)
+#     assert discrete.sample(key_random) in [0, 1, 2, 3, 4]
+
+#     continuous = Continuous((), -1, 1)
+#     assert continuous.contains(0)
+#     assert continuous.contains(0.5)
+#     assert continuous.contains(-0.5)
+#     assert not continuous.contains(1.5)
+#     assert not continuous.contains(-1.5)
+#     assert continuous.sample(key_random) >= -1
+#     assert continuous.sample(key_random) <= 1
+
+#     tuple_space = TupleSpace(discrete, continuous)
+#     assert tuple_space.contains((0, 0))
+#     assert tuple_space.contains((4, 1))
+#     assert not tuple_space.contains((5, 0))
+#     assert not tuple_space.contains((0, 2))
+#     assert tuple_space.sample(key_random) == (discrete.sample(key_random), continuous.sample(key_random))
+
+#     dict_space = DictSpace(discrete=discrete, continuous=continuous)
+#     assert dict_space.contains({"discrete": 0, "continuous": 0})
+#     assert dict_space.contains({"discrete": 4, "continuous": 1})
+#     assert not dict_space.contains({"discrete": 5, "continuous": 0})
+#     assert not dict_space.contains({"discrete": 0, "continuous": 2})
+#     assert dict_space.sample(key_random) == {"discrete": discrete.sample(key_random), "continuous": continuous.sample(key_random)}

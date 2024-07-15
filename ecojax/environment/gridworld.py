@@ -18,7 +18,7 @@ from tqdm import tqdm
 from ecojax.core.eco_info import EcoInformation
 from ecojax.environment import EcoEnvironment
 from ecojax.metrics.aggregators import Aggregator
-from ecojax.spaces import EcojaxSpace, Discrete, Continuous
+from ecojax.spaces import DictSpace, EcojaxSpace, DiscreteSpace, ContinuousSpace
 from ecojax.types import ObservationAgent, StateEnv
 from ecojax.utils import (
     DICT_COLOR_TAG_TO_RGB,
@@ -51,14 +51,6 @@ class AgentGriworld:
     # The appearance of an agent allows the agents to distinguish their genetic proximity, as agents with similar appearances are more likely to be genetically close.
     # By convention : a non-agent has an appearance of zeros, the common ancestors have an appearance of ones, and m superposed agents have an appearance of their average.
     appearance_agents: jnp.ndarray  # (n_max_agents, dim_appearance) in R
-
-
-@dataclass
-class VideoMemory:
-    # The current frame of the video
-    idx_end_of_video: int
-
-    # The last
 
 
 @dataclass
@@ -246,7 +238,7 @@ class GridworldEnv(EcoEnvironment):
         self.ObservationAgentGridworld = ObservationAgentGridworld
 
         # Create the observation space
-        self.observation_space_dict = {}
+        observation_dict = {}
         if "visual_field" in self.list_observations:
             self.vision_range_agent: int = config["vision_range_agent"]
             self.grid_indexes_vision_x, self.grid_indexes_vision_y = jnp.meshgrid(
@@ -254,7 +246,7 @@ class GridworldEnv(EcoEnvironment):
                 jnp.arange(-self.vision_range_agent, self.vision_range_agent + 1),
                 indexing="ij",
             )
-            self.observation_space_dict["visual_field"] = Continuous(
+            observation_dict["visual_field"] = ContinuousSpace(
                 shape=(
                     2 * self.vision_range_agent + 1,
                     2 * self.vision_range_agent + 1,
@@ -264,11 +256,10 @@ class GridworldEnv(EcoEnvironment):
                 high=None,
             )
         if "energy" in self.list_observations:
-            self.observation_space_dict["energy"] = Continuous(
-                shape=(), low=0, high=None
-            )
+            observation_dict["energy"] = ContinuousSpace(shape=(), low=0, high=None)
         if "age" in self.list_observations:
-            self.observation_space_dict["age"] = Continuous(shape=(), low=0, high=None)
+            observation_dict["age"] = ContinuousSpace(shape=(), low=0, high=None)
+        self.observation_space = DictSpace(observation_dict)
 
         # Actions
         self.list_actions: List[str] = config["list_actions"]
@@ -577,11 +568,8 @@ class GridworldEnv(EcoEnvironment):
             info,
         )
 
-    def get_observation_space_dict(self) -> Dict[str, EcojaxSpace]:
-        return self.observation_space_dict
-
-    def get_class_observation_agent(self) -> Type[ObservationAgent]:
-        return self.ObservationAgentGridworld
+    def get_observation_space(self) -> DictSpace:
+        return self.observation_space
 
     def get_n_actions(self) -> int:
         return self.n_actions
@@ -1149,14 +1137,9 @@ class GridworldEnv(EcoEnvironment):
             dict_observations["visual_field"] = jax.vmap(get_single_agent_visual_field)(
                 state.agents
             )
-        observations = self.ObservationAgentGridworld(
-            **{
-                name_obs: dict_observations[name_obs]
-                for name_obs in self.list_observations
-            }
-        )
 
-        dict_measures = {}
+        # Compute some observations-related measures
+        dict_measures = {}  # None for now
 
         # print(f"Map : {state.map[..., 0]}")
         # print(f"Agents positions : {state.positions_agents}")
@@ -1164,7 +1147,7 @@ class GridworldEnv(EcoEnvironment):
         # print(f"First agent obs : {observations.visual_field[0, ..., 2]}, shape : {observations.visual_field[0, ...].shape}")
         # raise ValueError("Stop")
 
-        return observations, dict_measures
+        return dict_observations, dict_measures
 
     def compute_measures(
         self,

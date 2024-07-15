@@ -19,14 +19,14 @@ source venv/bin/activate   # on Windows, use `venv\Scripts\activate.bat`
 
 ### Install JAX
 
-On linux (note your CUDA version may vary) :
+On linux (note your CUDA version may vary, and I'm unsure of the JAX version, 0.4.30 works fine) :
 ```bash
-pip install jax[cuda12_pip]==0.4.24 -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+pip install jax[cuda12_pip] -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 ```
 
 On Windows :
 ```bash
-pip install jax[cpu]==0.4.24
+pip install jax[cpu]
 ```
 
 ### Install the requirements

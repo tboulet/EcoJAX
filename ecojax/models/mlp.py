@@ -53,6 +53,6 @@ class MLP_Model(BaseModel):
         # Process the concatenated output with a final MLP
         for hidden_dim in self.hidden_dims:
             x = nn.Dense(features=hidden_dim)(x)
-            x = nn.relu(x)
+            x = self.activation_fn(name_activation_fn="relu", x=x)
 
         return x

@@ -8,15 +8,36 @@ import flax.linen as nn
 from jax import random
 import jax.numpy as jnp
 
-from ecojax.spaces import ContinuousSpace, DictSpace, DiscreteSpace, EcojaxSpace, ProbabilitySpace, TupleSpace
+from ecojax.spaces import (
+    ContinuousSpace,
+    DictSpace,
+    DiscreteSpace,
+    EcojaxSpace,
+    ProbabilitySpace,
+    TupleSpace,
+)
 from ecojax.types import ActionAgent, ObservationAgent
+
+name_activation_fn_to_fn = {
+    "relu": nn.relu,
+    "sigmoid": nn.sigmoid,
+    "tanh": nn.tanh,
+    "leaky_relu": nn.leaky_relu,
+    "elu": nn.elu,
+    "selu": nn.selu,
+    "gelu": nn.gelu,
+    "swish": nn.swish,
+    "identity": lambda x: x,
+    "linear": lambda x: x,
+    None: lambda x: x,
+}
 
 
 class BaseModel(nn.Module, ABC):
     """The base class for all models. A model is a way to map observations to actions.
     This abstract class subclasses nn.Module, which is the base class for all Flax models.
 
-    For subclassing this class, users need to add the dataclass parameters and implement the __call__ method.
+    For subclassing this class, users need to add the dataclass parameters and implement the obs_to_encoding method.
 
     Args:
         space_input (EcojaxSpace): the input space of the model
@@ -54,6 +75,7 @@ class BaseModel(nn.Module, ABC):
 
     def process_encoding(self, x: jnp.ndarray, key_random: jnp.ndarray) -> jnp.ndarray:
         """Processes the encoding to obtain the output of the model."""
+        # Process the encoding to obtain the output
         if isinstance(self.space_output, DiscreteSpace):
             logits = nn.Dense(features=self.space_output.n)(x)
             output = random.categorical(key_random, logits)
@@ -62,23 +84,40 @@ class BaseModel(nn.Module, ABC):
             if len(shape_output) == 1:
                 values = nn.Dense(features=shape_output[0])(x)
                 if isinstance(self.space_output, ProbabilitySpace):
-                    return nn.softmax(values)
+                    output = nn.softmax(values)
                 else:
-                    return values
+                    output = values
             elif len(shape_output) == 0:
-                return x
+                output = x
             else:
-               raise NotImplementedError(f"Processing of continuous space of shape {shape_output} is not implemented.")
+                raise NotImplementedError(
+                    f"Processing of continuous space of shape {shape_output} is not implemented."
+                )
         elif isinstance(self.space_output, TupleSpace):
-            return tuple(self.process_encoding(x, key_random) for _ in range(len(self.space_output.tuple_spaces)))
+            return tuple(
+                self.process_encoding(x, key_random)
+                for _ in range(len(self.space_output.tuple_spaces))
+            )
         elif isinstance(self.space_output, DictSpace):
-            return {key: self.process_encoding(x, key_random) for key in self.space_output.dict_space.keys()}
+            return {
+                key: self.process_encoding(x, key_random)
+                for key in self.space_output.dict_space.keys()
+            }
         else:
-            raise ValueError(f"Unknown space type for output: {type(self.space_output)}")
-            
-        assert self.space_output.contains(output), f"Output {output} is not in the output space {self.space_output}"
+            raise ValueError(
+                f"Unknown space type for output: {type(self.space_output)}"
+            )
+
+        # Return the output
+        assert self.space_output.contains(
+            output
+        ), f"Output {output} is not in the output space {self.space_output}"
         return output
-    
+
+    def activation_fn(self, name_activation_fn, x: jnp.ndarray) -> jnp.ndarray:
+        """Apply the activation function to the input."""
+        return name_activation_fn_to_fn[name_activation_fn](x)
+
     @nn.compact
     def __call__(
         self,

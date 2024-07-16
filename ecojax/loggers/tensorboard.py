@@ -25,7 +25,9 @@ class LoggerTensorboard(BaseLogger):
         for name, values in dict_histograms.items():
             values = values[~np.isnan(values)]
             if len(values) > 0:
-                self.writer.add_histogram(name, values, timestep)
-
+                try:
+                    self.writer.add_histogram(name, values, timestep)
+                except:
+                    print(f"Error in logging histogram {name}, values: {values}")
     def close(self):
         self.writer.close()

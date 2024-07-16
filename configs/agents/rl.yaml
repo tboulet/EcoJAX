@@ -1,13 +1,27 @@
 name: RL_Agents
+
+# ======================== Agent's Hyperparameter ========================
+# The initial hyperparameters of the population
 hp_initial:
   lr: 0.001
   gamma: 0.99
   epsilon: 0.1
   strength_mutation: 0.001
-mode_weights_transmission: final # initial, final, none
+# The name of the exploration strategy, among epsilon_greedy, softmax, and greedy
 name_exploration: epsilon_greedy
+
+# ======================== Evolution Hyperparameters ========================
+mode_weights_transmission: final # initial, final, none
+
+# ======================== Models Config ========================
+# The configuration of the reward model
 reward_model:
   func_weight_diff: constant # constant, linear, exponential
+# The dimension of the latent space corresponding to the internal representation of the observation
+n_sensations: 10
+# The configuration of the decision model
+decision_model:
+  hidden_dims: []
 
 # ======================== Defaults sub-configs and other Hydra config ========================
 defaults:

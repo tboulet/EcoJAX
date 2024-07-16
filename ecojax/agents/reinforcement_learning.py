@@ -18,6 +18,7 @@ from ecojax.core.eco_info import EcoInformation
 from ecojax.metrics.aggregators import Aggregator
 from ecojax.models.base_model import BaseModel
 from ecojax.evolution.mutator import mutate_scalar, mutation_gaussian_noise
+from ecojax.models.mlp import MLP_Model
 from ecojax.types import ActionAgent, ObservationAgent
 import ecojax.spaces as spaces
 from ecojax.utils import instantiate_class, jprint
@@ -39,10 +40,14 @@ class HyperParametersRL:
 class AgentRL(PyTreeNode):
     # The age of the agent, in number of timesteps
     age: int
-    # The initial parameters of the neural network
-    params: Dict[str, jnp.ndarray]
     # The hyperparameters of the agent
     hp: HyperParametersRL
+    # The initial parameters of the neural network
+    params_sensor: Dict[str, jnp.ndarray]
+    # The parameters of the decision model
+    params_decision: Dict[str, jnp.ndarray]
+    # In case of initial weights transmission, the initial parameters of the decision model
+    # TODO
     # The parameters of the reward model (not necessarily a NN, can be a more simple model)
     params_reward: Dict[str, jnp.ndarray]
     # Whether the agent is existing
@@ -129,28 +134,6 @@ class RewardModel(BaseModel):
         return reward
 
 
-class DecisionModel(nn.Module):
-    """The decision model of the agent. It maps the sensor observation to the decision.
-
-    Currently, it is simply a linear combination of the sensor observation components.
-    """
-
-    @nn.compact
-    def __call__(
-        self,
-        obs: jnp.ndarray,
-    ) -> jnp.ndarray:
-        """The forward pass of the decision model. It maps the sensor observation to the decision.
-
-        Args:
-            obs (jnp.ndarray): the sensor observation of the agent
-
-        Returns:
-            jnp.ndarray: the decision of the agent
-        """
-        return nn.Dense(features=1)(obs)
-
-
 class RL_AgentSpecies(AgentSpecies):
     """A species of agents that learn with reinforcement learning."""
 
@@ -164,23 +147,33 @@ class RL_AgentSpecies(AgentSpecies):
         model_class: Type[BaseModel],
         config_model: Dict,
     ):
-        super().__init__(
-            config=config,
-            n_agents_max=n_agents_max,
-            n_agents_initial=n_agents_initial,
-            observation_space=observation_space,
-            n_actions=n_actions,
-            model_class=model_class,
-            config_model=config_model,
-        )
-        # Model
-        self.model_sensor = model_class(
+        self.config = config
+        self.n_agents_max = n_agents_max
+        self.n_agents_initial = n_agents_initial
+        self.observation_space = observation_space
+        self.n_actions = n_actions
+
+        # Sensor model : this model converts the observation to "sensations", which are some internal neuro-evolved representation of the observation
+        n_sensations = config["n_sensations"]
+        self.sensor_model = model_class(
             space_input=observation_space,
-            space_output=spaces.ContinuousSpace(n_actions),
+            space_output=spaces.ContinuousSpace(
+                n_sensations,
+            ),
             **config_model,
         )
-        print(f"Model: {self.model_sensor.get_table_summary()}")
-        # Reward model
+        print(f"Sensor model: {self.sensor_model.get_table_summary()}")
+
+        # Decision model : this RL model converts the sensations to the decision (actions)
+        config_decision_model = config["decision_model"]
+        self.decision_model = MLP_Model(
+            space_input=spaces.ContinuousSpace(n_sensations),
+            space_output=spaces.ContinuousSpace(n_actions),
+            **config_decision_model,
+        )
+        print(f"Decision model: {self.decision_model.get_table_summary()}")
+
+        # Reward model : this neuro-evolved model converts the observation variation to a reward used by the RL process
         self.reward_model = RewardModel(
             space_input=spaces.DictSpace(
                 dict_space={
@@ -188,13 +181,15 @@ class RL_AgentSpecies(AgentSpecies):
                     "obs_next": observation_space,
                 }
             ),
-            space_output=spaces.ContinuousSpace(shape=(), low=None, high=None),
+            space_output=spaces.ContinuousSpace(shape=()),
             **config["reward_model"],
         )
         print(f"Reward model: {self.reward_model.get_table_summary()}")
+
         # Hyperparameters
         self.mode_weights_transmission: str = self.config["mode_weights_transmission"]
         self.name_exploration: str = self.config["name_exploration"]
+
         # Metrics parameters
         self.names_measures: List[str] = sum(
             [names for type_measure, names in config["metrics"]["measures"].items()], []
@@ -241,8 +236,9 @@ class RL_AgentSpecies(AgentSpecies):
         self,
         key_random: jnp.ndarray,
         do_exist: bool = True,
-        params: Optional[Dict[str, jnp.ndarray]] = None,
         hp: Optional[HyperParametersRL] = None,
+        params_sensor: Optional[Dict[str, jnp.ndarray]] = None,
+        params_decision: Optional[Dict[str, jnp.ndarray]] = None,
         params_reward: Optional[Dict[str, jnp.ndarray]] = None,
     ) -> AgentRL:
         """Create a new agent.
@@ -250,31 +246,43 @@ class RL_AgentSpecies(AgentSpecies):
         Args:
             key_random (jnp.ndarray): the random key
             do_exist (bool, optional): whether the agent actually exists in the simulation. Defaults to True.
-            params (Dict[str, jnp.ndarray], optional): the NN parameters. Defaults to None (will be initialized randomly)
             hp (HyperParametersRL, optional): the hyperparameters of the agent. Defaults to None (will be initialized from the config).
+            params_sensor (Dict[str, jnp.ndarray], optional): the sensor NN parameters. Defaults to None (will be initialized randomly)
+            params_decision (Dict[str, jnp.ndarray], optional): the decision NN parameters. Defaults to None (will be initialized randomly)
             params_reward (Dict[str, jnp.ndarray], optional): the parameters of the reward model. Defaults to None (will be initialized randomly).
 
         Returns:
             AgentRL: the new agent
         """
-        if params is None:
-            key_random, subkey = random.split(key_random)
-            variables = self.model_sensor.get_initialized_variables(subkey)
-            params = variables.get("params", {})
         if hp is None:
             hp = self.init_hp()
+        if params_sensor is None:
+            key_random, subkey = random.split(key_random)
+            variables = self.sensor_model.get_initialized_variables(subkey)
+            params_sensor = variables.get("params", {})
+        if params_decision is None:
+            key_random, subkey = random.split(key_random)
+            variables = self.decision_model.get_initialized_variables(subkey)
+            params_decision = variables.get("params", {})
         if params_reward is None:
             key_random, subkey = random.split(key_random)
             variables = self.reward_model.get_initialized_variables(subkey)
             params_reward = variables.get("params", {})
         key_random, subkey = random.split(key_random)
+        obs_dummy = self.observation_space.sample(subkey)
+        # internal_obs_dummy = self.model_sensor.apply(
+        #     variables={"params": params_sensor},
+        #     x=obs_dummy,
+        #     key_random=subkey,
+        # )
         return AgentRL(
             age=0,
-            params=params,
             hp=hp,
+            params_sensor=params_sensor,
+            params_decision=params_decision,
             params_reward=params_reward,
             do_exist=do_exist,
-            obs_last=self.observation_space.sample(subkey),  # dummy observation
+            obs_last=obs_dummy,  # dummy observation
             action_last=-1,  # dummy action
         )
 
@@ -284,7 +292,7 @@ class RL_AgentSpecies(AgentSpecies):
             learning_rate=1
         )  # set tx's learning rate as 1 and scale loss for pseudo-learning rate
         tr_state = train_state.TrainState.create(
-            apply_fn=self.model_sensor.apply, params=agent.params, tx=tx
+            apply_fn=self.sensor_model.apply, params=agent.params_decision, tx=tx
         )
         return tr_state
 
@@ -412,6 +420,14 @@ class RL_AgentSpecies(AgentSpecies):
             ),
         )
 
+        # Mutate the sensor model
+        key_random, subkey = random.split(key_random)
+        new_params_sensor = mutation_gaussian_noise(
+            arr=agent.params_sensor,
+            strength_mutation=agent.hp.strength_mutation,
+            key_random=subkey,
+        )
+
         # Mutate the reward model
         key_random, subkey = random.split(key_random)
         new_params_reward = mutation_gaussian_noise(
@@ -422,39 +438,27 @@ class RL_AgentSpecies(AgentSpecies):
 
         # Transmit (or not) the weights according to the mode
         if self.mode_weights_transmission == "initial":
-            raise NotImplementedError("Mode 'initial' not implemented yet")
-            # Transmit the initial weights, slightly mutated
-            key_random, subkey = random.split(key_random)
-            new_params = mutation_gaussian_noise(
-                arr=agent.params,
-                strength_mutation=agent.hp.strength_mutation,
-                key_random=subkey,
+            raise NotImplementedError(
+                "Initial weights transmission not implemented yet"
             )
-            return self.init_agent(
-                key_random=key_random,
-                params=new_params,
-                hp=new_hp,
-                params_reward=new_params_reward,
-            )
+            new_params_decision = agent.params_decision_initial
         elif self.mode_weights_transmission == "final":
             # Transmit the final weights
-            return self.init_agent(
-                key_random=key_random,
-                params=agent.params,
-                hp=new_hp,
-                params_reward=new_params_reward,
-            )
+            new_params_decision = agent.params_decision
         elif self.mode_weights_transmission == "none":
-            # Do not transmit the weights
-            return self.init_agent(
-                key_random=key_random,
-                hp=new_hp,
-                params_reward=new_params_reward,
-            )
+            new_params_decision = None
         else:
             raise NotImplementedError(
                 f"Mode {self.mode_weights_transmission} not implemented"
             )
+
+        return self.init_agent(
+            key_random=key_random,
+            hp=new_hp,
+            params_sensor=new_params_sensor,
+            params_decision=new_params_decision,
+            params_reward=new_params_reward,
+        )
 
     # =============== Agent inference & learning methods =================
 
@@ -477,10 +481,21 @@ class RL_AgentSpecies(AgentSpecies):
             Dict[str, jnp.ndarray],
         ]:
             # =============== Inference part =================
-            # Compute Q values
-            q_values = self.model_sensor.apply(
-                variables={"params": agent.params},
+            # Compute internal observation (sensation)
+            internal_obs = self.sensor_model.apply(
+                variables={"params": agent.params_sensor},
                 x=obs,
+                key_random=key_random,
+            )
+            internal_obs_last = self.sensor_model.apply(
+                variables={"params": agent.params_sensor},
+                x=agent.obs_last,
+                key_random=key_random,
+            )
+            # Compute the Q-values
+            q_values = self.decision_model.apply(
+                variables={"params": agent.params_decision},
+                x=internal_obs,
                 key_random=key_random,
             )
             # Pick an action using the exploration method
@@ -514,10 +529,10 @@ class RL_AgentSpecies(AgentSpecies):
             )
 
             # Perform the RL step (1-step memory DQN)
-            def loss_fn(params):
-                q_values_last = self.model_sensor.apply(
-                    variables={"params": params},
-                    x=agent.obs_last,
+            def loss_fn(params_decision):
+                q_values_last = self.decision_model.apply(
+                    variables={"params": params_decision},
+                    x=internal_obs_last,
                     key_random=key_random,
                 )
                 q_value_last = q_values_last[agent.action_last]
@@ -537,7 +552,7 @@ class RL_AgentSpecies(AgentSpecies):
 
             # Update the agent's state
             agent = agent.replace(
-                params=tr_state.params,
+                params_decision=tr_state.params,
                 age=agent.age + 1,
                 obs_last=obs,
                 action_last=action,

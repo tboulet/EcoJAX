@@ -25,11 +25,7 @@ class MLP_Model(BaseModel):
     """
 
     hidden_dims: List[int]
-
-    def setup(self):
-        """Initializes the model with the MLP layers."""
-        for i, hidden_dim in enumerate(self.hidden_dims):
-            setattr(self, f"layer_{i}", nn.Dense(features=hidden_dim))
+    name_activation_fn : str = "relu"
 
     def obs_to_encoding(
         self, obs: ObservationAgent, key_random: jnp.ndarray
@@ -53,6 +49,6 @@ class MLP_Model(BaseModel):
         # Process the concatenated output with a final MLP
         for hidden_dim in self.hidden_dims:
             x = nn.Dense(features=hidden_dim)(x)
-            x = self.activation_fn(name_activation_fn="relu", x=x)
+            x = self.activation_fn(name_activation_fn=self.name_activation_fn, x=x)
 
         return x

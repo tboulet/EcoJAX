@@ -134,7 +134,6 @@ class GridworldEnv(EcoEnvironment):
         self.width: int = config["width"]
         self.height: int = config["height"]
         self.is_terminal: bool = config["is_terminal"]
-        self.period_logging: int = int(max(1, self.config["period_logging"]))
         self.list_names_channels: List[str] = [
             "sun",
             "plants",
@@ -590,7 +589,8 @@ class GridworldEnv(EcoEnvironment):
                 filename=f"{self.dir_videos}/video {t-self.n_steps_per_video}-{t}.mp4",
                 fps=self.fps_video,
             )
-            for t_ in range(self.n_steps_per_video):
+            for t_ in range(t, t + self.n_steps_per_video):
+                t_ = t_ % self.n_steps_per_video
                 image = state.video[t_]
                 image = self.upscale_image(image)
                 video_writer.add(image)

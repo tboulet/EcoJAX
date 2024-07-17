@@ -7,10 +7,6 @@ width : 200
 # Whether the env is terminal, i.e. the simulation stops when all agents are dead
 is_terminal : True
 
-# The period of the logging in number of timesteps
-# period_logging : ${eval:'${n_timesteps} // 200'}
-period_logging : 200
-
 
 
 # ======================== Sun Parameters ========================
@@ -48,7 +44,7 @@ proportion_plant_initial : 0.5
 # - logit(p_base_die_food) * 1_if_tile_is_food
 
 # The base probability of a non-food tile to grow spontaneously
-p_base_plant_growth : 0.001
+p_base_plant_growth : 0.0001
 # The base probability of a food tile to die spontaneously
 p_base_plant_death : 0.0
 
@@ -86,12 +82,12 @@ list_actions:
   - right
   - left
   # - eat
-  - reproduce
+  # - reproduce
   # - transfer
-  - nothing
+  # - nothing
 
 # The vision range of an agent. If of value v, the agent will receive the information v tiles around it, so a (2v+1)*(2v+1) grid
-vision_range_agent : 5
+vision_range_agent : 3
 
 # The dimension of the agent's appearance space
 dim_appearance : 0

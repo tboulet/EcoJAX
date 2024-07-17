@@ -35,6 +35,7 @@ def mutate_scalar(
     value: float,
     range: Tuple[Optional[float], Optional[float]],
     key_random: jnp.ndarray,
+    mutation_strenth: float = 0.001,
 ) -> float:
     """Mutates a scalar value.
 
@@ -42,11 +43,12 @@ def mutate_scalar(
         value (float): the value to mutate
         range (Tuple[Optional[float], Optional[float]]): the range of the value, with None meaning -oo or +oo
         key_random (jnp.ndarray): the random key used for the mutation
-
+        mutation_strenth (float, optional): the strength of the mutation. Defaults to 0.001.
+        
     Returns:
         float: the mutated value
     """
-    eps = random.normal(key_random) * 0.001
+    eps = random.normal(key_random) * mutation_strenth
     # Mode [-oo, +oo]:
     if range[0] is None and range[1] is None:
         return value + eps

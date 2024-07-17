@@ -46,20 +46,21 @@ def mutate_scalar(
     Returns:
         float: the mutated value
     """
+    eps = random.normal(key_random) * 0.001
     # Mode [-oo, +oo]:
     if range[0] is None and range[1] is None:
-        return value + random.normal(key_random)
+        return value + eps
     # Mode [a, +oo]:
     elif range[0] is not None and range[1] is None:
         a = range[0]
         value_centred = value - a
-        value_centred *= jnp.exp(random.normal(key_random) * 0.1)
+        value_centred = value_centred * (2 ** eps) 
         return value_centred + a
     # Mode [-oo, b]:
     elif range[0] is None and range[1] is not None:
         b = range[1]
         value_centred = b - value
-        value_centred *= jnp.exp(random.normal(key_random) * 0.1)
+        value_centred = value_centred * (2 ** eps)
         return b - value_centred
     # Mode [a, b]:
     else:
@@ -67,7 +68,7 @@ def mutate_scalar(
         assert a < b, f"Invalid range {range}"
         value_normalized_centered = (value - a) / (b - a)
         value_in_R = logit(value_normalized_centered)
-        value_in_R += random.normal(key_random)
+        value_in_R += eps
         value_normalized_centered = sigmoid(value_in_R)
         value = value_normalized_centered * (b - a) + a
         return value

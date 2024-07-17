@@ -3,7 +3,7 @@ from functools import partial
 from typing import Dict, List, Optional, Tuple, Type
 
 import jax
-from jax import random, tree_map
+from jax import random, tree_map, tree_structure
 import jax.numpy as jnp
 import numpy as np
 from flax.struct import PyTreeNode, dataclass
@@ -18,6 +18,7 @@ from ecojax.evolution.mutator import mutate_scalar, mutation_gaussian_noise
 from ecojax.types import ActionAgent, ObservationAgent
 import ecojax.spaces as spaces
 from ecojax.utils import instantiate_class, jprint
+from personal_test import get_dict_flattened
 
 
 @dataclass
@@ -60,22 +61,20 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
         model_class: Type[BaseModel],
         config_model: Dict,
     ):
-        super().__init__(
-            config=config,
-            n_agents_max=n_agents_max,
-            n_agents_initial=n_agents_initial,
-            observation_space=observation_space,
-            n_actions=n_actions,
-            model_class=model_class,
-            config_model=config_model,
-        )
+        self.config = config
+        self.n_agents_max = n_agents_max
+        self.n_agents_initial = n_agents_initial
+        self.observation_space = observation_space
+        self.n_actions = n_actions
+        
         # Model
         self.model = model_class(
             space_input=observation_space,
             space_output=spaces.ContinuousSpace(shape=(n_actions,)),
             **config_model,
         )
-        print(self.model.get_table_summary())
+        print(f"Model: {self.model.get_table_summary()}")
+        
         # Metrics parameters
         self.names_measures: List[str] = sum(
             [names for type_measure, names in config["metrics"]["measures"].items()], []
@@ -247,6 +246,16 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
         new_state, dict_metrics = self.compute_metrics(
             state=state, state_new=new_state, dict_measures=dict_measures_all
         )
+        
+        # Also log the weights of one agent
+        params_agent0 = tree_map(
+            f=lambda x: x[0].reshape(-1), # get the first element of the array and flatten it
+            tree=state.agents.params,
+        )
+        params_flattened_agent0 = get_dict_flattened(d=params_agent0, sep=' ')
+        for key, value in params_flattened_agent0.items():
+            dict_metrics[f"params_agent0/{key}"] = value
+        
         info = {"metrics": dict_metrics}
 
         return new_state, batch_actions, info
@@ -346,8 +355,9 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
             pass
             # State measures
             if "hp" in name_measure:
-                for name_hp in ["strength_mutation"]:
-                    dict_measures[name_hp] = getattr(state.agents.hp, name_hp)
+                strength_mutation = getattr(state.agents.hp, "strength_mutation")
+                dict_measures["strength_mutation"] = strength_mutation
+                dict_measures["log/strength_mutation"] = jnp.log(strength_mutation)
             # Behavior measures
             pass
 

@@ -1,11 +1,11 @@
 from abc import ABC, abstractmethod
-from typing import Dict, List, Tuple, Type, Union, Any
+from typing import Callable, Dict, List, Optional, Tuple, Type, Union, Any
 import numpy as np
 import jax.numpy as jnp
 
 from ecojax.core.eco_info import EcoInformation
 from ecojax.spaces import EcojaxSpace
-from ecojax.types import ActionAgent, StateEnv, ObservationAgent
+from ecojax.types import ActionAgent, StateEnv, ObservationAgent, StateSpecies
 
 
 class EcoEnvironment(ABC):
@@ -38,7 +38,8 @@ class EcoEnvironment(ABC):
         self.config = config
         self.n_agents_max = n_agents_max
         self.n_agents_initial = n_agents_initial
-
+        self.agent_react_fn : Optional[Callable] = None
+        
     @abstractmethod
     def reset(
         self,
@@ -124,3 +125,31 @@ class EcoEnvironment(ABC):
     def render(self, state: StateEnv) -> None:
         """Do the rendering of the environment. This can be a visual rendering or a logging of the state of any kind."""
         return
+
+    def compute_on_render_behavior_measures(
+        self,
+        react_fn: Callable[
+            [
+                StateSpecies,
+                ObservationAgent,
+                EcoInformation,
+                jnp.ndarray,
+            ],
+            Tuple[
+                StateSpecies,
+                ActionAgent,
+                Dict[str, jnp.ndarray],
+            ],
+        ],
+        key_random: jnp.ndarray,
+    ) -> Dict[str, jnp.ndarray]:
+        """Perform a battery of tests on the agents using the given act_fn and artificial observations.
+
+        Args:
+            act_fn (Callable[[jnp.ndarray, ObservationAgent], ActionAgent]): the function that maps the observation(s) to the action(s)
+            key_random (jnp.ndarray): the random key used for the tests
+
+        Returns:
+            Dict[str, jnp.ndarray]: a dictionary containing the results of the tests
+        """
+        return {}

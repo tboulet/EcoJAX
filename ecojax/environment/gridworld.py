@@ -4,10 +4,11 @@ from collections import defaultdict
 from functools import partial
 import os
 from time import sleep
-from typing import Any, Callable, Dict, List, Tuple, Type, TypeVar
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, TypeVar
 
 import jax
 import jax.numpy as jnp
+from jax.numpy import ndarray
 import numpy as np
 from jax import random
 from jax.scipy.signal import convolve2d
@@ -19,7 +20,7 @@ from ecojax.core.eco_info import EcoInformation
 from ecojax.environment import EcoEnvironment
 from ecojax.metrics.aggregators import Aggregator
 from ecojax.spaces import DictSpace, EcojaxSpace, DiscreteSpace, ContinuousSpace
-from ecojax.types import ObservationAgent, StateEnv
+from ecojax.types import ActionAgent, ObservationAgent, StateEnv, StateSpecies
 from ecojax.utils import (
     DICT_COLOR_TAG_TO_RGB,
     instantiate_class,
@@ -158,6 +159,9 @@ class GridworldEnv(EcoEnvironment):
         self.names_measures: List[str] = sum(
             [names for type_measure, names in config["metrics"]["measures"].items()], []
         )
+        self.behavior_measures_on_render: List[str] = config["metrics"][
+            "behavior_measures_on_render"
+        ]
         # Video parameters
         self.cfg_video = config["metrics"]["config_video"]
         self.do_video: bool = self.cfg_video["do_video"]
@@ -416,6 +420,7 @@ class GridworldEnv(EcoEnvironment):
         state: StateEnvGridworld,
         actions: jnp.ndarray,
         key_random: jnp.ndarray,
+        state_species: Optional[StateSpecies] = None,
     ) -> Tuple[
         StateEnvGridworld,
         ObservationAgent,
@@ -429,6 +434,7 @@ class GridworldEnv(EcoEnvironment):
             state (StateEnvGridworld): the state of the environment at timestep t
             actions (jnp.ndarray): the actions of the agents reacting to the environment at timestep t
             key_random (jnp.ndarray): the random key used to generate random numbers
+            state_species (Optional[StateSpecies]): the state of the species at timestep t, for computing behavior metrics if necessary
 
         Returns:
             state_new (StateEnvGridworld): the new state of the environment at timestep t+1
@@ -524,7 +530,11 @@ class GridworldEnv(EcoEnvironment):
 
         # Compute some measures
         dict_measures = self.compute_measures(
-            state=state, actions=actions, state_new=state_new, key_random=subkey
+            state=state,
+            actions=actions,
+            state_new=state_new,
+            key_random=subkey,
+            state_species=state_species,
         )
         dict_measures_all.update(dict_measures)
 
@@ -584,7 +594,9 @@ class GridworldEnv(EcoEnvironment):
             and t >= self.t_last_video_rendered + self.n_steps_min_between_videos
         ):
             self.t_last_video_rendered = t
-            tqdm.write(f"Rendering video at timestep {t}...")
+            tqdm.write(
+                f"Rendering video of timerange {t-self.n_steps_per_video}-{t}..."
+            )
             video_writer = VideoRecorder(
                 filename=f"{self.dir_videos}/video {t-self.n_steps_per_video}-{t}.mp4",
                 fps=self.fps_video,
@@ -614,7 +626,7 @@ class GridworldEnv(EcoEnvironment):
         # Initialize an empty array to store the blended image
         assert (
             self.color_tag_background in DICT_COLOR_TAG_TO_RGB
-        ), f"Unknown color tag: {self.color_tag_background}"
+        ), f"Unknown color tag: {self.color_tag_background}. Pick among {list(DICT_COLOR_TAG_TO_RGB.keys())}"
         background = jnp.array(
             DICT_COLOR_TAG_TO_RGB[self.color_tag_background], dtype=jnp.float32
         )
@@ -1155,6 +1167,7 @@ class GridworldEnv(EcoEnvironment):
         actions: jnp.ndarray,
         state_new: StateEnvGridworld,
         key_random: jnp.ndarray,
+        state_species: Optional[StateSpecies] = None,
     ) -> Dict[str, jnp.ndarray]:
         """Get the measures of the environment.
 
@@ -1163,6 +1176,7 @@ class GridworldEnv(EcoEnvironment):
             actions (jnp.ndarray): the actions of the agents
             state_new (StateEnvGridworld): the new state of the environment
             key_random (jnp.ndarray): the random key
+            state_species (Optional[StateSpecies]): the state of the species
 
         Returns:
             Dict[str, jnp.ndarray]: a dictionary of the measures of the environment
@@ -1205,18 +1219,15 @@ class GridworldEnv(EcoEnvironment):
                         :, i
                     ]
                 continue
-            elif name_measure == "density_agents_observed":
-                raise NotImplementedError(
-                    "Density of agents observed is not implemented yet"
+            # Behavior measures (requires state_species)
+            elif name_measure in self.config["metrics"]["measures"]["behavior"]:
+                dict_measures[name_measure] = self.compute_behavior_measure(
+                    state_species=state_species,
+                    react_fn=self.agent_react_fn,
+                    key_random=key_random,
+                    name_measure=name_measure,
                 )
-            elif name_measure == "density_plants_observed":
-                raise NotImplementedError(
-                    "Density of plants observed is not implemented yet"
-                )
-            else:
-                continue
-            # Behavior measures
-            pass
+                    
 
             dict_measures[name_measure] = measures
 
@@ -1294,6 +1305,110 @@ class GridworldEnv(EcoEnvironment):
             dict_metrics[name_metric_new] = dict_metrics.pop(name_metric)
 
         return state_new_new, dict_metrics
+
+    def compute_behavior_measure(
+        self,
+        state_species: StateSpecies,
+        react_fn: Callable[
+            [
+                StateSpecies,
+                ObservationAgent,
+                EcoInformation,
+                jnp.ndarray,
+            ],
+            Tuple[
+                StateSpecies,
+                ActionAgent,
+                Dict[str, jnp.ndarray],
+            ],
+        ],
+        key_random: jnp.ndarray,
+        name_measure: str,
+    ) -> jnp.ndarray:
+        """Compute a behavior measure.
+
+        Args:
+            state_species (StateSpecies): the state of the species
+            react_fn (Callable[ [ StateSpecies, ObservationAgent, EcoInformation, jnp.ndarray, ], Tuple[ StateSpecies, ActionAgent, Dict[str, jnp.ndarray], ], ]): the function that computes the reaction of the species to the environment
+            key_random (jnp.ndarray): the random key
+            name_measure (str): the name of the measure to compute
+
+        Returns:
+            jnp.ndarray: the behavior measure
+        """
+        if name_measure == "appetite":
+            idx_plant = self.dict_name_channel_to_idx["plants"]
+            n = self.n_agents_max
+            v = self.vision_range_agent
+            names_action_to_xy = {
+                "forward": (jnp.full(n, 0), jnp.full(n, v)),
+            }
+            eco_information = EcoInformation(
+                are_newborns_agents=jnp.full(n, False),
+                indexes_parents=jnp.full((n, 1), self.fill_value),
+                are_just_dead_agents=jnp.full(n, False),
+            )
+
+            appetites = jnp.full(n, 0.0, dtype=jnp.float32)
+            for name_action, (x, y) in names_action_to_xy.items():
+                actions_appetite = jnp.full(n, self.action_to_idx[name_action])
+                visual_field = (
+                    jnp.zeros(
+                        (
+                            n,
+                            2 * v + 1,
+                            2 * v + 1,
+                            len(self.list_indexes_channels_visual_field),
+                        )
+                    )
+                    .at[
+                        jnp.arange(n),
+                        x,
+                        y,
+                        idx_plant,
+                    ]
+                    .set(1)
+                )
+
+                obs = dict(
+                    energy=jnp.full(n, 5),  # very low energy
+                    age=jnp.full(n, 50),
+                    visual_field=visual_field,
+                )
+                key_random, subkey = jax.random.split(key_random)
+                _, actions, _ = react_fn(
+                    state_species,
+                    obs,
+                    eco_information,
+                    subkey,
+                )
+                appetites += (actions == actions_appetite).astype(jnp.float32)
+            return appetites / len(names_action_to_xy)
+
+        else:
+            raise ValueError(f"Unknown behavior measure: {name_measure}")
+
+    def compute_on_render_behavior_measures(
+        self,
+        state_species: StateSpecies,
+        react_fn: Callable[
+            [StateSpecies, ObservationAgent, EcoInformation, jnp.ndarray],
+            Dict[str, jnp.ndarray],
+        ],
+        key_random: jnp.ndarray,
+    ) -> Dict[str, jnp.ndarray]:
+        dict_measures = {}
+        for name_measure in self.behavior_measures_on_render:
+            assert (
+                name_measure not in self.names_measures
+            ), f"Behavior measure {name_measure} is both measured at render and step time, this should be avoided."
+            dict_measures[name_measure] = self.compute_behavior_measure(
+                state_species=state_species,
+                react_fn=react_fn,
+                key_random=key_random,
+                name_measure=name_measure,
+            )
+        return dict_measures
 
 
 # ================== Helper functions ==================

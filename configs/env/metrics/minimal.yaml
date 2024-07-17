@@ -10,6 +10,9 @@ measures:
   state: []
   behavior: []
 
+behavior_measures_on_render: 
+  []
+
 aggregators_lifespan:
   []
 

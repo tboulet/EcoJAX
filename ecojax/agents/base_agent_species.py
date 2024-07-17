@@ -12,7 +12,7 @@ import flax.linen as nn
 from ecojax.core.eco_info import EcoInformation
 from ecojax.models.base_model import BaseModel
 from ecojax.spaces import EcojaxSpace
-from ecojax.types import ObservationAgent, StateSpecies
+from ecojax.types import ActionAgent, ObservationAgent, StateSpecies
 
 
 class AgentSpecies(ABC):
@@ -43,7 +43,7 @@ class AgentSpecies(ABC):
         batch_observations: ObservationAgent,
         eco_information: EcoInformation,
         key_random: jnp.ndarray,
-    ) -> jnp.ndarray:
+    ) -> Tuple[StateSpecies, ActionAgent, Dict[str, jnp.ndarray]]:
         """A function through which the agents reach to their observations and return their actions.
         It also handles the reproduction of the agents if required by the environment.
 
@@ -55,7 +55,9 @@ class AgentSpecies(ABC):
             key_random (jnp.ndarray): the random key, of shape (2,)
 
         Returns:
-            action (int): the action of the agent, as an integer
+            state_new (StateSpecies): the new state of the species, as a StateSpecies object.
+            actions (jnp.ndarray): the actions of the agents, as a JAX array of shape (n_agents_max, **dim_action_component).
+            info_species (Dict[str, jnp.ndarray]): a dictionary of additional information concerning the species of agents (e.g. metrics, etc.)
         """
 
     # ============== Helper methods ==============

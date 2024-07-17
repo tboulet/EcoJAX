@@ -104,13 +104,30 @@ def eco_loop(
 
         global_state, info = x
         t = global_state.timestep_run.item()
+        metrics_global: dict = info.get("metrics", {}).copy()
 
         # Render the environment
         if do_render:
             env.render(state=global_state.state_env)
 
+        # Render the agents
+        # agent_species.render(state=global_state.state_species)
+
+        # Behavior metrics
+        metrics_behavior = env.compute_on_render_behavior_measures(
+            state_species=global_state.state_species,
+            react_fn=agent_species.react,
+            key_random=global_state.key_random,
+        )
+        for key, value in metrics_behavior.items():
+            if is_array(value):
+                value = value[global_state.state_env.agents.are_existing_agents] = value
+                if len(value) > 0:
+                    metrics_global[key] = value
+                    metrics_global[f"{key}/pop_mean"] = jnp.mean(value)
+                    metrics_global[f"{key}/pop_std"] = jnp.std(value)
+
         # Log the metrics
-        metrics_global: dict = info.get("metrics", {}).copy()
         metrics_global.update(get_runtime_metrics())
         metrics_scalar, metrics_histogram = get_dict_metrics_by_type(metrics_global)
         for logger in list_loggers:
@@ -122,7 +139,7 @@ def eco_loop(
         print("Running step_eco_loop...")
         global_state, info = x
         key_random = global_state.key_random
-        
+
         # Agents step
         key_random, subkey = random.split(key_random)
         new_state_species, actions, info_species = agent_species.react(
@@ -139,6 +156,7 @@ def eco_loop(
                 state=global_state.state_env,
                 actions=actions,
                 key_random=subkey,
+                state_species=new_state_species, # optional, to allow the environment to access the state of the species
             )
         )
 
@@ -199,7 +217,7 @@ def eco_loop(
 
     # Run the simulation
     print("Starting the simulation...")
-    
+
     global_state = StateGlobal(
         state_env=state_env,
         state_species=state_species,
@@ -209,7 +227,7 @@ def eco_loop(
         done=done,
         key_random=subkey,
     )
-    
+
     # Do (some?) first step(s) to get global_state and info at the right structure
     for _ in range(2):
         with RuntimeMeter("warmup steps"):
@@ -219,7 +237,7 @@ def eco_loop(
     # JIT after first steps
     step_eco_loop = jax.jit(step_eco_loop)
     do_continue_eco_loop = jax.jit(do_continue_eco_loop)
-    
+
     # @jax.jit # only works with while_loop, scan, and fori_loop
     def do_n_steps(global_state, info):
         # Method : native for loop (apparently the fastest method for this case)

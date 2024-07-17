@@ -563,6 +563,7 @@ class RL_AgentSpecies(AgentSpecies):
                 "loss_q": loss_q,
                 "q_values_max": jnp.max(q_values),
                 "q_values_mean": jnp.mean(q_values),
+                "q_values_median": jnp.median(q_values),
                 "q_values_min": jnp.min(q_values),
                 "target": reward_last + agent.hp.gamma * jnp.max(q_values),
                 "reward": reward_last,
@@ -603,9 +604,15 @@ class RL_AgentSpecies(AgentSpecies):
             # Immediate measures
             pass
             # State measures
+            jax.lax.select()
             if "hp" in name_measure:
-                for name_hp in ["lr", "gamma", "epsilon", "strength_mutation"]:
-                    dict_measures[name_hp] = getattr(state.agents.hp, name_hp)
+                strength_mutation = getattr(state.agents.hp, "strength_mutation")
+                dict_measures["strength_mutation"] = strength_mutation
+                dict_measures["log10/strength_mutation"] = jnp.log10(strength_mutation)
+                dict_measures["lr"] = getattr(state.agents.hp, "lr")
+                dict_measures["log10/lr"] = jnp.log10(getattr(state.agents.hp, "lr"))
+                dict_measures["gamma"] = getattr(state.agents.hp, "gamma")
+                dict_measures["epsilon"] = getattr(state.agents.hp, "epsilon")
             # Behavior measures
             pass
 

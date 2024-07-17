@@ -20,9 +20,12 @@ measures:
     - age
     - x
     - y
-    # - density_agents_observed
-    # - density_plants_observed
-  behavior: []
+    - appearance
+  behavior:
+    - appetite
+
+behavior_measures_on_render: 
+  []
 
 aggregators_lifespan:
   - class_string : ecojax.metrics.aggregators:AggregatorLifespanCumulative

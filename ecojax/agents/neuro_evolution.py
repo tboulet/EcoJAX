@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from functools import partial
-from typing import Dict, List, Optional, Tuple, Type
+from typing import Callable, Dict, List, Optional, Tuple, Type
 
 import jax
 from jax import random, tree_map, tree_structure
@@ -17,8 +17,7 @@ from ecojax.models.base_model import BaseModel
 from ecojax.evolution.mutator import mutate_scalar, mutation_gaussian_noise
 from ecojax.types import ActionAgent, ObservationAgent
 import ecojax.spaces as spaces
-from ecojax.utils import instantiate_class, jprint
-from personal_test import get_dict_flattened
+from ecojax.utils import instantiate_class, jprint, get_dict_flattened
 
 
 @dataclass
@@ -154,6 +153,7 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
     ) -> Tuple[
         StateSpeciesNE,
         ActionAgent,  # Batched
+        Dict[str, jnp.ndarray],
     ]:
 
         # Initialize the measures dictionnary. This will be used to store the measures of the environment at this step.
@@ -287,6 +287,39 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
 
     # =============== Agent creation methods =================
 
+    def react_single_agent(
+            self,
+            key_random: jnp.ndarray,
+            agent: AgentNE,
+            obs: jnp.ndarray,
+        ) -> Tuple[
+            AgentNE,
+            ActionAgent,
+            Dict[str, jnp.ndarray],
+        ]:
+        # =============== Inference part =================
+        key_random, subkey = random.split(key_random)
+        logits = self.model.apply(
+            variables={"params": agent.params},
+            x=obs,
+            key_random=subkey,
+        )
+        key_random, subkey = random.split(key_random)
+        action = random.categorical(key_random, logits=logits)
+        # ============== Learning part (no learning in NE) =================
+        agent.replace(age=agent.age + 1)
+        # ============== Measures ==============
+        probs = jax.nn.softmax(logits)
+        dict_measures = {
+            "prob_max": jnp.max(probs),
+            "prob_min": jnp.min(probs),
+            "prob_median": jnp.median(probs),
+            "entropy": -jnp.sum(probs * jnp.log(probs)),
+        }
+        # Update the agent's state and act
+        return agent, action, dict_measures
+        
+        
     def react_agents(
         self,
         key_random: jnp.ndarray,
@@ -296,40 +329,8 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
         StateSpeciesNE,
         ActionAgent,  # Batched
     ]:
-
-        def react_single_agent(
-            key_random: jnp.ndarray,
-            agent: AgentNE,
-            obs: jnp.ndarray,
-        ) -> Tuple[
-            AgentNE,
-            ActionAgent,
-            Dict[str, jnp.ndarray],
-        ]:
-            # =============== Inference part =================
-            key_random, subkey = random.split(key_random)
-            logits = self.model.apply(
-                variables={"params": agent.params},
-                x=obs,
-                key_random=subkey,
-            )
-            key_random, subkey = random.split(key_random)
-            action = random.categorical(key_random, logits=logits)
-            # ============== Learning part (no learning in NE) =================
-            agent.replace(age=agent.age + 1)
-            # ============== Measures ==============
-            probs = jax.nn.softmax(logits)
-            dict_measures = {
-                "prob_max": jnp.max(probs),
-                "prob_min": jnp.min(probs),
-                "prob_mean": jnp.mean(probs),
-                "entropy": -jnp.sum(probs * jnp.log(probs)),
-            }
-            # Update the agent's state and act
-            return agent, action, dict_measures
-
         batch_keys = random.split(key_random, self.n_agents_max)
-        new_agents, actions, dict_measures = jax.vmap(react_single_agent)(
+        new_agents, actions, dict_measures = jax.vmap(self.react_single_agent)(
             key_random=batch_keys,
             agent=state.agents,
             obs=batch_observations,
@@ -357,7 +358,7 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
             if "hp" in name_measure:
                 strength_mutation = getattr(state.agents.hp, "strength_mutation")
                 dict_measures["strength_mutation"] = strength_mutation
-                dict_measures["log/strength_mutation"] = jnp.log(strength_mutation)
+                dict_measures["log10/strength_mutation"] = jnp.log10(strength_mutation)
             # Behavior measures
             pass
 

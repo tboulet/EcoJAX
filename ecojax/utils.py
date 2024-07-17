@@ -168,6 +168,27 @@ def nest_for_array(func):
     return wrapper
 
 
+def get_dict_flattened(d, parent_key='', sep='.'):
+    """Get a flattened version of a nested dictionary, where keys correspond to the path to the value.
+
+    Args:
+        d (Dict): The dictionary to be flattened.
+        parent_key (str): The base key string (used in recursive calls).
+        sep (str): Separator to use between keys.
+
+    Returns:
+        Dict: The flattened dictionary.
+    """
+    items = []
+    for k, v in d.items():
+        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+        if isinstance(v, dict):
+            items.extend(get_dict_flattened(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)
+
+    
 def instantiate_class(**kwargs) -> Any:
     """Instantiate a class from a dictionnary that contains a key "class_string" with the format "path.to.module:ClassName"
     and that contains other keys that will be passed as arguments to the class constructor

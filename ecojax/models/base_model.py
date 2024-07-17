@@ -94,14 +94,16 @@ class BaseModel(nn.Module, ABC):
                     f"Processing of continuous space of shape {shape_output} is not implemented."
                 )
         elif isinstance(self.space_output, TupleSpace):
+            subkeys = random.split(key_random, len(self.space_output.tuple_spaces))
             return tuple(
-                self.process_encoding(x, key_random)
-                for _ in range(len(self.space_output.tuple_spaces))
+                self.process_encoding(x, subkeys[i])
+                for i in range(len(self.space_output.tuple_spaces))
             )
         elif isinstance(self.space_output, DictSpace):
+            subkeys = random.split(key_random, len(self.space_output.dict_space))
             return {
-                key: self.process_encoding(x, key_random)
-                for key in self.space_output.dict_space.keys()
+                key: self.process_encoding(x, subkeys[i])
+                for i, key in enumerate(self.space_output.dict_space.keys())
             }
         else:
             raise ValueError(

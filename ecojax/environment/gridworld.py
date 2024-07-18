@@ -1218,14 +1218,15 @@ class GridworldEnv(EcoEnvironment):
                     ]
             # Behavior measures (requires state_species)
             elif name_measure in self.config["metrics"]["measures"]["behavior"]:
-                dict_measures[name_measure] = self.compute_behavior_measure(
+                dict_measures.update(self.compute_behavior_measure(
                     state_species=state_species,
                     react_fn=self.agent_react_fn,
                     key_random=key_random,
                     name_measure=name_measure,
-                )
+                ))
             else:
-                raise ValueError(f"Unknown measure: {name_measure}")
+                pass # Pass this measure as it may be computed in other parts of the code
+        
         # Return the dictionary of measures
         return dict_measures
 

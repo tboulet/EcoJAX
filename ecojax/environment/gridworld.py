@@ -1187,9 +1187,9 @@ class GridworldEnv(EcoEnvironment):
         for name_measure in self.names_measures:
             # Environment measures
             if name_measure == "n_agents":
-                measures = jnp.sum(state.agents.are_existing_agents)
+                dict_measures["n_agents"] = jnp.sum(state.agents.are_existing_agents)
             elif name_measure == "n_plants":
-                measures = jnp.sum(state.map[..., idx_plants])
+                dict_measures["n_plants"] = jnp.sum(state.map[..., idx_plants])
             elif name_measure == "group_size":
                 group_sizes = compute_group_sizes(state.map[..., idx_agents])
                 dict_measures["average_group_size"] = group_sizes.mean()
@@ -1199,26 +1199,23 @@ class GridworldEnv(EcoEnvironment):
             elif name_measure.startswith("do_action_"):
                 str_action = name_measure[len("do_action_") :]
                 if str_action in self.list_actions:
-                    measures = (actions == self.action_to_idx[str_action]).astype(
+                    dict_measures[name_measure] = (actions == self.action_to_idx[str_action]).astype(
                         jnp.float32
                     )
-                else:
-                    continue
             # State measures
             elif name_measure == "energy":
-                measures = state.agents.energy_agents
+                dict_measures[name_measure]  = state.agents.energy_agents
             elif name_measure == "age":
-                measures = state.agents.age_agents
+                dict_measures[name_measure]  = state.agents.age_agents
             elif name_measure == "x":
-                measures = state.agents.positions_agents[:, 0]
+                dict_measures[name_measure]  = state.agents.positions_agents[:, 0]
             elif name_measure == "y":
-                measures = state.agents.positions_agents[:, 1]
+                dict_measures[name_measure]  = state.agents.positions_agents[:, 1]
             elif name_measure == "appearance":
                 for i in range(self.config["dim_appearance"]):
                     dict_measures[f"appearance_{i}"] = state.agents.appearance_agents[
                         :, i
                     ]
-                continue
             # Behavior measures (requires state_species)
             elif name_measure in self.config["metrics"]["measures"]["behavior"]:
                 dict_measures[name_measure] = self.compute_behavior_measure(
@@ -1227,10 +1224,8 @@ class GridworldEnv(EcoEnvironment):
                     key_random=key_random,
                     name_measure=name_measure,
                 )
-                    
-
-            dict_measures[name_measure] = measures
-
+            else:
+                raise ValueError(f"Unknown measure: {name_measure}")
         # Return the dictionary of measures
         return dict_measures
 
@@ -1324,7 +1319,7 @@ class GridworldEnv(EcoEnvironment):
         ],
         key_random: jnp.ndarray,
         name_measure: str,
-    ) -> jnp.ndarray:
+    ) -> Dict[str, jnp.ndarray]:
         """Compute a behavior measure.
 
         Args:
@@ -1334,7 +1329,7 @@ class GridworldEnv(EcoEnvironment):
             name_measure (str): the name of the measure to compute
 
         Returns:
-            jnp.ndarray: the behavior measure
+            Dict[str, jnp.ndarray]: a dictionary of the behavior measures
         """
         if name_measure == "appetite":
             idx_plant = self.dict_name_channel_to_idx["plants"]
@@ -1342,6 +1337,9 @@ class GridworldEnv(EcoEnvironment):
             v = self.vision_range_agent
             names_action_to_xy = {
                 "forward": (jnp.full(n, 0), jnp.full(n, v)),
+                "left": (jnp.full(n, v), jnp.full(n, 0)),
+                "right": (jnp.full(n, v), jnp.full(n, 2 * v)),
+                "backward": (jnp.full(n, 2 * v), jnp.full(n, v)),
             }
             eco_information = EcoInformation(
                 are_newborns_agents=jnp.full(n, False),
@@ -1383,8 +1381,9 @@ class GridworldEnv(EcoEnvironment):
                     subkey,
                 )
                 appetites += (actions == actions_appetite).astype(jnp.float32)
-            return appetites / len(names_action_to_xy)
-
+            appetites = appetites / len(names_action_to_xy)
+            return {"appetite": appetites}
+        
         else:
             raise ValueError(f"Unknown behavior measure: {name_measure}")
 
@@ -1402,12 +1401,12 @@ class GridworldEnv(EcoEnvironment):
             assert (
                 name_measure not in self.names_measures
             ), f"Behavior measure {name_measure} is both measured at render and step time, this should be avoided."
-            dict_measures[name_measure] = self.compute_behavior_measure(
+            dict_measures.update(self.compute_behavior_measure(
                 state_species=state_species,
                 react_fn=react_fn,
                 key_random=key_random,
                 name_measure=name_measure,
-            )
+            ))
         return dict_measures
 
 

@@ -121,7 +121,7 @@ def eco_loop(
         )
         for key, value in metrics_behavior.items():
             if is_array(value):
-                value = value[global_state.state_env.agents.are_existing_agents] = value
+                value = value[global_state.state_env.agents.are_existing_agents]
                 if len(value) > 0:
                     metrics_global[key] = value
                     metrics_global[f"{key}/pop_mean"] = jnp.mean(value)

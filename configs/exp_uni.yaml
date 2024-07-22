@@ -2,7 +2,7 @@
 seed: 
 n_timesteps : 100000
 # period_eval : ${eval:'${n_timesteps} / 500'}
-period_eval : 10 
+period_eval : 500 
 n_agents_max : 2000
 n_agents_initial : 1000
 

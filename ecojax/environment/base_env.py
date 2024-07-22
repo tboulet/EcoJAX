@@ -97,33 +97,24 @@ class EcoEnvironment(ABC):
 
     @abstractmethod
     def get_observation_space(self) -> EcojaxSpace:
-        """Return a dictionnary describing the observation space of the environment.
-
-        The keys of the dictionnary are the names of the observation components.
-
-        The values are the shapes of the observation components.
-        If a value is an integer n, it means the observation component will be an integer between 0 and n-1.
-        If a value is a tuple (n1, n2, ...), it means the observation component will be an array of shape (n1, n2, ...).
-
-        Each agent will expect its observation to be an ObservationAgent object that contains each key as attribute, with the corresponding shape.
-
-        Returns:
-            EcojaxSpace: the observation space of the environment
+        """Return the observation space of the environment.
         """
         raise NotImplementedError
 
     @abstractmethod
-    def get_n_actions(self) -> int:
-        """Return the number of possible actions for the agents.
-
-        Returns:
-            int: the number of possible actions for the agents
+    def get_action_space(self) -> EcojaxSpace:
+        """Return the action space of the environment.
         """
         raise NotImplementedError
 
     @abstractmethod
-    def render(self, state: StateEnv) -> None:
-        """Do the rendering of the environment. This can be a visual rendering or a logging of the state of any kind."""
+    def render(self, state: StateEnv, force_render : bool = False) -> None:
+        """Do the rendering of the environment. This can be a visual rendering or a logging of the state of any kind.
+        
+        Args:
+            state (StateEnv): the state of the environment to render
+            force_render (bool): whether to force the rendering even if the environment is not in a state where it should be rendered
+        """
         return
 
     def compute_on_render_behavior_measures(

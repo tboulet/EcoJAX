@@ -74,7 +74,8 @@ class StateEnvGridworld(StateEnv):
 
     # The last n_steps_per_video frames of the video
     video: jnp.ndarray  # (n_steps_per_video, height, width, 3) in [0, 1]
-    video_agent: jnp.ndarray # (n_steps_per_video, 2*v+1, 2*v+1, 3) in [0, 1]
+    video_agent: jnp.ndarray  # (n_steps_per_video, 2*v+1, 2*v+1, 3) in [0, 1]
+
 
 class GridworldEnv(EcoEnvironment):
     """A Gridworld environment."""
@@ -165,6 +166,7 @@ class GridworldEnv(EcoEnvironment):
         # Video parameters
         self.cfg_video = config["metrics"]["config_video"]
         self.do_video: bool = self.cfg_video["do_video"]
+        self.do_agent_video: bool = self.cfg_video["do_agent_video"]
         self.n_steps_per_video: int = self.cfg_video["n_steps_per_video"]
         self.t_last_video_rendered: int = -self.n_steps_per_video
         self.n_steps_min_between_videos = self.cfg_video["n_steps_min_between_videos"]
@@ -194,7 +196,9 @@ class GridworldEnv(EcoEnvironment):
                 self.dict_idx_channel_to_color_tag[idx_channel] = (
                     self.color_tag_unknown_channel
                 )
-        for idx_agent_channel, name_channel in enumerate(config["list_channels_visual_field"]):
+        for idx_agent_channel, name_channel in enumerate(
+            config["list_channels_visual_field"]
+        ):
             if name_channel in self.dict_name_channel_to_color_tag:
                 self.dict_idx_channel_to_color_tag_agent[idx_agent_channel] = (
                     self.dict_name_channel_to_color_tag[name_channel]
@@ -394,8 +398,15 @@ class GridworldEnv(EcoEnvironment):
 
         # Initialize the video memory
         video = jnp.zeros((self.n_steps_per_video, H, W, 3))
-        video_agent = jnp.zeros((self.n_steps_per_video, 2 * self.vision_range_agent + 1, 2 * self.vision_range_agent + 1, 3))
-        
+        video_agent = jnp.zeros(
+            (
+                self.n_steps_per_video,
+                2 * self.vision_range_agent + 1,
+                2 * self.vision_range_agent + 1,
+                3,
+            )
+        )
+
         # Initialize ecological informations
         are_newborns_agents = jnp.zeros(self.n_agents_max, dtype=jnp.bool_)
         are_dead_agents = jnp.zeros(self.n_agents_max, dtype=jnp.bool_)
@@ -477,9 +488,7 @@ class GridworldEnv(EcoEnvironment):
         # ============ (2) Agents reproduce ============
         key_random, subkey = jax.random.split(key_random)
         state, are_newborns_agents, indexes_parents_agents, dict_measures = (
-            self.step_reproduce_agents(
-                state=state, actions=actions, key_random=subkey
-            )
+            self.step_reproduce_agents(state=state, actions=actions, key_random=subkey)
         )
         dict_measures_all.update(dict_measures)
 
@@ -518,11 +527,12 @@ class GridworldEnv(EcoEnvironment):
             agents=state.agents.replace(age_agents=state.agents.age_agents + 1),
         )
         # Extract the observations of the agents
-        observations_agents, dict_measures = self.get_observations_agents(
-            state=state
-        )
+        observations_agents, dict_measures = self.get_observations_agents(state=state)
         video_agent = state.video_agent.at[t % self.n_steps_per_video].set(
-            self.get_RGB_map(images=observations_agents["visual_field"][0], dict_idx_channel_to_color_tag=self.dict_idx_channel_to_color_tag_agent)
+            self.get_RGB_map(
+                images=observations_agents["visual_field"][0],
+                dict_idx_channel_to_color_tag=self.dict_idx_channel_to_color_tag_agent,
+            )
         )
         state = state.replace(video_agent=video_agent)
         dict_measures_all.update(dict_measures)
@@ -581,13 +591,23 @@ class GridworldEnv(EcoEnvironment):
         )
         video_agent = jax.lax.cond(
             t % self.n_steps_per_video == 0,
-            lambda _: jnp.zeros((self.n_steps_per_video, 2 * self.vision_range_agent + 1, 2 * self.vision_range_agent + 1, 3)),
+            lambda _: jnp.zeros(
+                (
+                    self.n_steps_per_video,
+                    2 * self.vision_range_agent + 1,
+                    2 * self.vision_range_agent + 1,
+                    3,
+                )
+            ),
             lambda _: state.video_agent,
             operand=None,
         )
         # Add the new frame to the video
         video = state.video.at[t % self.n_steps_per_video].set(
-            self.get_RGB_map(images=state.map, dict_idx_channel_to_color_tag=self.dict_idx_channel_to_color_tag)
+            self.get_RGB_map(
+                images=state.map,
+                dict_idx_channel_to_color_tag=self.dict_idx_channel_to_color_tag,
+            )
         )
         state = state.replace(video=video)
 
@@ -603,54 +623,47 @@ class GridworldEnv(EcoEnvironment):
     def get_observation_space(self) -> DictSpace:
         return self.observation_space
 
-    def get_n_actions(self) -> int:
-        return self.n_actions
+    def get_action_space(self) -> ContinuousSpace:
+        return DiscreteSpace(n=self.n_actions)
 
-    def render(self, state: StateEnvGridworld) -> None:
+    def render(self, state: StateEnvGridworld, force_render: bool = False) -> None:
         """The rendering function of the environment. It saves the RGB map of the environment as a video."""
         t = state.timestep
 
-        # Render the video
+        def save_video(video: jnp.ndarray, filename: str) -> None:
+            tqdm.write(f"Rendering video : {filename}...")
+            video_writer = VideoRecorder(filename=filename, fps=self.fps_video)
+            for t_ in range(t, t + self.n_steps_per_video):
+                t_ = t_ % self.n_steps_per_video
+                if t_ >= t:
+                    continue
+                image = video[t_]
+                image = self.upscale_image(image)
+                video_writer.add(image)
+            video_writer.close()
+
         if (
-            self.cfg_video["do_video"]
-            and t >= self.n_steps_per_video
+            t >= self.n_steps_per_video
             and t >= self.t_last_video_rendered + self.n_steps_min_between_videos
-        ):
+        ) or force_render:
             self.t_last_video_rendered = t
-            tqdm.write(
-                f"Rendering video of timerange {t-self.n_steps_per_video}-{t}..."
-            )
             # Render map
-            video_writer = VideoRecorder(
-                filename=f"{self.dir_videos}/video {t-self.n_steps_per_video}-{t}.mp4",
-                fps=self.fps_video,
-            )
-            for t_ in range(t, t + self.n_steps_per_video):
-                t_ = t_ % self.n_steps_per_video
-                image = state.video[t_]
-                image = self.upscale_image(image)
-                video_writer.add(image)
-            video_writer.close()
-            # Render agent's visual field
-            tqdm.write(
-                f"Rendering agent video of timerange {t-self.n_steps_per_video}-{t}..."
-            )
-            video_writer = VideoRecorder(
-                filename=f"{self.dir_videos}/videos_agents/video_agent {t-self.n_steps_per_video}-{t}.mp4",
-                fps=self.fps_video,
-            )
-            for t_ in range(t, t + self.n_steps_per_video):
-                t_ = t_ % self.n_steps_per_video
-                image = state.video_agent[t_]
-                image = self.upscale_image(image)
-                video_writer.add(image)
-            video_writer.close()
-            
-            
+            if self.do_video:
+                save_video(
+                    filename=f"{self.dir_videos}/video {max(0, t-self.n_steps_per_video)}-{t}.mp4",
+                    video=state.video,
+                )
+            if self.do_agent_video:
+                save_video(
+                    filename=f"{self.dir_videos}/videos_agents/video_agent {max(0, t-self.n_steps_per_video)}-{t}.mp4",
+                    video=state.video_agent,
+                )
 
     # ================== Helper functions ==================
 
-    def get_RGB_map(self, images: jnp.ndarray, dict_idx_channel_to_color_tag : Dict[int, str]) -> jnp.ndarray:
+    def get_RGB_map(
+        self, images: jnp.ndarray, dict_idx_channel_to_color_tag: Dict[int, str]
+    ) -> jnp.ndarray:
         """Get the RGB map by applying a color to each channel of a list of grey images and blend them together
 
         Args:
@@ -1200,7 +1213,7 @@ class GridworldEnv(EcoEnvironment):
 
         return dict_observations, dict_measures
 
-# ================== Measures and metrics ==================
+    # ================== Measures and metrics ==================
 
     def compute_measures(
         self,
@@ -1240,18 +1253,18 @@ class GridworldEnv(EcoEnvironment):
             elif name_measure.startswith("do_action_"):
                 str_action = name_measure[len("do_action_") :]
                 if str_action in self.list_actions:
-                    dict_measures[name_measure] = (actions == self.action_to_idx[str_action]).astype(
-                        jnp.float32
-                    )
+                    dict_measures[name_measure] = (
+                        actions == self.action_to_idx[str_action]
+                    ).astype(jnp.float32)
             # State measures
             elif name_measure == "energy":
-                dict_measures[name_measure]  = state.agents.energy_agents
+                dict_measures[name_measure] = state.agents.energy_agents
             elif name_measure == "age":
-                dict_measures[name_measure]  = state.agents.age_agents
+                dict_measures[name_measure] = state.agents.age_agents
             elif name_measure == "x":
-                dict_measures[name_measure]  = state.agents.positions_agents[:, 0]
+                dict_measures[name_measure] = state.agents.positions_agents[:, 0]
             elif name_measure == "y":
-                dict_measures[name_measure]  = state.agents.positions_agents[:, 1]
+                dict_measures[name_measure] = state.agents.positions_agents[:, 1]
             elif name_measure == "appearance":
                 for i in range(self.config["dim_appearance"]):
                     dict_measures[f"appearance_{i}"] = state.agents.appearance_agents[
@@ -1259,15 +1272,17 @@ class GridworldEnv(EcoEnvironment):
                     ]
             # Behavior measures (requires state_species)
             elif name_measure in self.config["metrics"]["measures"]["behavior"]:
-                dict_measures.update(self.compute_behavior_measure(
-                    state_species=state_species,
-                    react_fn=self.agent_react_fn,
-                    key_random=key_random,
-                    name_measure=name_measure,
-                ))
+                dict_measures.update(
+                    self.compute_behavior_measure(
+                        state_species=state_species,
+                        react_fn=self.agent_react_fn,
+                        key_random=key_random,
+                        name_measure=name_measure,
+                    )
+                )
             else:
-                pass # Pass this measure as it may be computed in other parts of the code
-        
+                pass  # Pass this measure as it may be computed in other parts of the code
+
         # Return the dictionary of measures
         return dict_measures
 
@@ -1383,7 +1398,11 @@ class GridworldEnv(EcoEnvironment):
                 "right": (jnp.full(n, v), jnp.full(n, 2 * v)),
                 "backward": (jnp.full(n, 2 * v), jnp.full(n, v)),
             }
-            names_action_to_xy = {key : xy for key, xy in names_action_to_xy.items() if key in self.list_actions}
+            names_action_to_xy = {
+                key: xy
+                for key, xy in names_action_to_xy.items()
+                if key in self.list_actions
+            }
             eco_information = EcoInformation(
                 are_newborns_agents=jnp.full(n, False),
                 indexes_parents=jnp.full((n, 1), self.fill_value),
@@ -1426,7 +1445,7 @@ class GridworldEnv(EcoEnvironment):
                 appetites += (actions == actions_appetite).astype(jnp.float32)
             appetites = appetites / len(names_action_to_xy)
             return {"appetite": appetites}
-        
+
         else:
             raise ValueError(f"Unknown behavior measure: {name_measure}")
 
@@ -1444,12 +1463,14 @@ class GridworldEnv(EcoEnvironment):
             assert (
                 name_measure not in self.names_measures
             ), f"Behavior measure {name_measure} is both measured at render and step time, this should be avoided."
-            dict_measures.update(self.compute_behavior_measure(
-                state_species=state_species,
-                react_fn=react_fn,
-                key_random=key_random,
-                name_measure=name_measure,
-            ))
+            dict_measures.update(
+                self.compute_behavior_measure(
+                    state_species=state_species,
+                    react_fn=react_fn,
+                    key_random=key_random,
+                    name_measure=name_measure,
+                )
+            )
         return dict_measures
 
 

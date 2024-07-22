@@ -650,12 +650,12 @@ class GridworldEnv(EcoEnvironment):
             # Render map
             if self.do_video:
                 save_video(
-                    filename=f"{self.dir_videos}/video {max(0, t-self.n_steps_per_video)}-{t}.mp4",
+                    filename=f"{self.dir_videos}/video_{max(0, t-self.n_steps_per_video)}_to_{t}.mp4",
                     video=state.video,
                 )
             if self.do_agent_video:
                 save_video(
-                    filename=f"{self.dir_videos}/videos_agents/video_agent {max(0, t-self.n_steps_per_video)}-{t}.mp4",
+                    filename=f"{self.dir_videos}/videos_agents/video_agent_{max(0, t-self.n_steps_per_video)}_to_{t}.mp4",
                     video=state.video_agent,
                 )
 

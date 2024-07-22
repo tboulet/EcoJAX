@@ -56,20 +56,25 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
         n_agents_max: int,
         n_agents_initial: int,
         observation_space: spaces.EcojaxSpace,
-        n_actions: int,
+        action_space: spaces.EcojaxSpace,
         model_class: Type[BaseModel],
         config_model: Dict,
     ):
-        self.config = config
-        self.n_agents_max = n_agents_max
-        self.n_agents_initial = n_agents_initial
-        self.observation_space = observation_space
-        self.n_actions = n_actions
+        super().__init__(config=config,
+            n_agents_max=n_agents_max,
+            n_agents_initial=n_agents_initial,
+            observation_space=observation_space,
+            action_space=action_space,
+            model_class=model_class,
+            config_model=config_model,
+        )
+        assert isinstance(action_space, spaces.DiscreteSpace), f"Only DiscreteSpace is supported for now, got {action_space}"
+        self.n_actions = action_space.n
         
         # Model
         self.model = model_class(
             space_input=observation_space,
-            space_output=spaces.ContinuousSpace(shape=(n_actions,)),
+            space_output=spaces.ContinuousSpace(shape=(self.n_actions,)),
             **config_model,
         )
         print(f"Model: {self.model.get_table_summary()}")

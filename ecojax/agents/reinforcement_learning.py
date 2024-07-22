@@ -143,15 +143,20 @@ class RL_AgentSpecies(AgentSpecies):
         n_agents_max: int,
         n_agents_initial: int,
         observation_space: spaces.EcojaxSpace,
-        n_actions: int,
+        action_space: spaces.DiscreteSpace,
         model_class: Type[BaseModel],
         config_model: Dict,
     ):
-        self.config = config
-        self.n_agents_max = n_agents_max
-        self.n_agents_initial = n_agents_initial
-        self.observation_space = observation_space
-        self.n_actions = n_actions
+        super().__init__(config=config,
+            n_agents_max=n_agents_max,
+            n_agents_initial=n_agents_initial,
+            observation_space=observation_space,
+            action_space=action_space,
+            model_class=model_class,
+            config_model=config_model,
+        )
+        assert isinstance(action_space, spaces.DiscreteSpace), f"Only DiscreteSpace is supported for now, got {action_space}"
+        self.n_actions = action_space.n
 
         # Sensor model : this model converts the observation to "sensations", which are some internal neuro-evolved representation of the observation
         n_sensations = config["n_sensations"]
@@ -168,7 +173,7 @@ class RL_AgentSpecies(AgentSpecies):
         config_decision_model = config["decision_model"]
         self.decision_model = MLP_Model(
             space_input=spaces.ContinuousSpace(n_sensations),
-            space_output=spaces.ContinuousSpace(n_actions),
+            space_output=spaces.ContinuousSpace(self.n_actions),
             **config_decision_model,
         )
         print(f"Decision model: {self.decision_model.get_table_summary()}")

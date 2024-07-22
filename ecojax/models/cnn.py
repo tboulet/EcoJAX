@@ -41,33 +41,29 @@ class CNN_Model(BaseModel):
         self, obs: ObservationAgent, key_random: jnp.ndarray
     ) -> jnp.ndarray:
 
-        # Apply the CNN to each observation component
+        list_spaces_and_values = self.space_input.get_list_spaces_and_values(obs)
         list_vectors = []
-        for name_observation_component, space in self.space_input.items():
-            x = getattr(obs, name_observation_component)
+        for (space, x) in list_spaces_and_values:
             if isinstance(space, ContinuousSpace):
                 n_dim = len(space.shape)
                 if n_dim == 0:
-                    list_vectors.append(jnp.expand_dims(x, axis=-1))
+                    encoding = jnp.expand_dims(x, axis=-1)
                 elif n_dim == 1:
-                    list_vectors.append(x)
+                    encoding = x
                 elif n_dim == 2:
-                    x = CNN(**self.cnn_config, shape_output=(self.dim_cnn_output,))(x)
-                    list_vectors.append(x)
+                    encoding = CNN(**self.cnn_config, shape_output=(self.dim_cnn_output,))(x)
                 elif n_dim == 3:
-                    x = CNN(**self.cnn_config, shape_output=(self.dim_cnn_output,))(x)
-                    list_vectors.append(x)
+                    encoding = CNN(**self.cnn_config, shape_output=(self.dim_cnn_output,))(x)
                 else:
                     raise ValueError(
                         f"Continuous observation spaces with more than 3 dimensions are not supported"
                     )
             elif isinstance(space, DiscreteSpace):
-                x = jax.nn.one_hot(x, space.n)
-
+                encoding = jax.nn.one_hot(x, space.n)
             else:
-                raise ValueError(
-                    f"Unsupported space type for observation: {type(space)}"
-                )
+                raise ValueError(f"Unknown space type for observation: {type(space)}")
+            
+            list_vectors.append(encoding)
 
         # Concatenate the latent vectors
         x = jnp.concatenate(list_vectors, axis=-1)

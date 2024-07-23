@@ -1,2 +1,3 @@
 name: MLP
-hidden_dims: [12, 12]
+hidden_dims: []
+# hidden_dims: [12, 12]

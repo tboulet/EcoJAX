@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type, TypeVar
 import jax
 import jax.numpy as jnp
 from jax.numpy import ndarray
+from matplotlib.pylab import f
 import numpy as np
 from jax import random
 from jax.scipy.signal import convolve2d
@@ -16,6 +17,7 @@ from flax.struct import PyTreeNode, dataclass
 from jax.debug import breakpoint as jbreakpoint
 from tqdm import tqdm
 
+from ecojax.agents.base_agent_species import AgentSpecies
 from ecojax.core.eco_info import EcoInformation
 from ecojax.environment import EcoEnvironment
 from ecojax.metrics.aggregators import Aggregator
@@ -524,6 +526,10 @@ class GridworldEnv(EcoEnvironment):
         if self.is_terminal:
             done = ~jnp.any(state_new.agents.are_existing_agents)
         else:
+            def cb(do_print : bool):
+                if do_print:
+                    print("Environment terminated.")
+            jax.debug.callback(callback=cb, do_print=~jnp.any(state_new.agents.are_existing_agents))
             done = False
 
         # ============ (6) Compute the metrics ============
@@ -1218,9 +1224,9 @@ class GridworldEnv(EcoEnvironment):
                     ]
             # Behavior measures (requires state_species)
             elif name_measure in self.config["metrics"]["measures"]["behavior"]:
+                assert isinstance(self.agent_species, AgentSpecies), f"For behavior measure, you need to give an agent species as attribute of the env after both creation : env.agent_species = agent_species"
                 dict_measures.update(self.compute_behavior_measure(
                     state_species=state_species,
-                    react_fn=self.agent_react_fn,
                     key_random=key_random,
                     name_measure=name_measure,
                 ))
@@ -1305,19 +1311,6 @@ class GridworldEnv(EcoEnvironment):
     def compute_behavior_measure(
         self,
         state_species: StateSpecies,
-        react_fn: Callable[
-            [
-                StateSpecies,
-                ObservationAgent,
-                EcoInformation,
-                jnp.ndarray,
-            ],
-            Tuple[
-                StateSpecies,
-                ActionAgent,
-                Dict[str, jnp.ndarray],
-            ],
-        ],
         key_random: jnp.ndarray,
         name_measure: str,
     ) -> Dict[str, jnp.ndarray]:
@@ -1375,7 +1368,7 @@ class GridworldEnv(EcoEnvironment):
                     visual_field=visual_field,
                 )
                 key_random, subkey = jax.random.split(key_random)
-                _, actions, _ = react_fn(
+                _, actions, _ = self.agent_species.react(
                     state_species,
                     obs,
                     eco_information,
@@ -1411,6 +1404,12 @@ class GridworldEnv(EcoEnvironment):
         return dict_measures
 
 
+    def obs_idx_to_meaning(self) -> Dict[str, str]:
+        raise
+    
+    def action_idx_to_meaning(self) -> Dict[int, str]:
+        return {idx : action_str for action_str, idx in self.action_to_idx.items()}
+    
 # ================== Helper functions ==================
 
 

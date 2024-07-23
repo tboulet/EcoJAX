@@ -60,11 +60,13 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
         model_class: Type[BaseModel],
         config_model: Dict,
     ):
-        self.config = config
-        self.n_agents_max = n_agents_max
-        self.n_agents_initial = n_agents_initial
-        self.observation_space = observation_space
-        self.n_actions = n_actions
+        super().__init__(
+            config=config,
+            n_agents_max=n_agents_max,
+            n_agents_initial=n_agents_initial,
+            observation_space=observation_space,
+            n_actions=n_actions,
+        )
         
         # Model
         self.model = model_class(
@@ -223,7 +225,6 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
             batch_observations=batch_observations,
         )
         dict_measures_all.update(dict_measures)
-
         # ============ Compute the metrics ============
 
         # Compute some measures
@@ -233,29 +234,11 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
         )
         dict_measures_all.update(dict_measures)
 
-        # Set the measures to NaN for the agents that are not existing
-        for name_measure, measures in dict_measures_all.items():
-            if name_measure not in self.config["metrics"]["measures"]["global"]:
-                dict_measures_all[name_measure] = jnp.where(
-                    new_state.agents.do_exist,
-                    measures,
-                    jnp.nan,
-                )
-
         # Update and compute the metrics
         new_state, dict_metrics = self.compute_metrics(
             state=state, state_new=new_state, dict_measures=dict_measures_all
         )
-        
-        # Also log the weights of one agent
-        params_agent0 = tree_map(
-            f=lambda x: x[0].reshape(-1), # get the first element of the array and flatten it
-            tree=state.agents.params,
-        )
-        params_flattened_agent0 = get_dict_flattened(d=params_agent0, sep=' ')
-        for key, value in params_flattened_agent0.items():
-            dict_metrics[f"params_agent0/{key}"] = value
-        
+            
         info = {"metrics": dict_metrics}
 
         return new_state, batch_actions, info
@@ -351,14 +334,44 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
         dict_measures = {}
         for name_measure in self.names_measures:
             # Global measures
-            pass
+            if name_measure == "params_agents":
+                params_flattened = get_dict_flattened(d=state.agents.params, sep=' ')  # Dict[str, array(n, **dims_layer)]
+                params_flattened_agent0 = tree_map(
+                    f=lambda x: x[0], # get the first element of the array
+                    tree=params_flattened,
+                ) # Dict[str, array(**dims_layer)]
+                for key, value in params_flattened_agent0.items():
+                    dict_measures[f"agent0/{key}/params_agents"] = value.reshape(-1)
+                for key, value in params_flattened.items():
+                    dict_measures[f"all agents/{key}/params_agents"] = value.reshape(-1)
             # Immediate measures
-            pass
+            
             # State measures
-            if "hp" in name_measure:
+            elif name_measure == "strength_mutation":
                 strength_mutation = getattr(state.agents.hp, "strength_mutation")
                 dict_measures["strength_mutation"] = strength_mutation
                 dict_measures["log10/strength_mutation"] = jnp.log10(strength_mutation)
+            elif name_measure == "weights_agents":
+                # Metric for logging the weights between Gridworld env and the first layer of the neural network
+                weights = state.agents.params["Dense_0"]["kernel"]
+                bias = state.agents.params["Dense_0"]["bias"]
+                _, n_obs, n_actions = weights.shape
+                # for idx_action in range(n_actions):
+                #     dict_measures[f"weights b{idx_action}/weights"] = bias[:, idx_action].mean()
+                #     for idx_obs in range(n_obs):
+                #         dict_measures[f"weights w{idx_obs}-{idx_action}/weights"] = weights[:, idx_obs, idx_action].mean()
+                    
+                action_idx_to_meaning = self.env.action_idx_to_meaning()
+                assert action_idx_to_meaning == {0: "forward", 1: "right", 2: "backward", 3: "left"}
+                dict_measures[f"weights forward/weights"] = bias[:, 0]
+                dict_measures[f"weights right/weights"] = bias[:, 1]
+                dict_measures[f"weights backward/weights"] = bias[:, 2]
+                dict_measures[f"weights left/weights"] = bias[:, 3]
+                dict_measures[f"weights forward-frontFood/weights"] = weights[:, 1, 0]
+                dict_measures[f"weights left-leftFood/weights"] = weights[:, 3, 1]
+                dict_measures[f"weights right-rightFood/weights"] = weights[:, 5, 2]
+                dict_measures[f"weights back-backFood/weights"] = weights[:, 7, 3]
+
             # Behavior measures
             pass
 

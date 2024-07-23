@@ -38,7 +38,7 @@ class EcoEnvironment(ABC):
         self.config = config
         self.n_agents_max = n_agents_max
         self.n_agents_initial = n_agents_initial
-        self.agent_react_fn : Optional[Callable] = None
+        self.agent_species = None
         
     @abstractmethod
     def reset(

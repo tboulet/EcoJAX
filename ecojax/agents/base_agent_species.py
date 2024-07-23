@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from functools import partial
-from typing import Any, Dict, List, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import jax
 from jax import random
@@ -26,6 +26,21 @@ class AgentSpecies(ABC):
     For obeying the constant shape paradigm, even if the number of agents in the simulation is not constant, the number of "potential agents" is constant and equal to n_agents_max.
     This imply that any AgentSpecies instance should maintain a population of n_agents_max agents, even if some of them are not existing in the simulation at a given time.
     """
+
+    def __init__(
+        self,
+        config: Dict[str, Any],
+        n_agents_max: int,
+        n_agents_initial: int,
+        observation_space: EcojaxSpace,
+        n_actions: int,
+    ):
+        self.config = config
+        self.n_agents_max = n_agents_max
+        self.n_agents_initial = n_agents_initial
+        self.observation_space = observation_space
+        self.n_actions = n_actions
+        self.env = None 
 
     @abstractmethod
     def reset(self, key_random: jnp.ndarray) -> StateSpecies:
@@ -71,7 +86,8 @@ class AgentSpecies(ABC):
 
         # Set the measures to NaN for the agents that are not existing
         for name_measure, measures in dict_measures.items():
-            if name_measure not in self.config["metrics"]["measures"]["global"]:
+            name_measure_end = name_measure.split("/")[-1]
+            if name_measure_end not in self.config["metrics"]["measures"]["global"]:
                 dict_measures[name_measure] = jnp.where(
                     state_new.agents.do_exist,
                     measures,

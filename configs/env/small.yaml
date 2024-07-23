@@ -81,9 +81,9 @@ list_actions:
   - forward
   - right
   - left
-  - eat
-  - reproduce
-  - transfer
+  # - eat
+  # - reproduce
+  # - transfer
 
 # The vision range of an agent. If of value v, the agent will receive the information v tiles around it, so a (2v+1)*(2v+1) grid
 vision_range_agent : 5

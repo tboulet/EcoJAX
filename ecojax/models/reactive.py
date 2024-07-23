@@ -59,7 +59,7 @@ class ReactiveModel(BaseModel):
         # Play epsilon-greedy strategy
         factor_randomness = self.param(
             name="factor_randomness",
-            init_fn=lambda _ : jnp.array(0),
+            init_fn=lambda _ : jnp.array(-1.0),
         )
         prob = sigmoid(factor_randomness)
         key_random, subkey = jax.random.split(key_random)

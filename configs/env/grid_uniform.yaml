@@ -68,8 +68,8 @@ radius_plant_asphyxia : 20
 # A list indicating which type of observation use
 list_observations:
   - visual_field
-  - energy
-  - age
+  # - energy
+  # - age
 
 # A list indicating which channels the agent can observe in its visual field
 list_channels_visual_field:
@@ -107,6 +107,8 @@ energy_thr_death : 0
 energy_req_reprod : ${eval:'${env.energy_initial} * 4'}
 # The energy cost of reproduction
 energy_cost_reprod : ${eval:'${env.energy_initial} * 2'}
+# The maximal amount of energy an agent can have
+energy_max : ${eval:'${env.energy_initial} * 3'}
 
 
 

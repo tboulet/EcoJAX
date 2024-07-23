@@ -45,21 +45,8 @@ class AgentSpecies(ABC):
         self.action_space = action_space
         self.model_class = model_class
         self.config_model = config_model
-
-    def __init__(
-        self,
-        config: Dict[str, Any],
-        n_agents_max: int,
-        n_agents_initial: int,
-        observation_space: EcojaxSpace,
-        n_actions: int,
-    ):
-        self.config = config
-        self.n_agents_max = n_agents_max
-        self.n_agents_initial = n_agents_initial
-        self.observation_space = observation_space
-        self.n_actions = n_actions
-        self.env = None 
+        self.env = None
+        
 
     @abstractmethod
     def reset(self, key_random: jnp.ndarray) -> StateSpecies:
@@ -94,6 +81,16 @@ class AgentSpecies(ABC):
             info_species (Dict[str, jnp.ndarray]): a dictionary of additional information concerning the species of agents (e.g. metrics, etc.)
         """
 
+    @abstractmethod
+    def render(self, state: StateSpecies, force_render : bool = False) -> None:
+        """Do the rendering of the species. This can be a visual rendering or a logging of the state of any kind.
+        
+        Args:
+            state (StateSpecies): the state of the species to render
+            force_render (bool): whether to force the rendering even if the species is not in a state where it should be rendered
+        """
+        return
+    
     # ============== Helper methods ==============
 
     def compute_metrics(

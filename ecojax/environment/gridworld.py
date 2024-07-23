@@ -157,6 +157,10 @@ class GridworldEnv(EcoEnvironment):
             self.list_indexes_channels_visual_field.append(
                 self.dict_name_channel_to_idx[name_channel]
             )
+        self.dict_name_channel_to_idx_visual_field: Dict[str, int] = {
+            name_channel: idx_channel
+            for idx_channel, name_channel in enumerate(config["list_channels_visual_field"])
+        }
         self.n_channels_visual_field: int = len(self.list_indexes_channels_visual_field)
         # Metrics parameters
         self.names_measures: List[str] = sum(
@@ -170,7 +174,7 @@ class GridworldEnv(EcoEnvironment):
         self.do_video: bool = self.cfg_video["do_video"]
         self.do_agent_video: bool = self.cfg_video["do_agent_video"]
         self.n_steps_per_video: int = self.cfg_video["n_steps_per_video"]
-        self.t_last_video_rendered: int = -self.n_steps_per_video
+        self.t_last_video_rendered: int = -float("inf")
         self.n_steps_min_between_videos = self.cfg_video["n_steps_min_between_videos"]
         self.fps_video: int = self.cfg_video["fps_video"]
         self.dir_videos: str = self.cfg_video["dir_videos"]
@@ -296,6 +300,7 @@ class GridworldEnv(EcoEnvironment):
         self.energy_thr_death: float = config["energy_thr_death"]
         self.energy_req_reprod: float = config["energy_req_reprod"]
         self.energy_cost_reprod: float = config["energy_cost_reprod"]
+        self.energy_max: float = config["energy_max"]
         self.energy_transfer_loss: float = config.get("energy_transfer_loss", 0.0)
         self.energy_transfer_gain: float = config.get("energy_transfer_gain", 0.0)
         # Other
@@ -858,7 +863,7 @@ class GridworldEnv(EcoEnvironment):
                 # Add the new position to the list of possible positions
                 angle_new = agent_orientation_new * jnp.pi / 2
                 d_position = jnp.array(
-                    [jnp.cos(angle_new), -jnp.sin(angle_new)]
+                    [-jnp.cos(angle_new), -jnp.sin(angle_new)]
                 ).astype(jnp.int32)
                 agent_position_new = agent_position + d_position
                 agent_position_new = agent_position_new % jnp.array([H, W])
@@ -1201,10 +1206,11 @@ class GridworldEnv(EcoEnvironment):
             return vis_field
 
         # Create the observation of the agents
-        dict_observations: Dict[str, jnp.ndarray] = {
-            "energy": state.agents.energy_agents,
-            "age": state.agents.age_agents,
-        }
+        dict_observations: Dict[str, jnp.ndarray] = {}
+        if "energy" in self.list_observations:
+            dict_observations["energy"] = state.agents.energy_agents / self.energy_max
+        if "age" in self.list_observations:
+            dict_observations["age"] = state.agents.age_agents / self.age_max
         if "visual_field" in self.list_observations:
             dict_observations["visual_field"] = jax.vmap(get_single_agent_visual_field)(
                 state.agents
@@ -1382,14 +1388,14 @@ class GridworldEnv(EcoEnvironment):
             Dict[str, jnp.ndarray]: a dictionary of the behavior measures
         """
         if name_measure == "appetite":
-            idx_plant = self.dict_name_channel_to_idx["plants"]
+            idx_plant = self.dict_name_channel_to_idx_visual_field["plants"]
             n = self.n_agents_max
             v = self.vision_range_agent
             names_action_to_xy = {
-                "forward": (jnp.full(n, 0), jnp.full(n, v)),
-                "left": (jnp.full(n, v), jnp.full(n, 0)),
-                "right": (jnp.full(n, v), jnp.full(n, 2 * v)),
-                "backward": (jnp.full(n, 2 * v), jnp.full(n, v)),
+                "forward": (jnp.full(n, v+1), jnp.full(n, v)),
+                "left": (jnp.full(n, v), jnp.full(n, v-1)),
+                "right": (jnp.full(n, v), jnp.full(n, v+1)),
+                "backward": (jnp.full(n, v-1), jnp.full(n, v)),
             }
             names_action_to_xy = {
                 key: xy

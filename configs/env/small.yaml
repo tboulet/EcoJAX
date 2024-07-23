@@ -33,7 +33,7 @@ radius_sun_perception : 40
 # ======================== Food Dynamics ========================
 
 # The initial proportion of food tiles at the beginning of the simulation
-proportion_plant_initial : 0.1
+proportion_plant_initial : 0.01
 
 # The rule for a tile to be a food-tile is the following :
 # P(food spawn) = sigmoid(
@@ -46,18 +46,18 @@ proportion_plant_initial : 0.1
 # The base probability of a non-food tile to grow spontaneously
 p_base_plant_growth : 0.01
 # The base probability of a food tile to die spontaneously
-p_base_plant_death : 0.05
+p_base_plant_death : 0.00001
 
 # The factor of the sun's effect on the growth of food
 factor_sun_effect : 5
 
 # The factor of the effect of the presence of food on the growth of food
-factor_plant_reproduction : 1
+factor_plant_reproduction : 0
 # The radius of the effect of the presence of food on the growth of food
 radius_plant_reproduction : 10
 
 # The factor of the effect of the presence of food on the death of food
-factor_plant_asphyxia : 10
+factor_plant_asphyxia : 0
 # The radius of the effect of the presence of food on the death of food
 radius_plant_asphyxia : 15
 

@@ -9,6 +9,7 @@ import numpy as np
 from flax import struct
 import flax.linen as nn
 
+from ecojax import spaces
 from ecojax.core.eco_info import EcoInformation
 from ecojax.models.base_model import BaseModel
 from ecojax.spaces import EcojaxSpace
@@ -26,6 +27,24 @@ class AgentSpecies(ABC):
     For obeying the constant shape paradigm, even if the number of agents in the simulation is not constant, the number of "potential agents" is constant and equal to n_agents_max.
     This imply that any AgentSpecies instance should maintain a population of n_agents_max agents, even if some of them are not existing in the simulation at a given time.
     """
+    
+    def __init__(
+        self,
+        config: Dict,
+        n_agents_max: int,
+        n_agents_initial: int,
+        observation_space: spaces.EcojaxSpace,
+        action_space: spaces.DiscreteSpace,
+        model_class: Type[BaseModel],
+        config_model: Dict,
+    ):
+        self.config = config
+        self.n_agents_max = n_agents_max
+        self.n_agents_initial = n_agents_initial
+        self.observation_space = observation_space
+        self.action_space = action_space
+        self.model_class = model_class
+        self.config_model = config_model
 
     def __init__(
         self,

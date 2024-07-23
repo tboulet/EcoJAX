@@ -17,6 +17,7 @@ from ecojax.spaces import (
     TupleSpace,
 )
 from ecojax.types import ActionAgent, ObservationAgent
+from ecojax.utils import jprint
 
 name_activation_fn_to_fn = {
     "relu": nn.relu,
@@ -75,20 +76,33 @@ class BaseModel(nn.Module, ABC):
 
     def process_encoding(self, x: jnp.ndarray, key_random: jnp.ndarray) -> jnp.ndarray:
         """Processes the encoding to obtain the output of the model."""
+        assert isinstance(x, jnp.ndarray), f"Encoding must be a jnp.ndarray, not {type(x)}"
+        assert len(x.shape) == 1, f"Encoding must be a 1D array, not {x.shape}"
         # Process the encoding to obtain the output
         if isinstance(self.space_output, DiscreteSpace):
             logits = nn.Dense(features=self.space_output.n)(x)
-            output = random.categorical(key_random, logits)
+            output = random.categorical(key_random, logits) # crashes here because non supported operation
         elif isinstance(self.space_output, ContinuousSpace):
             shape_output = self.space_output.shape
+            d_encoding = x.shape[0]
+            # (d_encoding,) -> ?
             if len(shape_output) == 1:
-                values = nn.Dense(features=shape_output[0])(x)
-                if isinstance(self.space_output, ProbabilitySpace):
-                    output = nn.softmax(values)
+                d_output = shape_output[0]
+                # (d_encoding,) -> (n,)
+                if d_output == d_encoding:
+                    # (d_encoding,) -> (d_encoding,) : just return the value
+                    output = x
                 else:
-                    output = values
+                    # (d_encoding,) -> (d_output,) : apply dense layer
+                    output = nn.Dense(features=d_output)(x)
             elif len(shape_output) == 0:
-                output = x
+                # (d_encoding,) -> ()
+                if len(x.shape) == 1:
+                    # (1,) -> () : just extract the value
+                    output = x[0]
+                else:
+                    # (d_encoding,) -> () : apply dense layer and extract the value
+                    output = nn.Dense(features=1)(x)[0]
             else:
                 raise NotImplementedError(
                     f"Processing of continuous space of shape {shape_output} is not implemented."
@@ -138,7 +152,7 @@ class BaseModel(nn.Module, ABC):
 
         # Convert the observation to a vector encoding
         encoding = self.obs_to_encoding(x, key_random)
-
+        
         # Return the output in the desired output space
         output = self.process_encoding(encoding, key_random)
         return output

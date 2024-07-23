@@ -100,7 +100,10 @@ def eco_loop(
     if do_jax_prof:
         list_loggers.append(LoggerJaxProfiling())
 
-    def render_eco_loop(x: Tuple[StateGlobal, Dict[str, Any]]) -> jnp.ndarray:
+    def render_eco_loop(
+        x: Tuple[StateGlobal, Dict[str, Any]],
+        force_render: bool = False,
+    ) -> jnp.ndarray:
 
         global_state, info = x
         t = global_state.timestep_run.item()
@@ -108,7 +111,7 @@ def eco_loop(
 
         # Render the environment
         if do_render:
-            env.render(state=global_state.state_env)
+            env.render(state=global_state.state_env, force_render=force_render)
 
         # Render the agents
         # agent_species.render(state=global_state.state_species)
@@ -156,7 +159,7 @@ def eco_loop(
                 state=global_state.state_env,
                 actions=actions,
                 key_random=subkey,
-                state_species=new_state_species, # optional, to allow the environment to access the state of the species
+                state_species=new_state_species,  # optional, to allow the environment to access the state of the species
             )
         )
 
@@ -270,7 +273,7 @@ def eco_loop(
             global_state, info = do_n_steps(global_state, info)
     # Final render
     with RuntimeMeter("render"):
-        render_eco_loop((global_state, info))
+        render_eco_loop((global_state, info), force_render=True)
         # jax.debug.callback(render_eco_loop, (global_state, info))
 
     print("End of simulation")

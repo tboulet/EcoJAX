@@ -47,7 +47,7 @@ class AgentRL(PyTreeNode):
     # The parameters of the decision model
     params_decision: Dict[str, jnp.ndarray]
     # In case of initial weights transmission, the initial parameters of the decision model
-    # TODO
+    params_decision_initial: Optional[Dict[str, jnp.ndarray]]
     # The parameters of the reward model (not necessarily a NN, can be a more simple model)
     params_reward: Dict[str, jnp.ndarray]
     # Whether the agent is existing
@@ -244,6 +244,7 @@ class RL_AgentSpecies(AgentSpecies):
         hp: Optional[HyperParametersRL] = None,
         params_sensor: Optional[Dict[str, jnp.ndarray]] = None,
         params_decision: Optional[Dict[str, jnp.ndarray]] = None,
+        params_decision_initial: Optional[Dict[str, jnp.ndarray]] = None,
         params_reward: Optional[Dict[str, jnp.ndarray]] = None,
     ) -> AgentRL:
         """Create a new agent.
@@ -254,6 +255,7 @@ class RL_AgentSpecies(AgentSpecies):
             hp (HyperParametersRL, optional): the hyperparameters of the agent. Defaults to None (will be initialized from the config).
             params_sensor (Dict[str, jnp.ndarray], optional): the sensor NN parameters. Defaults to None (will be initialized randomly)
             params_decision (Dict[str, jnp.ndarray], optional): the decision NN parameters. Defaults to None (will be initialized randomly)
+            params_decision_initial (Dict[str, jnp.ndarray], optional): the initial decision NN parameters. Defaults to None (no initial weights transmission)
             params_reward (Dict[str, jnp.ndarray], optional): the parameters of the reward model. Defaults to None (will be initialized randomly).
 
         Returns:
@@ -269,6 +271,10 @@ class RL_AgentSpecies(AgentSpecies):
             key_random, subkey = random.split(key_random)
             variables = self.decision_model.get_initialized_variables(subkey)
             params_decision = variables.get("params", {})
+        if params_decision_initial is None and self.mode_weights_transmission == "initial":
+            key_random, subkey = random.split(key_random)
+            variables = self.decision_model.get_initialized_variables(subkey)
+            params_decision_initial = variables.get("params", {})
         if params_reward is None:
             key_random, subkey = random.split(key_random)
             variables = self.reward_model.get_initialized_variables(subkey)
@@ -285,6 +291,7 @@ class RL_AgentSpecies(AgentSpecies):
             hp=hp,
             params_sensor=params_sensor,
             params_decision=params_decision,
+            params_decision_initial=params_decision_initial,
             params_reward=params_reward,
             do_exist=do_exist,
             obs_last=obs_dummy,  # dummy observation
@@ -443,15 +450,21 @@ class RL_AgentSpecies(AgentSpecies):
 
         # Transmit (or not) the weights according to the mode
         if self.mode_weights_transmission == "initial":
-            raise NotImplementedError(
-                "Initial weights transmission not implemented yet"
+            # Mute and transmit the initial weights
+            new_params_decision_initial = mutation_gaussian_noise(
+                arr=agent.params_decision_initial,
+                strength_mutation=agent.hp.strength_mutation,
+                key_random=key_random,
             )
-            new_params_decision = agent.params_decision_initial
+            new_params_decision = new_params_decision_initial.copy()
         elif self.mode_weights_transmission == "final":
             # Transmit the final weights
             new_params_decision = agent.params_decision
+            new_params_decision_initial = None
         elif self.mode_weights_transmission == "none":
+            # Don't transmit any weights
             new_params_decision = None
+            new_params_decision_initial = None
         else:
             raise NotImplementedError(
                 f"Mode {self.mode_weights_transmission} not implemented"
@@ -462,6 +475,7 @@ class RL_AgentSpecies(AgentSpecies):
             hp=new_hp,
             params_sensor=new_params_sensor,
             params_decision=new_params_decision,
+            params_decision_initial=new_params_decision_initial,
             params_reward=new_params_reward,
         )
 

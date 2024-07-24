@@ -1,14 +1,12 @@
 # ======================== Measures ========================
 measures:
   global: 
-    []
-    # - group_size # commented for now cause it's only implemented through a non jittable function
+    - params_agents
   immediate:
     []
   state:
-    - hp
-    # - density_agents_observed
-    # - density_plants_observed
+    - strength_mutation
+    - weights_agents
   behavior: []
 
 aggregators_lifespan:
@@ -17,16 +15,16 @@ aggregators_lifespan:
 aggregators_population:
   - class_string : ecojax.metrics.aggregators:AggregatorPopulationMean
     config:
-      keys_measures : ${merge:${env.metrics.measures.immediate}, ${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
-      keys_measures_prefix : []
+      keys_measures : ${merge:${agents.metrics.measures.immediate}, ${agents.metrics.measures.state}, ${agents.metrics.measures.behavior}}
+      keys_measures_prefix : [weights]
       n_agents : ${n_agents_max}
       prefix_metric : pop_mean
-  - class_string : ecojax.metrics.aggregators:AggregatorPopulationStd
-    config:
-      keys_measures : ${merge:${env.metrics.measures.immediate}, ${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
-      keys_measures_prefix : []
-      n_agents : ${n_agents_max}
-      prefix_metric : pop_std
+  # - class_string : ecojax.metrics.aggregators:AggregatorPopulationStd
+  #   config:
+  #     keys_measures : ${merge:${agents.metrics.measures.immediate}, ${agents.metrics.measures.state}, ${agents.metrics.measures.behavior}}
+  #     keys_measures_prefix : []
+  #     n_agents : ${n_agents_max}
+  #     prefix_metric : pop_std
 
 
 

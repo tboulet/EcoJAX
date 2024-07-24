@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from functools import partial
-from typing import Any, Dict, List, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import jax
 from jax import random
@@ -45,6 +45,8 @@ class AgentSpecies(ABC):
         self.action_space = action_space
         self.model_class = model_class
         self.config_model = config_model
+        self.env = None
+        
 
     @abstractmethod
     def reset(self, key_random: jnp.ndarray) -> StateSpecies:
@@ -79,6 +81,16 @@ class AgentSpecies(ABC):
             info_species (Dict[str, jnp.ndarray]): a dictionary of additional information concerning the species of agents (e.g. metrics, etc.)
         """
 
+    @abstractmethod
+    def render(self, state: StateSpecies, force_render : bool = False) -> None:
+        """Do the rendering of the species. This can be a visual rendering or a logging of the state of any kind.
+        
+        Args:
+            state (StateSpecies): the state of the species to render
+            force_render (bool): whether to force the rendering even if the species is not in a state where it should be rendered
+        """
+        return
+    
     # ============== Helper methods ==============
 
     def compute_metrics(
@@ -90,7 +102,8 @@ class AgentSpecies(ABC):
 
         # Set the measures to NaN for the agents that are not existing
         for name_measure, measures in dict_measures.items():
-            if name_measure not in self.config["metrics"]["measures"]["global"]:
+            name_measure_end = name_measure.split("/")[-1]
+            if name_measure_end not in self.config["metrics"]["measures"]["global"]:
                 dict_measures[name_measure] = jnp.where(
                     state_new.agents.do_exist,
                     measures,

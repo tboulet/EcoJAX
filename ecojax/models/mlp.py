@@ -11,6 +11,7 @@ import flax.linen as nn
 from ecojax.models.base_model import BaseModel
 from ecojax.types import ObservationAgent, ActionAgent
 from ecojax.spaces import ContinuousSpace, DiscreteSpace
+from ecojax.utils import jprint
 
 
 class MLP_Model(BaseModel):
@@ -44,11 +45,10 @@ class MLP_Model(BaseModel):
                 list_vectors.append(one_hot_encoded)
             else:
                 raise ValueError(f"Unknown space type for observation: {type(space)}")
-        x = jnp.concatenate(list_vectors, axis=-1)
-
+        x = jnp.concatenate(list_vectors, axis=-1)        
+        
         # Process the concatenated output with a final MLP
         for hidden_dim in self.hidden_dims:
             x = nn.Dense(features=hidden_dim)(x)
             x = self.activation_fn(name_activation_fn=self.name_activation_fn, x=x)
-
         return x

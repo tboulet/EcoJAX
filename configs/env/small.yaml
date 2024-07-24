@@ -81,7 +81,9 @@ list_actions:
   - forward
   - right
   - left
-  - backward
+  # - eat
+  # - reproduce
+  # - transfer
 
 # The vision range of an agent. If of value v, the agent will receive the information v tiles around it, so a (2v+1)*(2v+1) grid
 vision_range_agent : 5
@@ -108,6 +110,8 @@ energy_cost_reprod : 20
 energy_transfer_loss: 5
 # The energy an agent gains by being the subject of a 'transfer' action
 energy_transfer_gain: 50
+# The maximal amount of energy an agent can have
+energy_max : ${eval:'${env.energy_initial} * 3'}
 
 
 # ======================== Defaults sub-configs and other Hydra config ========================

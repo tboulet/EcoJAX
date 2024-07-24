@@ -114,8 +114,9 @@ class Runner:
             model_class=ModelClass,
             config_model=self.config["model"],
         )
-        env.agent_react_fn = agent_species.react # give the react function to the environment (for behavior measures)
-
+        env.agent_species = agent_species # give the react function to the environment (for behavior measures)
+        agent_species.env = env # give the environment to the agent_species
+        
         # ============== Simulation loop ===============
         key_random, subkey = random.split(key_random)
         eco_loop(

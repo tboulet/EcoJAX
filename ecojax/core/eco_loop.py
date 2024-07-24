@@ -114,7 +114,7 @@ def eco_loop(
             env.render(state=global_state.state_env, force_render=force_render)
 
         # Render the agents
-        # agent_species.render(state=global_state.state_species)
+        agent_species.render(state=global_state.state_species)
 
         # Behavior metrics
         metrics_behavior = env.compute_on_render_behavior_measures(

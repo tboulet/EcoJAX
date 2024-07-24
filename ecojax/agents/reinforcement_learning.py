@@ -1,10 +1,13 @@
 from abc import ABC, abstractmethod
 from functools import partial
+import os
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 import jax
 from jax import random, tree_map
 import jax.numpy as jnp
+from matplotlib import pyplot as plt
+import seaborn as sns
 import numpy as np
 from flax import struct
 import flax.linen as nn
@@ -103,7 +106,7 @@ class RewardModel(BaseModel):
         space_next_obs: spaces.DictSpace = self.space_input.dict_space["obs_next"]
         # assert space_obs == space_next_obs, "The observation spaces must be the same"
 
-        reward = 0.0
+        reward = jnp.zeros((1,))
         for name_space, space in space_obs.dict_space.items():
             if (
                 isinstance(space, spaces.ContinuousSpace) and space.shape == ()
@@ -609,6 +612,53 @@ class RL_AgentSpecies(AgentSpecies):
 
     # =============== Metrics methods =================
 
+    def render(self, state: StateSpeciesRL, force_render: bool = False) -> None:
+        """Do the rendering of the species. This can be a visual rendering or a logging of the state of any kind.
+
+        Args:
+            state (StateSpecies): the state of the species to render
+            force_render (bool): whether to force the rendering even if the species is not in a state where it should be rendered
+        """        
+        # Log heatmaps of the weights
+        try:
+            weights = state.agents.params_decision["Dense_0"]["kernel"].mean(axis=0)
+            n_obs, n_actions = weights.shape
+            bias = state.agents.params_decision["Dense_0"]["bias"].mean(axis=0)
+            plt.figure(figsize=(10, 8))
+            sns.heatmap(weights, annot=True, cmap='viridis', cbar=True)
+            plt.xlabel('Actions')
+            plt.ylabel('Observations')
+            plt.title('Heatmap of Weights')
+            os.makedirs("logs/heatmaps", exist_ok=True)
+            plt.savefig(f"logs/heatmaps/heatmap.png")
+
+            x = np.arange(n_actions)  # the label locations
+            width = 0.35  # the width of the bars
+            sum_weights = np.sum(weights, axis=0)
+
+            fig, ax = plt.subplots(figsize=(10, 6))
+            bars1 = ax.bar(x - width/2, bias, width, label='Bias', color='skyblue')
+            bars2 = ax.bar(x + width/2, sum_weights, width, label='Sum of Weights', color='lightgreen')
+
+            # Add some text for labels, title and custom x-axis tick labels, etc.
+            ax.set_xlabel('Actions')
+            ax.set_ylabel('Values')
+            ax.set_title('Bias and Sum of Weights for Each Action')
+            ax.set_xticks(x)
+            ax.set_xticklabels(x)
+            ax.legend()
+
+            # Path to save the combined bar chart
+            combined_bar_chart_path = os.path.join("logs/heatmaps/bias and sum weights.png")
+
+            # Save the combined bar chart
+            plt.savefig(combined_bar_chart_path)
+            plt.close()
+
+        except Exception as e:
+            print(f"Error in agents render: {e}")
+            
+            
     def compute_measures(
         self,
         state: StateSpeciesRL,
@@ -623,7 +673,6 @@ class RL_AgentSpecies(AgentSpecies):
             # Immediate measures
             pass
             # State measures
-            jax.lax.select()
             if "hp" in name_measure:
                 strength_mutation = getattr(state.agents.hp, "strength_mutation")
                 dict_measures["strength_mutation"] = strength_mutation

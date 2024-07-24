@@ -105,6 +105,8 @@ energy_thr_death : 0
 energy_req_reprod : 80
 # The energy cost of reproduction
 energy_cost_reprod : 20
+# The maximal amount of energy an agent can have
+energy_max : ${eval:'${env.energy_initial} * 3'}
 
 
 

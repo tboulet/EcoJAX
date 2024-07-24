@@ -1,6 +1,10 @@
 from abc import ABC, abstractmethod
 from functools import partial
+import os
 from typing import Callable, Dict, List, Optional, Tuple, Type
+import matplotlib.pyplot as plt
+import seaborn as sns
+
 
 import jax
 from jax import random, tree_map, tree_structure
@@ -228,7 +232,6 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
             batch_observations=batch_observations,
         )
         dict_measures_all.update(dict_measures)
-
         # ============ Compute the metrics ============
 
         # Compute some measures
@@ -242,25 +245,16 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
         for name_measure, measures in dict_measures_all.items():
             if name_measure not in self.config["metrics"]["measures"]["global"]:
                 dict_measures_all[name_measure] = jnp.where(
-                    new_state.agents.do_exist,
+                    state.agents.do_exist,
                     measures,
                     jnp.nan,
                 )
-
+                
         # Update and compute the metrics
         new_state, dict_metrics = self.compute_metrics(
             state=state, state_new=new_state, dict_measures=dict_measures_all
         )
-        
-        # Also log the weights of one agent
-        params_agent0 = tree_map(
-            f=lambda x: x[0].reshape(-1), # get the first element of the array and flatten it
-            tree=state.agents.params,
-        )
-        params_flattened_agent0 = get_dict_flattened(d=params_agent0, sep=' ')
-        for key, value in params_flattened_agent0.items():
-            dict_metrics[f"params_agent0/{key}"] = value
-        
+            
         info = {"metrics": dict_metrics}
 
         return new_state, batch_actions, info
@@ -346,6 +340,52 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
 
     # =============== Metrics methods =================
 
+    def render(self, state: StateSpeciesNE, force_render: bool = False) -> None:
+        """Do the rendering of the species. This can be a visual rendering or a logging of the state of any kind.
+
+        Args:
+            state (StateSpecies): the state of the species to render
+            force_render (bool): whether to force the rendering even if the species is not in a state where it should be rendered
+        """        
+        # Log heatmaps of the weights
+        try:
+            weights = state.agents.params["Dense_0"]["kernel"].mean(axis=0)
+            n_obs, n_actions = weights.shape
+            bias = state.agents.params["Dense_0"]["bias"].mean(axis=0)
+            plt.figure(figsize=(10, 8))
+            sns.heatmap(weights, annot=True, cmap='viridis', cbar=True)
+            plt.xlabel('Actions')
+            plt.ylabel('Observations')
+            plt.title('Heatmap of Weights')
+            os.makedirs("logs/heatmaps", exist_ok=True)
+            plt.savefig(f"logs/heatmaps/heatmap.png")
+
+            x = np.arange(n_actions)  # the label locations
+            width = 0.35  # the width of the bars
+            sum_weights = np.sum(weights, axis=0)
+
+            fig, ax = plt.subplots(figsize=(10, 6))
+            bars1 = ax.bar(x - width/2, bias, width, label='Bias', color='skyblue')
+            bars2 = ax.bar(x + width/2, sum_weights, width, label='Sum of Weights', color='lightgreen')
+
+            # Add some text for labels, title and custom x-axis tick labels, etc.
+            ax.set_xlabel('Actions')
+            ax.set_ylabel('Values')
+            ax.set_title('Bias and Sum of Weights for Each Action')
+            ax.set_xticks(x)
+            ax.set_xticklabels(x)
+            ax.legend()
+
+            # Path to save the combined bar chart
+            combined_bar_chart_path = os.path.join("logs/heatmaps/bias and sum weights.png")
+
+            # Save the combined bar chart
+            plt.savefig(combined_bar_chart_path)
+            plt.close()
+
+        except Exception as e:
+            print(f"Error in agents render: {e}")
+            
     def compute_measures(
         self,
         state: StateSpeciesNE,
@@ -356,14 +396,47 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
         dict_measures = {}
         for name_measure in self.names_measures:
             # Global measures
-            pass
+            if name_measure == "params_agents":
+                continue # TODO: correct this (crashes because of shapes != (n_agents,) ...)
+                params_flattened = get_dict_flattened(d=state.agents.params, sep=' ')  # Dict[str, array(n, **dims_layer)]
+                for key, value in params_flattened.items():
+                    dict_measures[f"all agents/{key}/params_agents"] = value.reshape(-1)
+                params_flattened_agent0 = tree_map(
+                    f=lambda x: x[0], # get the first element of the array
+                    tree=params_flattened,
+                ) # Dict[str, array(**dims_layer)]
+                for key, value in params_flattened_agent0.items():
+                    dict_measures[f"agent0/{key}/params_agents"] = value.reshape(-1)
             # Immediate measures
-            pass
+            
             # State measures
-            if "hp" in name_measure:
+            elif name_measure == "strength_mutation":
                 strength_mutation = getattr(state.agents.hp, "strength_mutation")
                 dict_measures["strength_mutation"] = strength_mutation
                 dict_measures["log10/strength_mutation"] = jnp.log10(strength_mutation)
+            elif name_measure == "weights_agents":
+                # Metric for logging the weights between Gridworld env and the first layer of the neural network
+                try:
+                    weights = state.agents.params["Dense_0"]["kernel"]
+                    bias = state.agents.params["Dense_0"]["bias"]
+                    _, n_obs, n_actions = weights.shape
+                    for idx_action in range(n_actions):
+                        dict_measures[f"weights b{idx_action}/weights"] = bias[:, idx_action].mean()
+                        for idx_obs in range(n_obs):
+                            dict_measures[f"weights w{idx_obs}-{idx_action}/weights"] = weights[:, idx_obs, idx_action].mean()
+                        
+                    # action_idx_to_meaning = self.env.action_idx_to_meaning()
+                    # assert action_idx_to_meaning == {0: "forward", 1: "right", 2: "backward", 3: "left"}
+                    # dict_measures[f"weights forward/weights"] = bias[:, 0]
+                    # dict_measures[f"weights right/weights"] = bias[:, 1]
+                    # dict_measures[f"weights backward/weights"] = bias[:, 2]
+                    # dict_measures[f"weights left/weights"] = bias[:, 3]
+                    # dict_measures[f"weights forward-frontFood/weights"] = weights[:, 7, 0]
+                    # dict_measures[f"weights left-leftFood/weights"] = weights[:, 3, 1]
+                    # dict_measures[f"weights right-rightFood/weights"] = weights[:, 5, 3]
+                    # dict_measures[f"weights back-backFood/weights"] = weights[:, 1, 2]
+                except Exception as e:
+                    print(f"Error in measure weights_agents: {e}")
             # Behavior measures
             pass
 

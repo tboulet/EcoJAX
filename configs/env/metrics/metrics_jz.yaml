@@ -1,0 +1,78 @@
+# ======================== Measures ========================
+measures:
+  environmental:
+    - n_agents
+    - n_plants
+    - net_energy_transfer_per_capita
+    # - group_size # commented for now cause it's only implemented through a non jittable function
+  immediate:
+    - do_action_eat
+    - do_action_transfer
+    - do_action_reproduce
+    - do_action_forward
+    - do_action_nothing
+    - amount_food_eaten
+    - amount_children
+    - died
+  state:
+    - energy
+    - age
+    - x
+    - appearance
+  behavior:
+    []
+    # - appetite
+
+behavior_measures_on_render: 
+  # []
+  - appetite
+
+aggregators_lifespan:
+  - class_string : ecojax.metrics.aggregators:AggregatorLifespanCumulative
+    config:
+      keys_measures : ${env.metrics.measures.immediate}
+      n_agents : ${n_agents_max}
+      prefix_metric : life_cum
+      log_final : true
+  - class_string : ecojax.metrics.aggregators:AggregatorLifespanAverage
+    config:
+      keys_measures : ${merge:${env.metrics.measures.immediate}, ${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
+      n_agents : ${n_agents_max}
+      prefix_metric : life_avg
+  - class_string : ecojax.metrics.aggregators:AggregatorLifespanVariation
+    config:
+      keys_measures : ${merge:${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
+      n_agents : ${n_agents_max}
+      prefix_metric : life_var
+
+aggregators_population:
+  - class_string : ecojax.metrics.aggregators:AggregatorPopulationMean
+    config:
+      keys_measures : ${merge:${env.metrics.measures.immediate}, ${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
+      keys_measures_prefix : [life, last_final]
+      n_agents : ${n_agents_max}
+      prefix_metric : pop_mean
+  - class_string : ecojax.metrics.aggregators:AggregatorPopulationStd
+    config:
+      keys_measures : ${merge:${env.metrics.measures.behavior}, ${env.metrics.measures.state}}
+      keys_measures_prefix : [life, last_final]
+      n_agents : ${n_agents_max}
+      prefix_metric : pop_std
+
+
+
+# ======================== Video parameters ========================
+config_video:
+  do_video : True
+  do_agent_video : False
+  n_steps_per_video : 500
+  n_steps_min_between_videos : 5000
+  fps_video : 20
+  dir_videos : logs
+  height_max_video : 500
+  width_max_video : 500
+  dict_name_channel_to_color_tag:
+    "sun" : "yellow"
+    "plants" : "green"
+    "agents" : "blue"
+  color_background : "gray"

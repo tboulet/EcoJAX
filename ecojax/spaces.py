@@ -206,7 +206,7 @@ class DictSpace(EcojaxSpace):
 
 class ProbabilitySpace(ContinuousSpace):
     
-    def __init__(self, shape: int | Tuple[int],):
+    def __init__(self, shape: Union[int, Tuple[int]]):
         """A probability space, i.e. a continuous space with values in [0, 1] and summing to 1."""
         assert isinstance(shape, int) or len(shape) == 1, "The shape of the probability space must be an integer or a tuple of length 1."
         super().__init__(shape, 0, 1)

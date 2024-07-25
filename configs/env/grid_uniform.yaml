@@ -5,7 +5,7 @@ height : 200
 width : 200
 
 # Whether the env is terminal, i.e. the simulation stops when all agents are dead
-is_terminal : False
+is_terminal : True
 
 
 
@@ -104,11 +104,11 @@ energy_food : 5
 energy_thr_death : 0
 
 # The energy required to be able to reproduce
-energy_req_reprod : ${eval:'${env.energy_initial} * 4'}
+energy_req_reprod : 120
 # The energy cost of reproduction
-energy_cost_reprod : ${eval:'${env.energy_initial} * 2'}
+energy_cost_reprod : 60
 # The maximal amount of energy an agent can have
-energy_max : ${eval:'${env.energy_initial} * 3'}
+energy_max : 200
 
 
 

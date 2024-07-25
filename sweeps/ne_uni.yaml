@@ -1,0 +1,33 @@
+program: run.py 
+method: bayes
+metric:
+  goal: maximize
+  name: n_agents
+
+parameters:
+  env.proportion_plant_initial:
+    min: 0.1
+    max: 0.9
+    distribution: uniform
+  # solver.config.a:
+  #   min: -10
+  #   max: 10
+  #   distribution: uniform
+
+  # solver.config.b:
+  #   min: 0.0001
+  #   max: 10
+  #   distribution: log_uniform_values
+
+  # solver.config.c:
+  #   min: 1
+  #   max: 10
+  #   distribution: q_log_uniform_values
+
+command:
+  - source 
+  - /gpfswork/rech/imi/upb99ot/EcoJAX/venv/bin/python
+  - ${program}
+  - --config-name=jz
+  - env/metrics=metrics_jz
+  - ${args_no_hyphens}

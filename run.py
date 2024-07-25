@@ -89,7 +89,7 @@ class Runner:
             dir_videos = f"./logs/videos/{run_name}"
         else:
             dir_videos = "./logs/videos"
-        self.config["env"][
+        self.config["env"]["metrics"]["config_video"][
             "dir_videos"
         ] = dir_videos  # I add this line to force the dir_videos to be the one I want
         env = EnvClass(

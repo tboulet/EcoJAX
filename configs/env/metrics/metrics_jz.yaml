@@ -20,12 +20,10 @@ measures:
     - x
     - appearance
   behavior:
-    []
-    # - appetite
+    - appetite
 
 behavior_measures_on_render: 
-  # []
-  - appetite
+  []
 
 aggregators_lifespan:
   - class_string : ecojax.metrics.aggregators:AggregatorLifespanCumulative

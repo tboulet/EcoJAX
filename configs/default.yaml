@@ -17,6 +17,7 @@ do_snakeviz: False
 do_jax_prof: False
 do_render: True
 do_global_log: False
+log_dir_path: "./logs"
 
 # Defaults sub-configs and other Hydra config.
 defaults:

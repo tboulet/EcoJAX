@@ -68,15 +68,16 @@ def eco_loop(
     do_render: bool = config["do_render"]
     do_global_log: bool = config["do_global_log"]
 
-    # Initialize loggers
+    dir_metrics = config.get("log_dir_path", "./logs")
     run_name = config.get(
         "run_name", datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     )
     print(f"\nStarting run {run_name}")
+
+    # Initialize loggers
     if not do_global_log:
-        dir_metrics = f"./logs/{run_name}"
-    else:
-        dir_metrics = "./logs"
+        dir_metrics = os.path.join(dir_metrics, run_name)
+    os.makedirs(dir_metrics, exist_ok=True)
 
     list_loggers: List[Type[BaseLogger]] = []
     if do_wandb:
@@ -122,7 +123,7 @@ def eco_loop(
         print("Running step_eco_loop...")
         global_state, info = x
         key_random = global_state.key_random
-        
+
         # Agents step
         key_random, subkey = random.split(key_random)
         new_state_species, actions = agent_species.react(
@@ -202,7 +203,7 @@ def eco_loop(
 
     # Run the simulation
     print("Running the simulation...")
-    
+
     global_state = StateGlobal(
         state_env=state_env,
         state_species=state_species,
@@ -212,7 +213,7 @@ def eco_loop(
         done=done,
         key_random=subkey,
     )
-    
+
     # Do (some?) first step(s) to get global_state and info at the right structure
     for _ in range(1):
         with RuntimeMeter("warmup steps"):
@@ -222,7 +223,7 @@ def eco_loop(
     # JIT after first steps
     step_eco_loop = jax.jit(step_eco_loop)
     do_continue_eco_loop = jax.jit(do_continue_eco_loop)
-    
+
     # @jax.jit # only works with while_loop, scan, and fori_loop
     def do_n_steps(global_state, info):
         # Method : native for loop (apparently the fastest method for this case)

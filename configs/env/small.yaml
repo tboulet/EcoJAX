@@ -110,6 +110,8 @@ energy_transfer_loss: 5
 # The energy an agent gains by being the subject of a 'transfer' action
 energy_transfer_gain: 50
 
+move_prob_initial: 0.0
+move_prob_gradient: 0.0
 
 # ======================== Defaults sub-configs and other Hydra config ========================
 defaults:

@@ -4,6 +4,9 @@ measures:
     - n_agents
     - n_plants
     - net_energy_transfer_per_capita
+    - eat_success_rate
+    - transfer_success_rate
+    - reproduce_success_rate
     # - group_size # commented for now cause it's only implemented through a non jittable function
   immediate:
     - do_action_eat
@@ -22,49 +25,47 @@ measures:
   behavior: []
 
 aggregators_lifespan:
-  - class_string : ecojax.metrics.aggregators:AggregatorLifespanCumulative
+  - class_string: ecojax.metrics.aggregators:AggregatorLifespanCumulative
     config:
-      keys_measures : ${env.metrics.measures.immediate}
-      n_agents : ${n_agents_max}
-      prefix_metric : life_cum
-      log_final : true
-  - class_string : ecojax.metrics.aggregators:AggregatorLifespanAverage
+      keys_measures: ${env.metrics.measures.immediate}
+      n_agents: ${n_agents_max}
+      prefix_metric: life_cum
+      log_final: true
+  - class_string: ecojax.metrics.aggregators:AggregatorLifespanAverage
     config:
-      keys_measures : ${merge:${env.metrics.measures.immediate}, ${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
-      n_agents : ${n_agents_max}
-      prefix_metric : life_avg
-  - class_string : ecojax.metrics.aggregators:AggregatorLifespanVariation
+      keys_measures: ${merge:${env.metrics.measures.immediate}, ${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
+      n_agents: ${n_agents_max}
+      prefix_metric: life_avg
+  - class_string: ecojax.metrics.aggregators:AggregatorLifespanVariation
     config:
-      keys_measures : ${merge:${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
-      n_agents : ${n_agents_max}
-      prefix_metric : life_var
+      keys_measures: ${merge:${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
+      n_agents: ${n_agents_max}
+      prefix_metric: life_var
 
 aggregators_population:
-  - class_string : ecojax.metrics.aggregators:AggregatorPopulationMean
+  - class_string: ecojax.metrics.aggregators:AggregatorPopulationMean
     config:
-      keys_measures : ${merge:${env.metrics.measures.immediate}, ${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
-      keys_measures_prefix : [life, last_final]
-      n_agents : ${n_agents_max}
-      prefix_metric : pop_mean
-  - class_string : ecojax.metrics.aggregators:AggregatorPopulationStd
+      keys_measures: ${merge:${env.metrics.measures.immediate}, ${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
+      keys_measures_prefix: [life, last_final]
+      n_agents: ${n_agents_max}
+      prefix_metric: pop_mean
+  - class_string: ecojax.metrics.aggregators:AggregatorPopulationStd
     config:
-      keys_measures : ${merge:${env.metrics.measures.behavior}, ${env.metrics.measures.state}}
-      keys_measures_prefix : [life, last_final]
-      n_agents : ${n_agents_max}
-      prefix_metric : pop_std
-
-
+      keys_measures: ${merge:${env.metrics.measures.behavior}, ${env.metrics.measures.state}}
+      keys_measures_prefix: [life, last_final]
+      n_agents: ${n_agents_max}
+      prefix_metric: pop_std
 
 # ======================== Video parameters ========================
 config_video:
-  do_video : True
-  n_steps_per_video : 100
-  fps_video : 20
-  dir_videos : logs
-  height_max_video : 500
-  width_max_video : 500
+  do_video: True
+  n_steps_per_video: 100
+  fps_video: 20
+  dir_videos: logs
+  height_max_video: 500
+  width_max_video: 500
   dict_name_channel_to_color_tag:
-    "sun" : "yellow"
-    "plants" : "green"
-    "agents" : "blue"
-  color_background : "gray"
+    "sun": "yellow"
+    "plants": "green"
+    "agents": "blue"
+  color_background: "gray"

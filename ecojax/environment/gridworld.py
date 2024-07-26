@@ -150,6 +150,7 @@ class GridworldEnv(EcoEnvironment):
             "sun",
             "plants",
             "agents",
+            "agent_ages"
         ]
         self.list_names_channels += [
             f"appearance_{i}" for i in range(config["dim_appearance"])
@@ -281,6 +282,8 @@ class GridworldEnv(EcoEnvironment):
         self.energy_cost_reprod: float = config["energy_cost_reprod"]
         self.energy_transfer_loss: float = config.get("energy_transfer_loss", 0.0)
         self.energy_transfer_gain: float = config.get("energy_transfer_gain", 0.0)
+        self.move_prob_initial: float = config.get("move_prob_initial", 1.0)
+        self.move_prob_gradient: float = config.get("move_prob_gradient", 0.0)
         # Other
         self.fill_value: int = self.n_agents_max
 
@@ -485,26 +488,33 @@ class GridworldEnv(EcoEnvironment):
         state_new = update_agent_map(state_new)
 
         # ============ (3) Extract the observations of the agents (and some updates) ============
+        # update agent ages in map
+        norm_factor = jnp.maximum(1, state.map[..., idx_agents])
+        map_ages_new = jnp.zeros((H, W)).at[
+            state.agents.positions_agents[:, 0],
+            state.agents.positions_agents[:, 1],
+        ].add(
+            state.agents.age_agents * state.agents.are_existing_agents
+        ) / norm_factor
 
         # Recreate the map of appearances
-        map_appearances_new = jnp.zeros((H, W, self.config["dim_appearance"]))
-        map_appearances_new = map_appearances_new.at[
+        map_appearances_new = jnp.zeros((H, W, self.config["dim_appearance"])).at[
             state.agents.positions_agents[:, 0],
             state.agents.positions_agents[:, 1],
             :,
         ].add(
             state.agents.appearance_agents * state.agents.are_existing_agents[:, None]
-        )
-        map_appearances_new /= jnp.maximum(
-            1, state.map[..., idx_agents][:, :][:, :, None]
-        )
+        ) / norm_factor.reshape((H, W, 1))
 
         # Update the state
+        map_new = state_new.map.at[:, :, idx_agents + 1].set(map_ages_new)
+        map_new = map_new.at[:, :, idx_agents + 2:].set(map_appearances_new)
         state_new: StateEnvGridworld = state_new.replace(
-            map=state_new.map.at[:, :, idx_agents + 1 :].set(map_appearances_new),
+            map=map_new,
             timestep=t + 1,
             agents=state_new.agents.replace(age_agents=state_new.agents.age_agents + 1),
         )
+
         # Extract the observations of the agents
         observations_agents, dict_measures = self.get_observations_agents(
             state=state_new
@@ -529,7 +539,6 @@ class GridworldEnv(EcoEnvironment):
             done = False
 
         # ============ (6) Compute the metrics ============
-
         # Compute some measures
         dict_measures = self.compute_measures(
             state=state, actions=actions, state_new=state_new, key_random=subkey
@@ -757,7 +766,12 @@ class GridworldEnv(EcoEnvironment):
         return (position + d_pos) % jnp.array([self.height, self.width])
 
     def compute_new_position_and_orientation(
-        self, curr_pos: jnp.ndarray, curr_ori: jnp.ndarray, action: int
+        self,
+        key_random: jnp.ndarray,
+        curr_pos: jnp.ndarray,
+        curr_ori: jnp.ndarray,
+        action: jnp.ndarray,
+        move_success_prob: jnp.ndarray,
     ) -> Tuple[jnp.ndarray, jnp.ndarray]:
         condlist: List[jnp.ndarray] = []
         choicelist_position: List[jnp.ndarray] = []
@@ -793,25 +807,37 @@ class GridworldEnv(EcoEnvironment):
             default=curr_ori,
         )
 
+        # Decide if the move is successful
+        success = jax.random.bernoulli(key=key_random, p=move_success_prob)
+        new_pos = jnp.where(success, new_pos, curr_pos)
+
         return new_pos, new_ori
 
     def move_agents_allow_multiple_occupancy(
-        self, state: StateEnvGridworld, actions: jnp.ndarray
+        self, key_random: jnp.ndarray, state: StateEnvGridworld, actions: jnp.ndarray
     ):
-        return jax.vmap(self.compute_new_position_and_orientation, in_axes=(0, 0, 0))(
+        keys = jax.random.split(key_random, num=state.agents.positions_agents.shape[0])
+        success_probs = jnp.minimum(self.move_prob_initial + (self.move_prob_gradient * state.agents.age_agents), 1)
+        return jax.vmap(self.compute_new_position_and_orientation, in_axes=(0, 0, 0, 0, 0))(
+            keys,
             state.agents.positions_agents,
             state.agents.orientation_agents,
             actions,
+            success_probs,
         )
 
     def move_agents_enforce_single_occupancy(
-        self, state: StateEnvGridworld, actions: jnp.ndarray
+        self, key_random: jnp.ndarray, state: StateEnvGridworld, actions: jnp.ndarray
     ):
-        def process_single_agent(agent_map, agent_input):
-            pos_r, pos_c, curr_ori, action = agent_input
-            curr_pos = jnp.array([pos_r, pos_c], dtype=jnp.int32)
+        num_agents = state.agents.positions_agents.shape[0]
+        keys = jax.random.split(key_random, num=num_agents)
+        success_probs = jnp.minimum(self.move_prob_initial + (self.move_prob_gradient * state.agents.age_agents), 1)
+
+        def process_single_agent(agent_map, agent_idx):
+            curr_pos = state.agents.positions_agents[agent_idx]
+            curr_ori = state.agents.orientation_agents[agent_idx]
             new_pos, new_ori = self.compute_new_position_and_orientation(
-                curr_pos, curr_ori, action
+                keys[agent_idx], curr_pos, curr_ori, actions[agent_idx], success_probs[agent_idx]
             )
 
             # check whether new position is occupied - if so, agent stays in place
@@ -824,16 +850,8 @@ class GridworldEnv(EcoEnvironment):
             agent_map = agent_map.at[new_pos[0], new_pos[1]].set(1)
             return agent_map, jnp.array([new_pos[0], new_pos[1], new_ori])
 
-        input_array = jnp.concatenate(
-            [
-                state.agents.positions_agents,
-                state.agents.orientation_agents[:, None],
-                actions[:, None],
-            ],
-            axis=1,
-        )
         agent_map = state.map[..., self.dict_name_channel_to_idx["agents"]]
-        agent_map, outputs = jax.lax.scan(process_single_agent, agent_map, input_array)
+        agent_map, outputs = jax.lax.scan(process_single_agent, agent_map, jnp.arange(num_agents))
 
         return (
             outputs[:, :2],
@@ -860,7 +878,7 @@ class GridworldEnv(EcoEnvironment):
             if self.allow_multiple_agents_per_tile
             else self.move_agents_enforce_single_occupancy
         )
-        positions_agents_new, orientation_agents_new = move_func(state, actions)
+        positions_agents_new, orientation_agents_new = move_func(key_random, state, actions)
 
         # ====== Perform the eating action of the agents ======
         if "eat" in self.list_actions:
@@ -878,10 +896,14 @@ class GridworldEnv(EcoEnvironment):
             )  # map of the energy available at each cell per (existing) agent trying to eat
             food_energy_bonus = map_food_energy_bonus_available_per_agent[
                 positions_agents_new[:, 0], positions_agents_new[:, 1]
-            ]
+            ] * are_agents_eating
+
             if "amount_food_eaten" in self.names_measures:
                 dict_measures["amount_food_eaten"] = food_energy_bonus
             energy_agents_new = state.agents.energy_agents + food_energy_bonus
+
+            if "eat_success_rate" in self.names_measures:
+                dict_measures["eat_success_rate"] = jnp.sign(food_energy_bonus).sum() / jnp.maximum(1, are_agents_eating.sum())
 
             # Remove plants that have been eaten
             map_plants -= map_agents_try_eating * map_plants
@@ -896,10 +918,10 @@ class GridworldEnv(EcoEnvironment):
 
             def per_agent_helper_fn(i):
                 target_pos = self.get_facing_pos(
-                    positions_agents_new[i], orientation_agents_new[i]
+                    state.agents.positions_agents[i], state.agents.orientation_agents[i]
                 )
                 are_receiving = (
-                    (positions_agents_new == target_pos).all(axis=1).astype(jnp.int32)
+                    (state.agents.positions_agents == target_pos).all(axis=1).astype(jnp.int32)
                 )
                 is_transfer = are_agents_transferring[i] & jnp.any(are_receiving)
 
@@ -912,21 +934,26 @@ class GridworldEnv(EcoEnvironment):
 
                 return jnp.zeros_like(state.agents.energy_agents).at[i].add(-loss) + (
                     gain * are_receiving
-                ).astype(jnp.float32)
+                ).astype(jnp.float32), is_transfer
 
-            transfer_delta_energy = jax.vmap(per_agent_helper_fn, in_axes=0)(
+            transfer_delta_energy, is_transfer = jax.vmap(per_agent_helper_fn, in_axes=0)(
                 jnp.arange(state.agents.energy_agents.size)
-            ).sum(axis=0)
-            energy_agents_new += transfer_delta_energy
+            )
+            energy_agents_new += transfer_delta_energy.sum(axis=0)
 
-            # log the net energy transfer per capita
+
+            # log some metrics
             if "net_energy_transfer_per_capita" in self.names_measures:
                 dict_measures["net_energy_transfer_per_capita"] = (
                     transfer_delta_energy.sum() / state.agents.are_existing_agents.sum()
                 )
+            if "transfer_success_rate" in self.names_measures:
+                dict_measures["transfer_success_rate"] = jnp.sum(is_transfer) / jnp.sum(are_agents_transferring)
 
         # ====== Update the physical status of the agents ======
         energy_agents_new -= 1
+        energy_agents_new = jnp.clip(energy_agents_new, 0, 200)
+
         are_existing_agents_new = (
             (energy_agents_new > self.energy_thr_death)
             & state.agents.are_existing_agents
@@ -972,9 +999,12 @@ class GridworldEnv(EcoEnvironment):
         are_existing_agents = state.agents.are_existing_agents
         are_agents_trying_reprod = (
             state.agents.energy_agents > self.energy_req_reprod
-        ) & are_existing_agents
-        if "do_reproduce" in self.list_actions:
-            are_agents_trying_reprod &= actions == self.action_to_idx["do_reproduce"]
+        ) & (state.agents.age_agents >= 25) & are_existing_agents
+        if "reproduce" in self.list_actions:
+            trying_reprod_action = actions == self.action_to_idx["reproduce"]
+            are_agents_trying_reprod = are_agents_trying_reprod & trying_reprod_action
+            if "reproduce_success_rate" in self.names_measures:
+                dict_measures["reproduce_success_rate"] = jnp.sum(are_agents_trying_reprod) / jnp.sum(trying_reprod_action)
 
         # # For test
         # are_existing_agents = jnp.array([False, False, False, False, True, True, True, True, True, False])
@@ -1141,6 +1171,11 @@ class GridworldEnv(EcoEnvironment):
 
             # Construct the map of the visual field of the agent
             map_vis_field = state.map  # (H, W, C_map)
+            age_idx = self.dict_name_channel_to_idx["agent_ages"]
+            map_vis_field = map_vis_field.at[:, :, age_idx].set(
+                map_vis_field[:, :, age_idx] / self.age_max
+            )
+
 
             # Get the visual field of the agent
             visual_field_x = agents.positions_agents[0] + self.grid_indexes_vision_x

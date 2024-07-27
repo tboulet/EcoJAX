@@ -138,6 +138,7 @@ class GridworldEnv(EcoEnvironment):
         assert (
             self.n_agents_initial <= self.n_agents_max
         ), "n_agents_initial must be less than or equal to n_agents_max"
+
         # Environment Parameters
         self.width: int = config["width"]
         self.height: int = config["height"]
@@ -160,17 +161,18 @@ class GridworldEnv(EcoEnvironment):
             for idx_channel, name_channel in enumerate(self.list_names_channels)
         }
         self.n_channels_map: int = len(self.dict_name_channel_to_idx)
+
         # Metrics parameters
         self.names_measures: List[str] = sum(
             [names for type_measure, names in config["metrics"]["measures"].items()], []
         )
+
         # Video parameters
         self.cfg_video = config["metrics"]["config_video"]
         self.do_video: bool = self.cfg_video["do_video"]
         self.n_steps_per_video: int = self.cfg_video["n_steps_per_video"]
         self.fps_video: int = self.cfg_video["fps_video"]
         self.dir_videos: str = self.cfg_video["dir_videos"]
-        os.makedirs(self.dir_videos, exist_ok=True)
         self.height_max_video: int = self.cfg_video["height_max_video"]
         self.width_max_video: int = self.cfg_video["width_max_video"]
         self.dict_name_channel_to_color_tag: Dict[str, str] = self.cfg_video[
@@ -183,6 +185,9 @@ class GridworldEnv(EcoEnvironment):
             self.config, "color_unknown_channel", default="black"
         )
         self.dict_idx_channel_to_color_tag: Dict[int, str] = {}
+
+        os.makedirs(self.dir_videos, exist_ok=True)
+
         for name_channel, idx_channel in self.dict_name_channel_to_idx.items():
             if name_channel in self.dict_name_channel_to_color_tag:
                 self.dict_idx_channel_to_color_tag[idx_channel] = (
@@ -192,11 +197,13 @@ class GridworldEnv(EcoEnvironment):
                 self.dict_idx_channel_to_color_tag[idx_channel] = (
                     self.color_tag_unknown_channel
                 )
+
         # Sun Parameters
         self.period_sun: int = config["period_sun"]
         self.method_sun: str = config["method_sun"]
         self.radius_sun_effect: int = config["radius_sun_effect"]
         self.radius_sun_perception: int = config["radius_sun_perception"]
+
         # Plants Dynamics
         self.proportion_plant_initial: float = config["proportion_plant_initial"]
         self.logit_p_base_plant_growth: float = logit(config["p_base_plant_growth"])

@@ -67,18 +67,12 @@ def eco_loop(
     do_jax_prof: bool = config.get("do_jax_prof", False)
     do_render: bool = config["do_render"]
     do_global_log: bool = config["do_global_log"]
+    dir_metrics: str = config["log_dir_path"]
+    run_name: str = config["run_name"]
 
-    dir_metrics = config.get("log_dir_path", "./logs")
-    run_name = config.get(
-        "run_name", datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    )
     print(f"\nStarting run {run_name}")
 
     # Initialize loggers
-    if not do_global_log:
-        dir_metrics = os.path.join(dir_metrics, run_name)
-    os.makedirs(dir_metrics, exist_ok=True)
-
     list_loggers: List[Type[BaseLogger]] = []
     if do_wandb:
         list_loggers.append(

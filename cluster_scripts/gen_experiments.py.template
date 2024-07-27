@@ -6,10 +6,9 @@ from datetime import datetime
 from typing import Tuple
 
 # define some paths
-USER = os.environ["USER"]
-PROJECT_HOME = os.path.dirname(os.path.abspath(USER))
+USER, PROJECTS_DIR, PROJECT_NAME = os.environ["USER"], "projects", "EcoJAX"
+PROJECT_HOME = os.path.join(os.path.expanduser("~"), PROJECTS_DIR, PROJECT_NAME)
 EXPERIMENT_NAME = "cluster_test"
-print(PROJECT_HOME)
 
 def run_name(combo, keys):
     """Create a name for the run based on the parameter values"""
@@ -23,8 +22,7 @@ def run_name(combo, keys):
     return f"{current_datetime}-{combo_strings}".rstrip("-")
 
 # this is the base command that will be used for the experiment
-base_output_dir = f"/disk/scratch/${USER}/projects/EcoJAX/outputs/{EXPERIMENT_NAME}"
-base_call = f"python {PROJECT_HOME}/run.py log_dir={base_output_dir}"
+base_call = f"python {PROJECT_HOME}/run.py log_dir_path=$ECOJAX_OUT_PATH"
 
 # define a dictionary of variables to perform a grid search over.
 # the key for each variable should match the name of the command-line
@@ -47,7 +45,7 @@ output_file = open(
 
 for c in combinations:
     rn = run_name(c, variables.keys())
-    expt_call = f"{base_call} env.metrics.config_video.dir_videos={os.path.join(base_output_dir, rn)} +run_name={rn}"
+    expt_call = f"{base_call} +run_name={rn}"
     for i, var in enumerate(variables.keys()):
         expt_call += f" {var}={c[i]}"
     print(expt_call, file=output_file)

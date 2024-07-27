@@ -64,14 +64,12 @@ class Runner:
         self.config = config
 
     def run(self):
-
         # Main run's components
         env_name = self.config["env"]["name"]
         agent_species_name = self.config["agents"]["name"]
         model_name = self.config["model"]["name"]
 
         # ================ Initialization ================
-
         # Seed
         seed = try_get_seed(self.config)
         print(f"Using seed: {seed}")
@@ -83,15 +81,16 @@ class Runner:
         run_name = self.config.get("run_name", run_name)
         self.config["run_name"] = run_name
 
+        log_dir = self.config.get("log_dir_path", "./logs")
+        if not self.config["do_global_log"]:
+            log_dir = os.path.join(log_dir, run_name)
+        self.config["log_dir_path"] = log_dir
+        os.makedirs(log_dir, exist_ok=True)
+
+        self.config["env"]["metrics"]["config_video"]["dir_videos"] = os.path.join(self.config["log_dir_path"], "videos")
+
         # Create the env
         EnvClass = env_name_to_EnvClass[env_name]
-        if not self.config["do_global_log"]:
-            dir_videos = f"./logs/videos/{run_name}"
-        else:
-            dir_videos = "./logs/videos"
-        self.config["env"][
-            "dir_videos"
-        ] = dir_videos  # I add this line to force the dir_videos to be the one I want
         env = EnvClass(
             config=self.config["env"],
             n_agents_max=self.config["n_agents_max"],

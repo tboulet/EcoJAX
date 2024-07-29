@@ -109,7 +109,7 @@ energy_transfer_gain: 5
 move_prob_initial: 0.2
 move_prob_gradient: 0.016
 
-# allow_multiple_agents_per_tile: False
+allow_multiple_agents_per_tile: False
 
 # ======================== Defaults sub-configs and other Hydra config ========================
 defaults:

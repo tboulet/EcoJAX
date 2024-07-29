@@ -13,13 +13,13 @@ measures:
     - do_action_transfer
     - do_action_reproduce
     - do_action_forward
-    - amount_food_eaten
-    - amount_children
-    - died
+    # - amount_food_eaten
+    # - amount_children
+    # - died
   state:
     - energy
     - age
-    - x
+    # - x
     # - density_agents_observed
     # - density_plants_observed
   behavior: []
@@ -58,7 +58,7 @@ aggregators_population:
 
 # ======================== Video parameters ========================
 config_video:
-  do_video: True
+  do_video: False
   n_steps_per_video: 100
   fps_video: 20
   dir_videos: logs

@@ -8,7 +8,7 @@ from typing import Tuple
 # define some paths
 USER, PROJECTS_DIR, PROJECT_NAME = os.environ["USER"], "projects", "EcoJAX"
 PROJECT_HOME = os.path.join(os.path.expanduser("~"), PROJECTS_DIR, PROJECT_NAME)
-EXPERIMENT_NAME = "cluster_test"
+EXPERIMENT_NAME = "smaller_env"
 
 def run_name(combo, keys):
     """Create a name for the run based on the parameter values"""
@@ -29,19 +29,11 @@ base_call = f"python {PROJECT_HOME}/run.py log_dir_path=$ECOJAX_OUT_PATH do_tb=F
 # argument required by the script in base_call
 variables = {
     "env.allow_multiple_agents_per_tile": [
-        True,
-        False,
+        True, False,
     ],
-    "env.p_base_plant_growth": [
-        0.01,
-        0.015,
-        0.02,
-    ],
-    "env.p_base_plant_death": [
-        0.05,
-        0.1,
-        0.2,
-    ],
+    "env.energy_food": [
+        10, 15, 20
+    ]
 }
 
 combinations = list(itertools.product(*variables.values()))

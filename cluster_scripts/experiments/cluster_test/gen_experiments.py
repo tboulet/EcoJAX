@@ -22,17 +22,26 @@ def run_name(combo, keys):
     return f"{current_datetime}-{combo_strings}".rstrip("-")
 
 # this is the base command that will be used for the experiment
-base_call = f"python {PROJECT_HOME}/run.py log_dir_path=$ECOJAX_OUT_PATH"
+base_call = f"python {PROJECT_HOME}/run.py log_dir_path=$ECOJAX_OUT_PATH do_tb=False do_csv=True"
 
 # define a dictionary of variables to perform a grid search over.
 # the key for each variable should match the name of the command-line
 # argument required by the script in base_call
 variables = {
+    "env.allow_multiple_agents_per_tile": [
+        True,
+        False,
+    ],
     "env.p_base_plant_growth": [
         0.01,
         0.015,
         0.02,
-    ]
+    ],
+    "env.p_base_plant_death": [
+        0.05,
+        0.1,
+        0.2,
+    ],
 }
 
 combinations = list(itertools.product(*variables.values()))

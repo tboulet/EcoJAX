@@ -282,6 +282,7 @@ class GridworldEnv(EcoEnvironment):
 
         # Agent's internal dynamics
         self.age_max: int = config["age_max"]
+        self.energy_max: float = config["energy_max"]
         self.energy_initial: float = config["energy_initial"]
         self.energy_food: float = config["energy_food"]
         self.energy_thr_death: float = config["energy_thr_death"]
@@ -959,7 +960,7 @@ class GridworldEnv(EcoEnvironment):
 
         # ====== Update the physical status of the agents ======
         energy_agents_new -= 1
-        energy_agents_new = jnp.clip(energy_agents_new, 0, 200)
+        energy_agents_new = jnp.clip(energy_agents_new, 0, self.energy_max)
 
         are_existing_agents_new = (
             (energy_agents_new > self.energy_thr_death)
@@ -1213,8 +1214,8 @@ class GridworldEnv(EcoEnvironment):
 
         # Create the observation of the agents
         dict_observations: Dict[str, jnp.ndarray] = {
-            "energy": state.agents.energy_agents,
-            "age": state.agents.age_agents,
+            "energy": state.agents.energy_agents / self.energy_max,
+            "age": state.agents.age_agents / self.age_max,
         }
         if "visual_field" in self.list_observations:
             dict_observations["visual_field"] = jax.vmap(get_single_agent_visual_field)(

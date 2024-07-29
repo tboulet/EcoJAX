@@ -1,0 +1,39 @@
+# Hyperparameters
+seed: 
+n_timesteps : 50000
+# period_eval : ${eval:'${n_timesteps} / 500'}
+period_eval : 500
+n_agents_max : 1000
+n_agents_initial : 200
+
+
+do_wandb : True
+wandb_config:
+  project : EcoJAX
+do_tb : True
+do_cli : False
+do_csv : False
+do_tqdm : True
+do_snakeviz : False
+do_jax_prof : False
+do_render : True
+do_global_log : False
+
+
+
+# Defaults sub-configs and other Hydra config.
+defaults:
+  - _self_
+  - env : grid_uniform
+  - agents : ne
+  - model : mlp
+  - override hydra/hydra_logging: disabled  
+  - override hydra/job_logging: disabled 
+
+
+
+# Hydra config, do not change.
+hydra:
+  output_subdir: null
+  run:
+    dir: .

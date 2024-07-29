@@ -5,7 +5,7 @@ height : 40
 width : 40
 
 # Whether the env is terminal, i.e. the simulation stops when all agents are dead
-is_terminal : False
+is_terminal : True
 
 
 

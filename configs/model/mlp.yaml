@@ -1,5 +1,2 @@
 name: MLP
-hidden_dims: []
-# hidden_dims: [12, 12]
-
-# blue = orange norma, grey = avec e et age en data, new = avec e en plus
+hidden_dims: [12, 12]

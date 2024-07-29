@@ -86,7 +86,7 @@ class Runner:
         # Create the env
         EnvClass = env_name_to_EnvClass[env_name]
         if not self.config["do_global_log"]:
-            dir_videos = f"./logs/videos/{run_name}"
+            dir_videos = f"./logs/{run_name}/videos"
         else:
             dir_videos = "./logs/videos"
         self.config["env"]["metrics"]["config_video"][

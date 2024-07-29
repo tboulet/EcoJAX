@@ -115,7 +115,7 @@ else
 fi
 
 PROJECT_NAME=EcoJAX
-EXPERIMENT_NAME=cluster_test
+EXPERIMENT_NAME=smaller_env
 src_path=${SCRATCH_HOME}/projects/${PROJECT_NAME}/outputs/${EXPERIMENT_NAME}
 if [[ -e $src_path ]];
     then echo "${src_path} exists"

@@ -56,6 +56,8 @@ def eco_loop(
     # Hyperparameters
     n_timesteps: int = config["n_timesteps"]
     period_eval: int = int(max(1, config["period_eval"]))
+    period_video: int = int(max(1, config["period_video"]))
+    t_last_video: int = -period_video
 
     # Logging
     do_wandb: bool = config["do_wandb"]
@@ -95,14 +97,14 @@ def eco_loop(
     if do_jax_prof:
         list_loggers.append(LoggerJaxProfiling())
 
-    def render_eco_loop(x: Tuple[StateGlobal, Dict[str, Any]]) -> jnp.ndarray:
-
-        global_state, info = x
+    def log_and_render_eco_loop(x: Tuple[StateGlobal, Dict[str, Any], int]) -> int:
+        global_state, info, t_last_video = x
         t = global_state.timestep_run.item()
 
         # Render the environment
-        if do_render:
+        if do_render and t - t_last_video >= period_video:
             env.render(state=global_state.state_env)
+            t_last_video = t
 
         # Log the metrics
         metrics_global: dict = info.get("metrics", {}).copy()
@@ -112,6 +114,8 @@ def eco_loop(
             logger.log_scalars(metrics_scalar, t)
             logger.log_histograms(metrics_histogram, t)
             logger.log_eco_metrics(global_state.eco_information, t)
+
+        return t_last_video
 
     def step_eco_loop(x: Tuple[StateGlobal, Dict[str, Any]]) -> jnp.ndarray:
         print("Running step_eco_loop...")
@@ -244,14 +248,14 @@ def eco_loop(
     while do_continue_eco_loop((global_state, info)):
         # Render every period_eval steps
         with RuntimeMeter("render"):
-            render_eco_loop((global_state, info))
+            t_last_video = log_and_render_eco_loop((global_state, info, t_last_video))
         # Run period_eval steps
         with RuntimeMeter("step", n_calls=period_eval):
             global_state, info = do_n_steps(global_state, info)
     # Final render
     with RuntimeMeter("render"):
-        render_eco_loop((global_state, info))
-        # jax.debug.callback(render_eco_loop, (global_state, info))
+        t_last_video = log_and_render_eco_loop((global_state, info, t_last_video))
+        # jax.debug.callback(log_and_render_eco_loop, (global_state, info))
 
     print("End of simulation")
     print(f"Total runtime: {RuntimeMeter.get_total_runtime()}s")

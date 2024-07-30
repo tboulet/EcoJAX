@@ -62,7 +62,7 @@ aggregators_population:
 
 # ======================== Video parameters ========================
 config_video:
-  do_video: False
+  do_video: True
   n_steps_per_video: 100
   fps_video: 20
   dir_videos: logs

@@ -279,9 +279,8 @@ class GridworldEnv(EcoEnvironment):
         self.age_max: int = config["age_max"]
         self.energy_max: float = config["energy_max"]
         self.energy_initial: float = config["energy_initial"]
-        self.base_energy_loss: float = config["base_energy_loss"]
-        self.energy_cost_move: float = config["energy_cost_move"]
-        self.energy_cost_eat: float = config["energy_cost_eat"]
+        self.energy_loss_idle: float = config["energy_loss_idle"]
+        self.energy_loss_action: float = config["energy_loss_action"]
         self.energy_food: float = config["energy_food"]
         self.energy_thr_death: float = config["energy_thr_death"]
         self.energy_req_reprod: float = config["energy_req_reprod"]
@@ -990,17 +989,14 @@ class GridworldEnv(EcoEnvironment):
                 )
 
         # ====== Update the physical status of the agents ======
+        idle_agents = state.agents.are_existing_agents & (
+            actions == self.action_to_idx["idle"]
+        )
+        not_idle_agents = state.agents.are_existing_agents & ~idle_agents
         energy_agents_new = (
             energy_agents_new
-            - self.base_energy_loss
-            - (are_agents_eating * self.energy_cost_eat)
-            - (
-                (
-                    state.agents.are_existing_agents
-                    & (actions == self.action_to_idx["forward"])
-                )
-                * self.energy_cost_move
-            )
+            - self.energy_loss_idle * idle_agents
+            - self.energy_loss_action * not_idle_agents
         )
         energy_agents_new = jnp.clip(energy_agents_new, 0, self.energy_max)
 

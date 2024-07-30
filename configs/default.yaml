@@ -3,8 +3,8 @@ n_timesteps: 500000
 # period_eval : ${eval:'${n_timesteps} / 500'}
 period_eval: 5000
 period_video: 50000
-n_agents_max: 2000
-n_agents_initial: 2000
+n_agents_max: 1000
+n_agents_initial: 1000
 
 # Logging
 do_wandb: False

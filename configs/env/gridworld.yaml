@@ -33,7 +33,7 @@ radius_sun_perception: 40
 # ======================== Food Dynamics ========================
 
 # The initial proportion of food tiles at the beginning of the simulation
-proportion_plant_initial: 0.02
+proportion_plant_initial: 0.01
 
 # The rule for a tile to be a food-tile is the following :
 # P(food spawn) = sigmoid(
@@ -46,7 +46,7 @@ proportion_plant_initial: 0.02
 # The base probability of a non-food tile to grow spontaneously
 p_base_plant_growth: 0.01
 # The base probability of a food tile to die spontaneously
-p_base_plant_death: 0.05
+p_base_plant_death: 0.0
 
 # The factor of the sun's effect on the growth of food
 factor_sun_effect: 0
@@ -97,9 +97,9 @@ energy_thr_death: 0
 # The maximum energy an agent can have
 energy_max: 200
 
-base_energy_loss: 1
-energy_cost_move: 0
-energy_cost_eat: 0
+base_energy_loss: 0.5
+energy_cost_move: 1.0
+energy_cost_eat: 1.0
 
 # The energy required to be able to reproduce
 energy_req_reprod: 80

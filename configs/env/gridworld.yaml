@@ -77,6 +77,7 @@ list_actions:
   - eat
   - reproduce
   - transfer
+  - idle
 
 # The vision range of an agent. If of value v, the agent will receive the information v tiles around it, so a (2v+1)*(2v+1) grid
 vision_range_agent: 5
@@ -95,6 +96,10 @@ energy_food: 20
 energy_thr_death: 0
 # The maximum energy an agent can have
 energy_max: 200
+
+base_energy_loss: 1
+energy_cost_move: 0
+energy_cost_eat: 0
 
 # The energy required to be able to reproduce
 energy_req_reprod: 80

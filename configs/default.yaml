@@ -1,5 +1,5 @@
 # Hyperparameters
-n_timesteps: 500000
+n_timesteps: 250000
 # period_eval : ${eval:'${n_timesteps} / 500'}
 period_eval: 5000
 period_video: 50000

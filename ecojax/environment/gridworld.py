@@ -496,7 +496,7 @@ class GridworldEnv(EcoEnvironment):
 
         # ============ (2) Agents reproduce ============
         key_random, subkey = jax.random.split(key_random)
-        state_new, are_newborns_agents, indexes_parents_agents, dict_measures = (
+        state_new, agents_reprod, are_newborns_agents, indexes_parents_agents, dict_measures = (
             self.step_reproduce_agents(
                 state=state_new, actions=actions, key_random=subkey
             )
@@ -539,7 +539,7 @@ class GridworldEnv(EcoEnvironment):
 
         # Extract the observations of the agents
         observations_agents, dict_measures = self.get_observations_agents(
-            state=state_new
+            state_new, agents_reprod
         )
         dict_measures_all.update(dict_measures)
 
@@ -1053,7 +1053,7 @@ class GridworldEnv(EcoEnvironment):
         state: StateEnvGridworld,
         actions: jnp.ndarray,
         key_random: jnp.ndarray,
-    ) -> Tuple[StateEnvGridworld, jnp.ndarray, jnp.ndarray]:
+    ) -> Tuple[StateEnvGridworld, jnp.ndarray, jnp.ndarray, jnp.ndarray, Dict]:
         """Reproduce the agents in the environment."""
         dict_measures = {}
 
@@ -1204,13 +1204,16 @@ class GridworldEnv(EcoEnvironment):
 
         return (
             state,
+            are_agents_reproducing,
             are_newborns_agents,
             agents_parents,
             dict_measures,
         )
 
     def get_observations_agents(
-        self, state: StateEnvGridworld
+        self,
+        state: StateEnvGridworld,
+        agents_reproduced: Optional[jnp.ndarray] = None,
     ) -> Tuple[ObservationAgent, Dict[str, jnp.ndarray]]:
         """Extract the observations of the agents from the state of the environment.
 
@@ -1237,10 +1240,10 @@ class GridworldEnv(EcoEnvironment):
 
             # Construct the map of the visual field of the agent
             map_vis_field = state.map[:, :, self.list_indexes_channels_visual_field]  # (H, W, C_map)
-            age_idx = self.dict_name_channel_to_idx["agent_ages"]
-            map_vis_field = map_vis_field.at[:, :, age_idx].set(
-                map_vis_field[:, :, age_idx] / self.age_max
-            )
+            # age_idx = self.dict_name_channel_to_idx["agent_ages"]
+            # map_vis_field = map_vis_field.at[:, :, age_idx].set(
+            #     map_vis_field[:, :, age_idx] / self.age_max
+            # )
 
             # Get the visual field of the agent
             visual_field_x = agents.positions_agents[0] + self.grid_indexes_vision_x
@@ -1275,6 +1278,10 @@ class GridworldEnv(EcoEnvironment):
             dict_observations["energy"] = state.agents.energy_agents / self.energy_max
         if "age" in self.list_observations:
             dict_observations["age"] = state.agents.age_agents / self.age_max
+        if "just_reproduced" in self.list_observations:
+            if agents_reproduced is None:
+                agents_reproduced = jnp.zeros_like(state.agents.energy_agents)
+            dict_observations["just_reproduced"] = agents_reproduced.astype(jnp.float32)
         if "visual_field" in self.list_observations:
             dict_observations["visual_field"] = jax.vmap(get_single_agent_visual_field)(
                 state.agents

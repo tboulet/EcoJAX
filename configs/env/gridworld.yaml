@@ -68,12 +68,12 @@ list_observations:
   - visual_field
   - energy
   - age
+  - just_reproduced
 
 # A list indicating which channels the agent can observe in its visual field
 list_channels_visual_field:
   - plants
   - agents
-  - agent_ages
 
 # A list indicating which actions the agent has to choose from
 list_actions:

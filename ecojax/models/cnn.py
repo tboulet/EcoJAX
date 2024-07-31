@@ -11,7 +11,7 @@ import flax.linen as nn
 from ecojax.models.base_model import BaseModel
 from ecojax.models.neural_components import CNN, MLP
 from ecojax.types import ObservationAgent, ActionAgent
-from ecojax.spaces import Continuous, Discrete
+from ecojax.spaces import ContinuousSpace, DiscreteSpace
 
 
 class CNN_Model(BaseModel):
@@ -37,37 +37,34 @@ class CNN_Model(BaseModel):
     dim_cnn_output: int
     mlp_config: Dict[str, Any]
 
-    @nn.compact
-    def __call__(self, obs: ObservationAgent, key_random: jnp.ndarray) -> ActionAgent:
-        
-        # Apply the CNN to each observation component
+    def obs_to_encoding(
+        self, obs: ObservationAgent, key_random: jnp.ndarray
+    ) -> jnp.ndarray:
+
+        list_spaces_and_values = self.space_input.get_list_spaces_and_values(obs)
         list_vectors = []
-        for name_observation_component, space in self.observation_space_dict.items():
-            x = getattr(obs, name_observation_component)
-            if isinstance(space, Continuous):
+        for (space, x) in list_spaces_and_values:
+            if isinstance(space, ContinuousSpace):
                 n_dim = len(space.shape)
                 if n_dim == 0:
-                    list_vectors.append(jnp.expand_dims(x, axis=-1))
+                    encoding = jnp.expand_dims(x, axis=-1)
                 elif n_dim == 1:
-                    list_vectors.append(x)
+                    encoding = x
                 elif n_dim == 2:
-                    x = CNN(**self.cnn_config, shape_output=(self.dim_cnn_output,))(x)
-                    list_vectors.append(x)
+                    encoding = CNN(**self.cnn_config, shape_output=(self.dim_cnn_output,))(x)
                 elif n_dim == 3:
-                    x = CNN(**self.cnn_config, shape_output=(self.dim_cnn_output,))(x)
-                    list_vectors.append(x)
+                    encoding = CNN(**self.cnn_config, shape_output=(self.dim_cnn_output,))(x)
                 else:
                     raise ValueError(
                         f"Continuous observation spaces with more than 3 dimensions are not supported"
                     )
-            elif isinstance(space, Discrete):
-                x = jax.nn.one_hot(x, space.n)
-
+            elif isinstance(space, DiscreteSpace):
+                encoding = jax.nn.one_hot(x, space.n)
             else:
-                raise ValueError(
-                    f"Unsupported space type for observation: {type(space)}"
-                )
-                
+                raise ValueError(f"Unknown space type for observation: {type(space)}")
+
+            list_vectors.append(encoding)
+
         # Concatenate the latent vectors
         x = jnp.concatenate(list_vectors, axis=-1)
 
@@ -75,4 +72,4 @@ class CNN_Model(BaseModel):
         x = MLP(**self.mlp_config)(x)
 
         # Return the action and the probability of the action
-        return self.get_action_and_prob(x, key_random=key_random)
+        return x

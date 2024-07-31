@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from functools import partial
-from typing import Dict, List, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import jax
 from jax import random
@@ -9,10 +9,11 @@ import numpy as np
 from flax import struct
 import flax.linen as nn
 
+from ecojax import spaces
 from ecojax.core.eco_info import EcoInformation
 from ecojax.models.base_model import BaseModel
 from ecojax.spaces import EcojaxSpace
-from ecojax.types import ObservationAgent, StateSpecies
+from ecojax.types import ActionAgent, ObservationAgent, StateSpecies
 
 
 class AgentSpecies(ABC):
@@ -32,36 +33,20 @@ class AgentSpecies(ABC):
         config: Dict,
         n_agents_max: int,
         n_agents_initial: int,
-        observation_space_dict: Dict[str, EcojaxSpace],
-        observation_class: Type[ObservationAgent],
-        n_actions: int,
+        observation_space: spaces.EcojaxSpace,
+        action_space: spaces.DiscreteSpace,
         model_class: Type[BaseModel],
         config_model: Dict,
     ):
-        """The constructor of the AgentSpecies class. It initializes the species of agents with the configuration.
-        Elements allowing the interactions with the environment are also given as input : the numbers of agents, and the observation and action spaces.
-
-        The observation and action space dictionnary are objects allowing to describe the observation and action spaces of the agents. More information can be found in the documentation of the environment at the corresponding methods.
-
-        Args:
-            config (Dict): the agent species configuration
-            n_agents_max (int): the maximal number of agents allowed to exist in the simulation. This will also be the number of agents that are simulated every step (even if not all agents exist in the simulation at a given time)
-            n_agents_initial (int): the initial number of agents in the simulation
-            observation_space_dict (Dict[str, EcojaxSpace]): a dictionary of the observation spaces. The keys are the names of the observation components, and the values are the corresponding spaces.
-            observation_class (Type[ObservationAgent]): the JAX class of the observation agent
-            n_actions (int): the number of possible actions of the agent
-            model_class (Type[BaseModel]): the class of the model used by the agents
-            config_model (Dict): the configuration of the model used by the agents
-        """
         self.config = config
         self.n_agents_max = n_agents_max
         self.n_agents_initial = n_agents_initial
-        self.observation_space_dict = observation_space_dict
-        self.observation_class = observation_class
-        self.n_actions = n_actions
+        self.observation_space = observation_space
+        self.action_space = action_space
         self.model_class = model_class
         self.config_model = config_model
-        
+        self.env = None
+
 
     @abstractmethod
     def reset(self, key_random: jnp.ndarray) -> StateSpecies:
@@ -79,7 +64,7 @@ class AgentSpecies(ABC):
         batch_observations: ObservationAgent,
         eco_information: EcoInformation,
         key_random: jnp.ndarray,
-    ) -> jnp.ndarray:
+    ) -> Tuple[StateSpecies, ActionAgent, Dict[str, jnp.ndarray]]:
         """A function through which the agents reach to their observations and return their actions.
         It also handles the reproduction of the agents if required by the environment.
 
@@ -91,6 +76,91 @@ class AgentSpecies(ABC):
             key_random (jnp.ndarray): the random key, of shape (2,)
 
         Returns:
-            action (int): the action of the agent, as an integer
+            state_new (StateSpecies): the new state of the species, as a StateSpecies object.
+            actions (jnp.ndarray): the actions of the agents, as a JAX array of shape (n_agents_max, **dim_action_component).
+            info_species (Dict[str, jnp.ndarray]): a dictionary of additional information concerning the species of agents (e.g. metrics, etc.)
         """
-        raise NotImplementedError
+
+    @abstractmethod
+    def render(self, state: StateSpecies, force_render : bool = False) -> None:
+        """Do the rendering of the species. This can be a visual rendering or a logging of the state of any kind.
+
+        Args:
+            state (StateSpecies): the state of the species to render
+            force_render (bool): whether to force the rendering even if the species is not in a state where it should be rendered
+        """
+        return
+
+    # ============== Helper methods ==============
+
+    def compute_metrics(
+        self,
+        state: StateSpecies,
+        state_new: StateSpecies,
+        dict_measures: Dict[str, jnp.ndarray],
+    ):
+
+        # Set the measures to NaN for the agents that are not existing
+        for name_measure, measures in dict_measures.items():
+            name_measure_end = name_measure.split("/")[-1]
+            if name_measure_end not in self.config["metrics"]["measures"]["global"]:
+                dict_measures[name_measure] = jnp.where(
+                    state_new.agents.do_exist,
+                    measures,
+                    jnp.nan,
+                )
+
+        # Aggregate the measures over the lifespan
+        are_just_dead_agents = state_new.agents.do_exist & (
+            ~state_new.agents.do_exist | (state_new.agents.age < state_new.agents.age)
+        )
+
+        dict_metrics_lifespan = {}
+        new_list_metrics_lifespan = []
+        for agg, metrics in zip(self.aggregators_lifespan, state.metrics_lifespan):
+            new_metrics = agg.update_metrics(
+                metrics=metrics,
+                dict_measures=dict_measures,
+                are_alive=state_new.agents.do_exist,
+                are_just_dead=are_just_dead_agents,
+                ages=state_new.agents.age,
+            )
+            dict_metrics_lifespan.update(agg.get_dict_metrics(new_metrics))
+            new_list_metrics_lifespan.append(new_metrics)
+        state_new_new = state_new.replace(metrics_lifespan=new_list_metrics_lifespan)
+
+        # Aggregate the measures over the population
+        dict_metrics_population = {}
+        new_list_metrics_population = []
+        dict_measures_and_metrics_lifespan = {**dict_measures, **dict_metrics_lifespan}
+        for agg, metrics in zip(self.aggregators_population, state.metrics_population):
+            new_metrics = agg.update_metrics(
+                metrics=metrics,
+                dict_measures=dict_measures_and_metrics_lifespan,
+                are_alive=state_new.agents.do_exist,
+                are_just_dead=are_just_dead_agents,
+                ages=state_new.agents.age,
+            )
+            dict_metrics_population.update(agg.get_dict_metrics(new_metrics))
+            new_list_metrics_population.append(new_metrics)
+        state_new_new = state_new_new.replace(
+            metrics_population=new_list_metrics_population
+        )
+
+        # Get the final metrics
+        dict_metrics = {
+            **dict_measures,
+            **dict_metrics_lifespan,
+            **dict_metrics_population,
+        }
+
+        # Arrange metrics in right format
+        for name_metric in list(dict_metrics.keys()):
+            *names, name_measure = name_metric.split("/")
+            if len(names) == 0:
+                name_metric_new = name_measure
+            else:
+                name_metric_new = f"{name_measure}/{' '.join(names[::-1])}"
+            dict_metrics[name_metric_new] = dict_metrics.pop(name_metric)
+
+        return state_new_new, dict_metrics

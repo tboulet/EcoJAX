@@ -118,50 +118,48 @@ def eco_loop(
         return t_last_video
 
     def step_eco_loop(x: Tuple[StateGlobal, Dict[str, Any]]) -> jnp.ndarray:
-        print("Running step_eco_loop...")
-        global_state, info = x
-        key_random = global_state.key_random
+            print("Running step_eco_loop...")
+            global_state, info = x
+            key_random = global_state.key_random
 
-        # Agents step
-        key_random, subkey = random.split(key_random)
-        new_state_species, actions = agent_species.react(
-            state=global_state.state_species,
-            batch_observations=global_state.observations,
-            eco_information=global_state.eco_information,
-            key_random=subkey,
-        )
-        info_species = (
-            {}
-        )  # TODO: replace this by AgentSpecies.react also returning info
-
-        # Env step
-        key_random, subkey = random.split(key_random)
-        new_state_env, new_observations, new_eco_information, new_done, info_env = (
-            env.step(
-                state=global_state.state_env,
-                actions=actions,
+            # Agents step
+            key_random, subkey = random.split(key_random)
+            new_state_species, actions, info_species = agent_species.react(
+                state=global_state.state_species,
+                batch_observations=global_state.observations,
+                eco_information=global_state.eco_information,
                 key_random=subkey,
             )
-        )
 
-        # Return the new global state
-        key_random, subkey = random.split(key_random)
-        metrics_env = info_env.get("metrics", {})
-        metrics_species = info_species.get("metrics", {})
-        metrics_global = {**metrics_env, **metrics_species}
-        info = {"metrics": metrics_global}
-        return (
-            StateGlobal(
-                state_env=new_state_env,
-                state_species=new_state_species,
-                observations=new_observations,
-                eco_information=new_eco_information,
-                timestep_run=global_state.timestep_run + 1,
-                done=new_done,
-                key_random=subkey,
-            ),
-            info,
-        )
+            # Env step
+            key_random, subkey = random.split(key_random)
+            new_state_env, new_observations, new_eco_information, new_done, info_env = (
+                env.step(
+                    state=global_state.state_env,
+                    actions=actions,
+                    key_random=subkey,
+                    state_species=new_state_species,  # optional, to allow the environment to access the state of the species
+                )
+            )
+
+            # Return the new global state
+            key_random, subkey = random.split(key_random)
+            metrics_env = info_env.get("metrics", {})
+            metrics_species = info_species.get("metrics", {})
+            metrics_global = {**metrics_env, **metrics_species}
+            info = {"metrics": metrics_global}
+            return (
+                StateGlobal(
+                    state_env=new_state_env,
+                    state_species=new_state_species,
+                    observations=new_observations,
+                    eco_information=new_eco_information,
+                    timestep_run=global_state.timestep_run + 1,
+                    done=new_done,
+                    key_random=subkey,
+                ),
+                info,
+            )
 
     def do_continue_eco_loop(x: Tuple[StateGlobal, Dict[str, Any]]) -> jnp.ndarray:
         global_state, info = x

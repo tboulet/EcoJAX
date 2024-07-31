@@ -96,13 +96,11 @@ class Runner:
             n_agents_max=self.config["n_agents_max"],
             n_agents_initial=self.config["n_agents_initial"],
         )
-        observation_space_dict = env.get_observation_space_dict()
-        n_actions = env.get_n_actions()
-        observation_class = env.get_class_observation_agent()
+        observation_space = env.get_observation_space()
+        action_space = env.get_action_space()
 
         # Create the model
         ModelClass = model_name_to_ModelClass[model_name]
-        # print(model.get_table_summary())
 
         # Create the agent's species
         AgentSpeciesClass = agent_name_to_AgentSpeciesClass[agent_species_name]
@@ -110,12 +108,13 @@ class Runner:
             config=self.config["agents"],
             n_agents_max=self.config["n_agents_max"],
             n_agents_initial=self.config["n_agents_initial"],
-            observation_space_dict=observation_space_dict,
-            observation_class=observation_class,
-            n_actions=n_actions,
+            observation_space=observation_space,
+            action_space=action_space,
             model_class=ModelClass,
             config_model=self.config["model"],
         )
+        env.agent_species = agent_species # give the react function to the environment (for behavior measures)
+        agent_species.env = env # give the environment to the agent_species
 
         # ============== Simulation loop ===============
         key_random, subkey = random.split(key_random)

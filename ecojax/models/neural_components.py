@@ -10,7 +10,6 @@ import flax.linen as nn
 
 from ecojax.models.base_model import BaseModel
 from ecojax.types import ObservationAgent, ActionAgent
-from ecojax.spaces import Continuous, Discrete
 from ecojax.utils import jprint, jprint_and_breakpoint
 
 

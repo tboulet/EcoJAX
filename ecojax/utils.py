@@ -46,7 +46,7 @@ def is_scalar(data):
         return True
     else:
         return False
-    
+
 
 def is_array(data):
     """
@@ -61,7 +61,7 @@ def is_array(data):
         True if data is an array, False otherwise.
     """
     return isinstance(data, np.ndarray)
-    
+
 def try_get_seed(config: Dict) -> int:
     """Will try to extract the seed from the config, or return a random one if not found
 
@@ -168,6 +168,27 @@ def nest_for_array(func):
     return wrapper
 
 
+def get_dict_flattened(d, parent_key='', sep='.'):
+    """Get a flattened version of a nested dictionary, where keys correspond to the path to the value.
+
+    Args:
+        d (Dict): The dictionary to be flattened.
+        parent_key (str): The base key string (used in recursive calls).
+        sep (str): Separator to use between keys.
+
+    Returns:
+        Dict: The flattened dictionary.
+    """
+    items = []
+    for k, v in d.items():
+        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+        if isinstance(v, dict):
+            items.extend(get_dict_flattened(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)
+
+
 def instantiate_class(**kwargs) -> Any:
     """Instantiate a class from a dictionnary that contains a key "class_string" with the format "path.to.module:ClassName"
     and that contains other keys that will be passed as arguments to the class constructor
@@ -199,16 +220,16 @@ def check_jax_device():
         print(f"\tPlatform: {xla_bridge.get_backend().platform}")
     except Exception as e:
         print(f"Error while checking JAX device: {e}")
-        
+
 
 def jprint(x):
     """Print the value of x using JAX's print function, even inside of a JAX jit function"""
     jax.debug.print("{x}", x=x)
-    
+
 def jbreakpoint():
     """Breakpoint inside a JAX jit function"""
     jax.debug.breakpoint()
-    
+
 def jprint_and_breakpoint(x):
     """Print the value of x using JAX's print function, even inside of a JAX jit function"""
     jax.debug.print("{x}", x=x)

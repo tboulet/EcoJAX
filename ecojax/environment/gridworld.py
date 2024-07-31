@@ -4,7 +4,7 @@ from collections import defaultdict
 from functools import partial
 import os
 from time import sleep
-from typing import Any, Callable, Dict, List, Tuple, Type, TypeVar
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, TypeVar
 
 import jax
 import jax.numpy as jnp
@@ -18,8 +18,8 @@ from tqdm import tqdm
 from ecojax.core.eco_info import EcoInformation
 from ecojax.environment import EcoEnvironment
 from ecojax.metrics.aggregators import Aggregator
-from ecojax.spaces import EcojaxSpace, Discrete, Continuous
-from ecojax.types import ObservationAgent, StateEnv
+from ecojax.spaces import EcojaxSpace, DictSpace, DiscreteSpace, ContinuousSpace
+from ecojax.types import ActionAgent, ObservationAgent, StateEnv, StateSpecies
 from ecojax.utils import (
     DICT_COLOR_TAG_TO_RGB,
     instantiate_class,
@@ -156,6 +156,17 @@ class GridworldEnv(EcoEnvironment):
             for idx_channel, name_channel in enumerate(self.list_names_channels)
         }
         self.n_channels_map: int = len(self.dict_name_channel_to_idx)
+        self.list_indexes_channels_visual_field: List[int] = []
+        for name_channel in config["list_channels_visual_field"]:
+            assert name_channel in self.dict_name_channel_to_idx, "Channel not found"
+            self.list_indexes_channels_visual_field.append(
+                self.dict_name_channel_to_idx[name_channel]
+            )
+        self.dict_name_channel_to_idx_visual_field: Dict[str, int] = {
+            name_channel: idx_channel
+            for idx_channel, name_channel in enumerate(config["list_channels_visual_field"])
+        }
+        self.n_channels_visual_field: int = len(self.list_indexes_channels_visual_field)
 
         # Metrics parameters
         self.names_measures: List[str] = sum(
@@ -243,7 +254,7 @@ class GridworldEnv(EcoEnvironment):
         self.ObservationAgentGridworld = ObservationAgentGridworld
 
         # Create the observation space
-        self.observation_space_dict = {}
+        observation_dict = {}
         if "visual_field" in self.list_observations:
             self.vision_range_agent: int = config["vision_range_agent"]
             self.grid_indexes_vision_x, self.grid_indexes_vision_y = jnp.meshgrid(
@@ -251,21 +262,20 @@ class GridworldEnv(EcoEnvironment):
                 jnp.arange(-self.vision_range_agent, self.vision_range_agent + 1),
                 indexing="ij",
             )
-            self.observation_space_dict["visual_field"] = Continuous(
+            observation_dict["visual_field"] = ContinuousSpace(
                 shape=(
                     2 * self.vision_range_agent + 1,
                     2 * self.vision_range_agent + 1,
-                    self.n_channels_map,
+                    self.n_channels_visual_field,
                 ),
                 low=None,
                 high=None,
             )
         if "energy" in self.list_observations:
-            self.observation_space_dict["energy"] = Continuous(
-                shape=(), low=0, high=None
-            )
+            observation_dict["energy"] = ContinuousSpace(shape=(), low=0, high=None)
         if "age" in self.list_observations:
-            self.observation_space_dict["age"] = Continuous(shape=(), low=0, high=None)
+            observation_dict["age"] = ContinuousSpace(shape=(), low=0, high=None)
+        self.observation_space = DictSpace(observation_dict)
 
         # Actions
         self.list_actions: List[str] = config["list_actions"]
@@ -330,6 +340,7 @@ class GridworldEnv(EcoEnvironment):
                 shape=(H, W),
             )
         )
+
         # Initialize the agents
         key_random, subkey = jax.random.split(key_random)
         are_existing_agents = jnp.array(
@@ -428,6 +439,7 @@ class GridworldEnv(EcoEnvironment):
         state: StateEnvGridworld,
         actions: jnp.ndarray,
         key_random: jnp.ndarray,
+        state_species: Optional[StateSpecies] = None,
     ) -> Tuple[
         StateEnvGridworld,
         ObservationAgent,
@@ -551,7 +563,7 @@ class GridworldEnv(EcoEnvironment):
         # ============ (6) Compute the metrics ============
         # Compute some measures
         dict_measures = self.compute_measures(
-            state=state, actions=actions, state_new=state_new, key_random=subkey
+            state=state, actions=actions, state_new=state_new, key_random=subkey, state_species=state_species
         )
         dict_measures_all.update(dict_measures)
 
@@ -593,14 +605,11 @@ class GridworldEnv(EcoEnvironment):
             info,
         )
 
-    def get_observation_space_dict(self) -> Dict[str, EcojaxSpace]:
-        return self.observation_space_dict
+    def get_observation_space(self) -> DictSpace:
+        return self.observation_space
 
-    def get_class_observation_agent(self) -> Type[ObservationAgent]:
-        return self.ObservationAgentGridworld
-
-    def get_n_actions(self) -> int:
-        return self.n_actions
+    def get_action_space(self) -> DiscreteSpace:
+        return DiscreteSpace(n=self.n_actions)
 
     def render(self, state: StateEnvGridworld) -> None:
         """The rendering function of the environment. It saves the RGB map of the environment as a video."""
@@ -694,23 +703,23 @@ class GridworldEnv(EcoEnvironment):
         idx_sun = self.dict_name_channel_to_idx["sun"]
         idx_plants = self.dict_name_channel_to_idx["plants"]
         map_plants = state.map[:, :, self.dict_name_channel_to_idx["plants"]]
-        map_n_plant_in_radius_plant_reproduction = convolve2d(
-            map_plants,
-            self.kernel_plant_reproduction,
-            mode="same",
-        )
-        map_n_plant_in_radius_plant_asphyxia = convolve2d(
-            map_plants,
-            self.kernel_plant_asphyxia,
-            mode="same",
-        )
+        # map_n_plant_in_radius_plant_reproduction = convolve2d(
+        #     map_plants,
+        #     self.kernel_plant_reproduction,
+        #     mode="same",
+        # )
+        # map_n_plant_in_radius_plant_asphyxia = convolve2d(
+        #     map_plants,
+        #     self.kernel_plant_asphyxia,
+        #     mode="same",
+        # )
         map_sun = state.map[:, :, idx_sun]
         logits_plants = (
             self.logit_p_base_plant_growth * (1 - map_plants)
             + (1 - self.logit_p_base_plant_death) * map_plants
-            + self.factor_sun_effect * map_sun
-            + self.factor_plant_reproduction * map_n_plant_in_radius_plant_reproduction
-            - self.factor_plant_asphyxia * map_n_plant_in_radius_plant_asphyxia
+            # + self.factor_sun_effect * map_sun
+            # + self.factor_plant_reproduction * map_n_plant_in_radius_plant_reproduction
+            # - self.factor_plant_asphyxia * map_n_plant_in_radius_plant_asphyxia
         )
         logits_plants = jnp.clip(logits_plants, -10, 10)
         map_plants_probs = sigmoid(x=logits_plants)
@@ -992,7 +1001,7 @@ class GridworldEnv(EcoEnvironment):
         idle_agents = state.agents.are_existing_agents & (
             actions == self.action_to_idx["idle"]
         )
-        not_idle_agents = state.agents.are_existing_agents & ~idle_agents
+        not_idle_agents = state.agents.are_existing_agents & ~idle_agents & ~are_agents_transferring
         energy_agents_new = (
             energy_agents_new
             - self.energy_loss_idle * idle_agents
@@ -1227,7 +1236,7 @@ class GridworldEnv(EcoEnvironment):
             H, W, C_map = state.map.shape
 
             # Construct the map of the visual field of the agent
-            map_vis_field = state.map  # (H, W, C_map)
+            map_vis_field = state.map[:, :, self.list_indexes_channels_visual_field]  # (H, W, C_map)
             age_idx = self.dict_name_channel_to_idx["agent_ages"]
             map_vis_field = map_vis_field.at[:, :, age_idx].set(
                 map_vis_field[:, :, age_idx] / self.age_max
@@ -1261,20 +1270,22 @@ class GridworldEnv(EcoEnvironment):
             return vis_field
 
         # Create the observation of the agents
-        dict_observations: Dict[str, jnp.ndarray] = {
-            "energy": state.agents.energy_agents / self.energy_max,
-            "age": state.agents.age_agents / self.age_max,
-        }
+        dict_observations: Dict[str, jnp.ndarray] = {}
+        if "energy" in self.list_observations:
+            dict_observations["energy"] = state.agents.energy_agents / self.energy_max
+        if "age" in self.list_observations:
+            dict_observations["age"] = state.agents.age_agents / self.age_max
         if "visual_field" in self.list_observations:
             dict_observations["visual_field"] = jax.vmap(get_single_agent_visual_field)(
                 state.agents
             )
-        observations = self.ObservationAgentGridworld(
-            **{
-                name_obs: dict_observations[name_obs]
-                for name_obs in self.list_observations
-            }
-        )
+
+        # observations = self.ObservationAgentGridworld(
+        #     **{
+        #         name_obs: dict_observations[name_obs]
+        #         for name_obs in self.list_observations
+        #     }
+        # )
 
         dict_measures = {}
 
@@ -1284,7 +1295,7 @@ class GridworldEnv(EcoEnvironment):
         # print(f"First agent obs : {observations.visual_field[0, ..., 2]}, shape : {observations.visual_field[0, ...].shape}")
         # raise ValueError("Stop")
 
-        return observations, dict_measures
+        return dict_observations, dict_measures
 
     def compute_measures(
         self,
@@ -1292,6 +1303,7 @@ class GridworldEnv(EcoEnvironment):
         actions: jnp.ndarray,
         state_new: StateEnvGridworld,
         key_random: jnp.ndarray,
+        state_species: Optional[StateSpecies] = None,
     ) -> Dict[str, jnp.ndarray]:
         """Get the measures of the environment.
 
@@ -1300,53 +1312,56 @@ class GridworldEnv(EcoEnvironment):
             actions (jnp.ndarray): the actions of the agents
             state_new (StateEnvGridworld): the new state of the environment
             key_random (jnp.ndarray): the random key
+            state_species (Optional[StateSpecies]): the state of the species
 
         Returns:
             Dict[str, jnp.ndarray]: a dictionary of the measures of the environment
         """
         dict_measures = {}
         idx_plants = self.dict_name_channel_to_idx["plants"]
+        idx_agents = self.dict_name_channel_to_idx["agents"]
         for name_measure in self.names_measures:
             # Environment measures
             if name_measure == "n_agents":
-                measures = jnp.sum(state.agents.are_existing_agents)
+                dict_measures["n_agents"] = jnp.sum(state.agents.are_existing_agents)
             elif name_measure == "n_plants":
-                measures = jnp.sum(state.map[..., idx_plants])
+                dict_measures["n_plants"] = jnp.sum(state.map[..., idx_plants])
             elif name_measure == "group_size":
-                idx_agents = self.dict_name_channel_to_idx["agents"]
                 group_sizes = compute_group_sizes(state.map[..., idx_agents])
                 dict_measures["average_group_size"] = group_sizes.mean()
                 dict_measures["max_group_size"] = group_sizes.max()
+                continue
             # Immediate measures
             elif name_measure.startswith("do_action_"):
                 str_action = name_measure[len("do_action_") :]
                 if str_action in self.list_actions:
-                    measures = (actions == self.action_to_idx[str_action]).astype(
-                        jnp.float32
-                    )
+                    dict_measures[name_measure] = (
+                        actions == self.action_to_idx[str_action]
+                    ).astype(jnp.float32)
             # State measures
             elif name_measure == "energy":
-                measures = state.agents.energy_agents
+                dict_measures[name_measure] = state.agents.energy_agents
             elif name_measure == "age":
-                measures = state.agents.age_agents
+                dict_measures[name_measure] = state.agents.age_agents
             elif name_measure == "x":
-                measures = state.agents.positions_agents[:, 0]
+                dict_measures[name_measure] = state.agents.positions_agents[:, 0]
             elif name_measure == "y":
-                measures = state.agents.positions_agents[:, 1]
-            elif name_measure == "density_agents_observed":
-                raise NotImplementedError(
-                    "Density of agents observed is not implemented yet"
-                )
-            elif name_measure == "density_plants_observed":
-                raise NotImplementedError(
-                    "Density of plants observed is not implemented yet"
-                )
+                dict_measures[name_measure] = state.agents.positions_agents[:, 1]
+            elif name_measure == "appearance":
+                for i in range(self.config["dim_appearance"]):
+                    dict_measures[f"appearance_{i}"] = state.agents.appearance_agents[
+                        :, i
+                    ]
+            # Behavior measures (requires state_species)
+            elif name_measure in self.config["metrics"]["measures"]["behavior"]:
+                assert isinstance(self.agent_species, AgentSpecies), f"For behavior measure, you need to give an agent species as attribute of the env after both creation : env.agent_species = agent_species"
+                dict_measures.update(self.compute_behavior_measure(
+                    state_species=state_species,
+                    key_random=key_random,
+                    name_measure=name_measure,
+                ))
             else:
-                continue
-            # Behavior measures
-            pass
-
-            dict_measures[name_measure] = measures
+                pass  # Pass this measure as it may be computed in other parts of the code
 
         # Return the dictionary of measures
         return dict_measures

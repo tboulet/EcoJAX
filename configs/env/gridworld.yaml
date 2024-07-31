@@ -69,6 +69,12 @@ list_observations:
   - energy
   - age
 
+# A list indicating which channels the agent can observe in its visual field
+list_channels_visual_field:
+  - plants
+  - agents
+  - agent_ages
+
 # A list indicating which actions the agent has to choose from
 list_actions:
   - forward
@@ -97,7 +103,7 @@ energy_thr_death: 0
 # The maximum energy an agent can have
 energy_max: 200
 
-energy_loss_idle: 0.5
+energy_loss_idle: 0.0
 energy_loss_action: 1.0
 
 # The energy required to be able to reproduce

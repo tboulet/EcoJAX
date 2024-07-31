@@ -1,3 +1,8 @@
 name: NeuroEvolutionAgents
 hp_initial:
-  strength_mutation: 0.001
+  strength_mutation: 0.01
+
+# ======================== Defaults sub-configs and other Hydra config ========================
+defaults:
+  - _self_
+  - metrics: basic

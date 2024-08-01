@@ -1064,6 +1064,12 @@ class GridworldEnv(EcoEnvironment):
             & (state.agents.age_agents >= 25)
             & are_existing_agents
         )
+
+        # Check for empty space to reproduce
+        facing_positions = jax.vmap(self.get_facing_pos, in_axes=(0,0))(state.agents.positions_agents, state.agents.orientation_agents)
+        agent_map = state.map[:, :, self.dict_name_channel_to_idx["agents"]]
+        are_agents_trying_reprod &= agent_map[facing_positions[:, 0], facing_positions[:, 1]] == 0
+
         if "reproduce" in self.list_actions:
             trying_reprod_action = actions == self.action_to_idx["reproduce"]
             are_agents_trying_reprod = are_agents_trying_reprod & trying_reprod_action
@@ -1150,27 +1156,30 @@ class GridworldEnv(EcoEnvironment):
         H, W = self.height, self.width
         dummy_val = 2 * jnp.maximum(H, W)
 
-        def place_newborn_in_empty_tile(empty_locs, newborn_idx):
-            # find the nearest free square to the newborn's parent
-            # and place them there
-            parent_loc = state.agents.positions_agents[agents_parents[newborn_idx]]
-            closest_idx = jnp.argmin(jnp.sum(jnp.abs(empty_locs - parent_loc), axis=1))
-            closest_loc = empty_locs[closest_idx]
-            empty_locs = empty_locs.at[closest_idx].set([dummy_val, dummy_val])
-            return empty_locs, closest_loc
+        # def place_newborn_in_empty_tile(empty_locs, newborn_idx):
+        #     # find the nearest free square to the newborn's parent
+        #     # and place them there
+        #     parent_loc = state.agents.positions_agents[agents_parents[newborn_idx]]
+        #     closest_idx = jnp.argmin(jnp.sum(jnp.abs(empty_locs - parent_loc), axis=1))
+        #     closest_loc = empty_locs[closest_idx]
+        #     empty_locs = empty_locs.at[closest_idx].set([dummy_val, dummy_val])
+        #     return empty_locs, closest_loc
 
-        if self.allow_multiple_agents_per_tile:
-            newborn_positions = state.agents.positions_agents[
-                indices_had_reproduced_FILLED
-            ]
-        else:
-            agent_map = state.map[..., self.dict_name_channel_to_idx["agents"]]
-            empty_locs = jnp.stack(
-                jnp.where(agent_map == 0, size=H * W, fill_value=dummy_val), axis=1
-            )
-            _, newborn_positions = jax.lax.scan(
-                place_newborn_in_empty_tile, empty_locs, indices_newborn_agents_FILLED
-            )
+        # if self.allow_multiple_agents_per_tile:
+        #     newborn_positions = state.agents.positions_agents[
+        #         indices_had_reproduced_FILLED
+        #     ]
+        # else:
+        #     agent_map = state.map[..., self.dict_name_channel_to_idx["agents"]]
+        #     empty_locs = jnp.stack(
+        #         jnp.where(agent_map == 0, size=H * W, fill_value=dummy_val), axis=1
+        #     )
+        #     _, newborn_positions = jax.lax.scan(
+        #         place_newborn_in_empty_tile, empty_locs, indices_newborn_agents_FILLED
+        #     )
+
+        newborn_positions = facing_positions[indices_had_reproduced_FILLED]
+        print(newborn_positions.shape)
 
         positions_agents_new = state.agents.positions_agents.at[
             indices_newborn_agents_FILLED

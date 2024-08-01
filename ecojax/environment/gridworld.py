@@ -975,14 +975,19 @@ class GridworldEnv(EcoEnvironment):
                     * self.energy_transfer_gain
                     / jnp.maximum(1, jnp.sum(are_receiving))
                 )
+                delta_energy = jnp.zeros_like(state.agents.energy_agents).at[i].add(-loss) + (gain * are_receiving).astype(jnp.float32)
+
+                # compute age difference
+                avg_recv_age = jnp.mean(state.agents.age_agents[are_receiving])
+                age_diff = state.agents.age_agents[i] - avg_recv_age
 
                 return (
-                    jnp.zeros_like(state.agents.energy_agents).at[i].add(-loss)
-                    + (gain * are_receiving).astype(jnp.float32),
+                    delta_energy,
                     is_transfer,
+                    age_diff
                 )
 
-            transfer_delta_energy, is_transfer = jax.vmap(
+            transfer_delta_energy, is_transfer, age_diffs = jax.vmap(
                 per_agent_helper_fn, in_axes=0
             )(jnp.arange(state.agents.energy_agents.size))
             energy_agents_new += transfer_delta_energy.sum(axis=0)
@@ -996,6 +1001,8 @@ class GridworldEnv(EcoEnvironment):
                 dict_measures["transfer_success_rate"] = jnp.sum(is_transfer) / jnp.sum(
                     are_agents_transferring
                 )
+            if "transfer_age_diff" in self.names_measures:
+                dict_measures["transfer_age_diff"] = jnp.nanmean(age_diffs)
 
         # ====== Update the physical status of the agents ======
         idle_agents = state.agents.are_existing_agents & (

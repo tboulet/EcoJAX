@@ -863,7 +863,7 @@ class GridworldEnv(EcoEnvironment):
                 # Add the new position to the list of possible positions
                 angle_new = agent_orientation_new * jnp.pi / 2
                 d_position = jnp.array(
-                    [-jnp.cos(angle_new), -jnp.sin(angle_new)]
+                    [-jnp.cos(angle_new), jnp.sin(angle_new)]
                 ).astype(jnp.int32)
                 agent_position_new = agent_position + d_position
                 agent_position_new = agent_position_new % jnp.array([H, W])

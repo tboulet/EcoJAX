@@ -124,25 +124,13 @@ class EcoEnvironment(ABC):
 
     def compute_on_render_behavior_measures(
         self,
-        react_fn: Callable[
-            [
-                StateSpecies,
-                ObservationAgent,
-                EcoInformation,
-                jnp.ndarray,
-            ],
-            Tuple[
-                StateSpecies,
-                ActionAgent,
-                Dict[str, jnp.ndarray],
-            ],
-        ],
+        state_species: StateSpecies,
         key_random: jnp.ndarray,
     ) -> Dict[str, jnp.ndarray]:
         """Perform a battery of tests on the agents using the given act_fn and artificial observations.
 
         Args:
-            act_fn (Callable[[jnp.ndarray, ObservationAgent], ActionAgent]): the function that maps the observation(s) to the action(s)
+            state_species (StateSpecies): the state of the species of agents
             key_random (jnp.ndarray): the random key used for the tests
 
         Returns:

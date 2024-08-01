@@ -1,0 +1,43 @@
+program: run.py 
+project: EcoJAX
+description: Find the NE agents' HP that maximizes the number of agents in an Uniform environment
+name: max[pop]_env[uni]_agents[ne_perc]_wrt[agents]
+method: bayes
+metric:
+  goal: maximize
+  name: n_agents
+
+parameters:
+  agents.hp_initial.strength_mutation: 
+    min: 0.0001
+    max: 1
+    distribution: log_uniform_values
+
+  env.list_observations:
+    values: 
+      - '[visual_field]'
+      - '[visual_field, energy]'
+      - '[visual_field, age]'
+      - '[visual_field, energy, age]'
+      - '[energy, age]' # bad value
+    distribution: categorical
+
+  env.vision_range_agent:
+    min: 1
+    max: 10
+    distribution: q_uniform
+
+  env.list_channels_visual_field:
+    values: 
+      - '[plants]'
+      - '[plants, agents]'
+    distribution: categorical
+
+command:
+  - venv_linux/bin/python3.10
+  - ${program}
+  - --config-name=dgx
+  - env/metrics=metrics_dgx
+  - agents=ne
+  - model=perc
+  - ${args_no_hyphens}

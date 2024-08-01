@@ -119,7 +119,6 @@ def eco_loop(
         # Behavior metrics
         metrics_behavior = env.compute_on_render_behavior_measures(
             state_species=global_state.state_species,
-            react_fn=agent_species.react,
             key_random=global_state.key_random,
         )
         for key, value in metrics_behavior.items():

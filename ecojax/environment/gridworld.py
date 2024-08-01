@@ -1451,10 +1451,6 @@ class GridworldEnv(EcoEnvironment):
     def compute_on_render_behavior_measures(
         self,
         state_species: StateSpecies,
-        react_fn: Callable[
-            [StateSpecies, ObservationAgent, EcoInformation, jnp.ndarray],
-            Dict[str, jnp.ndarray],
-        ],
         key_random: jnp.ndarray,
     ) -> Dict[str, jnp.ndarray]:
         dict_measures = {}
@@ -1465,7 +1461,6 @@ class GridworldEnv(EcoEnvironment):
             dict_measures.update(
                 self.compute_behavior_measure(
                     state_species=state_species,
-                    react_fn=react_fn,
                     key_random=key_random,
                     name_measure=name_measure,
                 )

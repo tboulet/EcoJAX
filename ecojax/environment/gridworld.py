@@ -1469,7 +1469,15 @@ class GridworldEnv(EcoEnvironment):
 
 
     def obs_idx_to_meaning(self) -> Dict[str, str]:
-        raise
+        # Assume MLP model with visual field in first position
+        idx_plant = self.dict_name_channel_to_idx["plants"]
+        v = self.vision_range_agent
+        side = 2 * v + 1
+        return {idx_plant * side ** 2 + (v+1) * side + v : "PlantInFront",
+                idx_plant * side ** 2 + v * side + v-1 : "PlantToLeft",
+                idx_plant * side ** 2 + v * side + v+1 : "PlantToRight",
+                idx_plant * side ** 2 + (v-1) * side + v : "PlantBehind"
+            }
     
     def action_idx_to_meaning(self) -> Dict[int, str]:
         return {idx : action_str for action_str, idx in self.action_to_idx.items()}

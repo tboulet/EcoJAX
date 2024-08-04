@@ -1,20 +1,20 @@
 #!/bin/bash
 #
 
-#SBATCH --job-name=pop_mlp
+#SBATCH --job-name=vision_range_agent
 #SBATCH --output=out.txt
 #SBATCH --error=out.txt
 
 ## For partition: either prod10, prod 20, prod 40 or prod80
 ## For gres: either 1g.10gb:[1:10] for prod10, 2g.20gb:[1:4] for prod20, 3g.40gb:1 for prod40 or A100.80gb for prod80.
 
-##SBATCH --partition=prod10
-##SBATCH --gres=gpu:1g.10gb:1
-##SBATCH --cpus-per-task=4
-
-#SBATCH --partition=prod20
-#SBATCH --gres=gpu:2g.20gb:1
+#SBATCH --partition=prod10
+#SBATCH --gres=gpu:1g.10gb:1
 #SBATCH --cpus-per-task=4
+
+##SBATCH --partition=prod20
+##SBATCH --gres=gpu:2g.20gb:1
+##SBATCH --cpus-per-task=4
 
 ##SBATCH --partition=prod40
 ##SBATCH --gres=gpu:3g.40gb:1
@@ -37,12 +37,19 @@
 #SBATCH --time=24:00:00
 
 ## Setup
-cd ~/projects/EcoJAX
 source ~/projects/EcoJAX/venv_linux/bin/activate
+cd ~/projects/EcoJAX
 
 # Create a directory to store the logs
 initial_date=$(date +"%Y%m%d_%H%M%S")
-mkdir -p "logs/run_$initial_date"
 
-# Run the sweep
-wandb agent timotheboulet/EcoJAX/2n7nxt60 > "logs/sweep_$initial_date.log" 2>&1
+
+# Iterate over the seeds
+seed_max=10
+benchmark_name='benchmark_vision_range_agent'
+for seed in $(seq 1 $seed_max); do
+    for vision_range_agent in 1 2 3 5; do
+        mkdir -p "logs/run_$initial_date/vision_range_agent_$vision_range_agent"
+        python run.py --config-name dgx env/metrics=metrics_dgx +benchmark_name=$benchmark_name seed=$seed env.vision_range_agent=$vision_range_agent > "logs/run_$initial_date/vision_range_agent_$vision_range_agent/seed_$seed.log" 2>&1
+    done
+done

@@ -419,22 +419,21 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
                 try:
                     weights = state.agents.params["Dense_0"]["kernel"]
                     bias = state.agents.params["Dense_0"]["bias"]
-                    _, n_obs, n_actions = weights.shape
-                    for idx_action in range(n_actions):
-                        dict_measures[f"weights b{idx_action}/weights"] = bias[:, idx_action].mean()
-                        for idx_obs in range(n_obs):
-                            dict_measures[f"weights w{idx_obs}-{idx_action}/weights"] = weights[:, idx_obs, idx_action].mean()
+                    
+                    # _, n_obs, n_actions = weights.shape
+                    # for idx_action in range(n_actions):
+                    #     dict_measures[f"weights b{idx_action}/weights"] = bias[:, idx_action].mean()
+                    #     for idx_obs in range(n_obs):
+                    #         dict_measures[f"weights w{idx_obs}-{idx_action}/weights"] = weights[:, idx_obs, idx_action].mean()
                         
-                    # action_idx_to_meaning = self.env.action_idx_to_meaning()
-                    # assert action_idx_to_meaning == {0: "forward", 1: "right", 2: "backward", 3: "left"}
-                    # dict_measures[f"weights forward/weights"] = bias[:, 0]
-                    # dict_measures[f"weights right/weights"] = bias[:, 1]
-                    # dict_measures[f"weights backward/weights"] = bias[:, 2]
-                    # dict_measures[f"weights left/weights"] = bias[:, 3]
-                    # dict_measures[f"weights forward-frontFood/weights"] = weights[:, 7, 0]
-                    # dict_measures[f"weights left-leftFood/weights"] = weights[:, 3, 1]
-                    # dict_measures[f"weights right-rightFood/weights"] = weights[:, 5, 3]
-                    # dict_measures[f"weights back-backFood/weights"] = weights[:, 1, 2]
+                    action_idx_to_meaning = self.env.action_idx_to_meaning()
+                    obs_idx_to_meaning = self.env.obs_idx_to_meaning()
+                    for idx_action, name_action in action_idx_to_meaning.items():
+                        dict_measures[f"weights bias{name_action}/weights"] = bias[:, idx_action]
+                        for idx_obs, name_obs in obs_idx_to_meaning.items():
+                            dict_measures[f"weights {name_obs}-{name_action}/weights"] = weights[:, idx_obs, idx_action]
+                    print(dict_measures)
+                    raise
                 except Exception as e:
                     print(f"Error in measure weights_agents: {e}")
             # Behavior measures

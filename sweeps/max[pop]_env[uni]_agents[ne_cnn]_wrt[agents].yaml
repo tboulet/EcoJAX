@@ -1,8 +1,7 @@
 program: run.py 
 project: EcoJAX
-description: Find the NE agents' HP that maximizes the number of agents in an Uniform environment
 name: max[pop]_env[uni]_agents[ne_cnn]_wrt[agents]
-method: bayes
+method: random
 metric:
   goal: maximize
   name: n_agents

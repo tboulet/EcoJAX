@@ -1,8 +1,10 @@
 program: run.py 
-method: bayes
+project: EcoJAX
+name: max[appetite]_env[uni]_agents[ne_perc]_wrt[env]
+method: random
 metric:
   goal: maximize
-  name: n
+  name: appetite/pop_mean
 
 parameters:
 

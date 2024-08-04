@@ -1,5 +1,7 @@
 program: run.py 
-method: bayes
+project: EcoJAX
+name: max[pop]_env[uni]_agents[ne_perc]_wrt[env]
+method: random
 metric:
   goal: maximize
   name: n_agents

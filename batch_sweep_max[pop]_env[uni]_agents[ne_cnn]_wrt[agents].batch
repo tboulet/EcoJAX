@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 
-#SBATCH --job-name=sweep
+#SBATCH --job-name=pop_cnn
 #SBATCH --output=out.txt
 #SBATCH --error=out.txt
 
@@ -45,4 +45,4 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 mkdir -p "logs/run_$initial_date"
 
 # Run the sweep
-wandb agent timotheboulet/EcoJAX/lx3zk297 > "logs/sweep_$initial_date.log" 2>&1
+wandb agent timotheboulet/EcoJAX/j9zgyz9a > "logs/sweep_$initial_date.log" 2>&1

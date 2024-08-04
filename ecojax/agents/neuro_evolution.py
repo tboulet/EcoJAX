@@ -432,7 +432,6 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
                         dict_measures[f"weights bias{name_action}/weights"] = bias[:, idx_action]
                         for idx_obs, name_obs in obs_idx_to_meaning.items():
                             dict_measures[f"weights {name_obs}-{name_action}/weights"] = weights[:, idx_obs, idx_action]
-                    print(dict_measures)
                     raise
                 except Exception as e:
                     print(f"Error in measure weights_agents: {e}")

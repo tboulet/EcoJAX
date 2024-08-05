@@ -110,6 +110,8 @@ energy_loss_action: 1.0
 energy_req_reprod: 80
 # The energy cost of reproduction
 energy_cost_reprod: 20
+# The minimum age required to be able to reproduce
+min_age_reprod: 25
 
 # The energy an agent loses by performing the 'transfer' action
 energy_transfer_loss: 5

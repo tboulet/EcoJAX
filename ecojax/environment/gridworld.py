@@ -33,7 +33,7 @@ from ecojax.video import VideoRecorder
 
 
 @dataclass
-class AgentGriworld:
+class AgentGridworld:
     # Where the agents are, of shape (n_max_agents, 2). positions_agents[i, :] represents the (x,y) coordinates of the i-th agent in the map. Ghost agents are still represented in the array (in position (0,0)).
     positions_agents: jnp.ndarray  # (n_max_agents, 2) in [0, height-1] x [0, width-1]
     # The orientation of the agents, of shape (n_max_agents,) and of values in {0, 1, 2, 3}. orientation_agents[i] represents the index of its orientation in the env.
@@ -51,6 +51,8 @@ class AgentGriworld:
     # The appearance of an agent allows the agents to distinguish their genetic proximity, as agents with similar appearances are more likely to be genetically close.
     # By convention : a non-agent has an appearance of zeros, the common ancestors have an appearance of ones, and m superposed agents have an appearance of their average.
     appearance_agents: jnp.ndarray  # (n_max_agents, dim_appearance) in R
+    # The index of the parent of each agent
+    parent_agents: jnp.ndarray  # (n_max_agents,) in {0, 1, ..., n_max_agents-1}
 
 
 @dataclass
@@ -73,7 +75,7 @@ class StateEnvGridworld(StateEnv):
     latitude_sun: int
 
     # The state of the agents in the environment
-    agents: AgentGriworld  # Batched
+    agents: AgentGridworld  # Batched
 
     # The lifespan and population aggregators
     metrics_lifespan: List[PyTreeNode]
@@ -164,7 +166,9 @@ class GridworldEnv(EcoEnvironment):
             )
         self.dict_name_channel_to_idx_visual_field: Dict[str, int] = {
             name_channel: idx_channel
-            for idx_channel, name_channel in enumerate(config["list_channels_visual_field"])
+            for idx_channel, name_channel in enumerate(
+                config["list_channels_visual_field"]
+            )
         }
         self.n_channels_visual_field: int = len(self.list_indexes_channels_visual_field)
 
@@ -266,7 +270,7 @@ class GridworldEnv(EcoEnvironment):
                 shape=(
                     2 * self.vision_range_agent + 1,
                     2 * self.vision_range_agent + 1,
-                    self.n_channels_visual_field,
+                    self.n_channels_visual_field + 1,
                 ),
                 low=None,
                 high=None,
@@ -295,6 +299,7 @@ class GridworldEnv(EcoEnvironment):
         self.energy_thr_death: float = config["energy_thr_death"]
         self.energy_req_reprod: float = config["energy_req_reprod"]
         self.energy_cost_reprod: float = config["energy_cost_reprod"]
+        self.min_age_reprod: int = config["min_age_reprod"]
         self.energy_transfer_loss: float = config.get("energy_transfer_loss", 0.0)
         self.energy_transfer_gain: float = config.get("energy_transfer_gain", 0.0)
         self.move_prob_initial: float = config.get("move_prob_initial", 1.0)
@@ -347,13 +352,18 @@ class GridworldEnv(EcoEnvironment):
             [i < self.n_agents_initial for i in range(self.n_agents_max)],
             dtype=jnp.bool_,
         )
-        positions_agents = jax.random.randint(
+
+        pos_indices = jax.random.choice(
             key=subkey,
-            shape=(self.n_agents_max, 2),
-            minval=0,
-            maxval=max(H, W),
+            a=H * W,
+            shape=(self.n_agents_max,),
+            replace=False,
         )
-        positions_agents %= jnp.array([H, W])
+        positions_agents = jnp.stack(
+            [pos_indices // W, pos_indices % W],
+            axis=-1,
+        )
+
         map = map.at[
             positions_agents[:, 0],
             positions_agents[:, 1],
@@ -374,15 +384,17 @@ class GridworldEnv(EcoEnvironment):
             .at[: self.n_agents_initial, :]
             .set(1)
         )
+        parent_agents = jnp.zeros(self.n_agents_max) + self.fill_value
 
         # Initialize the state
-        agents = AgentGriworld(
+        agents = AgentGridworld(
             positions_agents=positions_agents,
             orientation_agents=orientation_agents,
             are_existing_agents=are_existing_agents,
             energy_agents=energy_agents,
             age_agents=age_agents,
             appearance_agents=appearance_agents,
+            parent_agents=parent_agents,
         )
 
         # Initialize the metrics
@@ -496,10 +508,14 @@ class GridworldEnv(EcoEnvironment):
 
         # ============ (2) Agents reproduce ============
         key_random, subkey = jax.random.split(key_random)
-        state_new, agents_reprod, are_newborns_agents, indexes_parents_agents, dict_measures = (
-            self.step_reproduce_agents(
-                state=state_new, actions=actions, key_random=subkey
-            )
+        (
+            state_new,
+            agents_reprod,
+            are_newborns_agents,
+            indexes_parents_agents,
+            dict_measures,
+        ) = self.step_reproduce_agents(
+            state=state_new, actions=actions, key_random=subkey
         )
         dict_measures_all.update(dict_measures)
         state_new = update_agent_map(state_new)
@@ -563,7 +579,11 @@ class GridworldEnv(EcoEnvironment):
         # ============ (6) Compute the metrics ============
         # Compute some measures
         dict_measures = self.compute_measures(
-            state=state, actions=actions, state_new=state_new, key_random=subkey, state_species=state_species
+            state=state,
+            actions=actions,
+            state_new=state_new,
+            key_random=subkey,
+            state_species=state_species,
         )
         dict_measures_all.update(dict_measures)
 
@@ -913,6 +933,7 @@ class GridworldEnv(EcoEnvironment):
             if self.allow_multiple_agents_per_tile
             else self.move_agents_enforce_single_occupancy
         )
+
         positions_agents_new, orientation_agents_new = move_func(
             key_random, state, actions
         )
@@ -975,17 +996,15 @@ class GridworldEnv(EcoEnvironment):
                     * self.energy_transfer_gain
                     / jnp.maximum(1, jnp.sum(are_receiving))
                 )
-                delta_energy = jnp.zeros_like(state.agents.energy_agents).at[i].add(-loss) + (gain * are_receiving).astype(jnp.float32)
+                delta_energy = jnp.zeros_like(state.agents.energy_agents).at[i].add(
+                    -loss
+                ) + (gain * are_receiving).astype(jnp.float32)
 
                 # compute age difference
                 avg_recv_age = jnp.mean(state.agents.age_agents[are_receiving])
                 age_diff = state.agents.age_agents[i] - avg_recv_age
 
-                return (
-                    delta_energy,
-                    is_transfer,
-                    age_diff
-                )
+                return (delta_energy, is_transfer, age_diff)
 
             transfer_delta_energy, is_transfer, age_diffs = jax.vmap(
                 per_agent_helper_fn, in_axes=0
@@ -1008,7 +1027,9 @@ class GridworldEnv(EcoEnvironment):
         idle_agents = state.agents.are_existing_agents & (
             actions == self.action_to_idx["idle"]
         )
-        not_idle_agents = state.agents.are_existing_agents & ~idle_agents & ~are_agents_transferring
+        not_idle_agents = (
+            state.agents.are_existing_agents & ~idle_agents & ~are_agents_transferring
+        )
         energy_agents_new = (
             energy_agents_new
             - self.energy_loss_idle * idle_agents
@@ -1066,47 +1087,55 @@ class GridworldEnv(EcoEnvironment):
 
         # Detect which agents are trying to reproduce
         are_existing_agents = state.agents.are_existing_agents
-        are_agents_trying_reprod = (
+        agents_reprod = (
             (state.agents.energy_agents > self.energy_req_reprod)
-            & (state.agents.age_agents >= 25)
+            & (state.agents.age_agents >= self.min_age_reprod)
             & are_existing_agents
-        )
+        ).astype(jnp.int32)
 
-        # Check for empty space to reproduce
-        facing_positions = jax.vmap(self.get_facing_pos, in_axes=(0,0))(state.agents.positions_agents, state.agents.orientation_agents)
+        # Don't allow agents to reproduce into a tile that's already occupied
+        facing_positions = jax.vmap(self.get_facing_pos, in_axes=(0, 0))(
+            state.agents.positions_agents, state.agents.orientation_agents
+        )
         agent_map = state.map[:, :, self.dict_name_channel_to_idx["agents"]]
-        are_agents_trying_reprod &= agent_map[facing_positions[:, 0], facing_positions[:, 1]] == 0
+        agents_reprod &= agent_map[facing_positions[:, 0], facing_positions[:, 1]] == 0
+
+        # Also don't allow multiple agents to reproduce into the same tile
+        H, W = state.map.shape[:2]
+        facing_tiles = facing_positions[:, 0] * W + facing_positions[:, 1]
+        indices = jnp.lexsort((jnp.arange(self.n_agents_max), facing_tiles))
+        sorted_reprod, sorted_facing = agents_reprod[indices], facing_tiles[indices]
+        same_as_prev = jnp.concatenate(
+            (jnp.array([False]), sorted_facing[1:] == sorted_facing[:-1])
+        )
+        agents_reprod = jnp.where(same_as_prev, 0, sorted_reprod)[jnp.argsort(indices)]
 
         if "reproduce" in self.list_actions:
             trying_reprod_action = actions == self.action_to_idx["reproduce"]
-            are_agents_trying_reprod = are_agents_trying_reprod & trying_reprod_action
+            agents_reprod = agents_reprod & trying_reprod_action
             if "reproduce_success_rate" in self.names_measures:
                 dict_measures["reproduce_success_rate"] = jnp.sum(
-                    are_agents_trying_reprod
+                    agents_reprod
                 ) / jnp.sum(trying_reprod_action)
 
-        # # For test
-        # are_existing_agents = jnp.array([False, False, False, False, True, True, True, True, True, False])
-        # are_agents_trying_reprod = jnp.array([False, False, False, False, False, False, False, False, False, False])
-
         # Compute the number of newborns. If there are more agents trying to reproduce than there are ghost agents, only the first n_ghost_agents agents will be able to reproduce.
-        n_agents_trying_reprod = jnp.sum(are_agents_trying_reprod)
+        n_agents_trying_reprod = jnp.sum(agents_reprod)
         n_ghost_agents = jnp.sum(~are_existing_agents)
         n_newborns = jnp.minimum(n_agents_trying_reprod, n_ghost_agents)
 
         # Compute which agents are actually reproducing
-        try_reprod_mask = are_agents_trying_reprod.astype(
+        try_reprod_mask = agents_reprod.astype(
             jnp.int32
         )  # 1_(agent i tries to reproduce) for i
         cumsum_repro_attempts = jnp.cumsum(
             try_reprod_mask
         )  # number of agents that tried to reproduce before agent i
-        are_agents_reproducing = (
+        agents_reprod = (
             cumsum_repro_attempts <= n_newborns
-        ) & are_agents_trying_reprod  # whether i tried to reproduce and is allowed to reproduce
+        ) & agents_reprod  # whether i tried to reproduce and is allowed to reproduce
 
         if "amount_children" in self.names_measures:
-            dict_measures["amount_children"] = are_agents_reproducing
+            dict_measures["amount_children"] = agents_reprod
 
         # Get the indices of the ghost agents. To have constant (n_max_agents,) shape, we fill the remaining indices with the value self.n_agents_max (which will have no effect as an index of (n_agents_max,) array)
         indices_ghost_agents_FILLED = jnp.where(
@@ -1132,7 +1161,7 @@ class GridworldEnv(EcoEnvironment):
 
         # Get the indices of are_reproducing agents
         indices_had_reproduced_FILLED = jnp.where(
-            are_agents_reproducing,
+            agents_reprod,
             size=self.n_agents_max,
             fill_value=self.fill_value,
         )[0]
@@ -1144,10 +1173,14 @@ class GridworldEnv(EcoEnvironment):
             indices_had_reproduced_FILLED[:, None]
         )
 
+        # Update state.agents.parent_agents
+        parent_agents_new = state.agents.parent_agents.at[
+            indices_newborn_agents_FILLED
+        ].set(indices_had_reproduced_FILLED)
+
         # Decrease the energy of the agents that are reproducing
-        energy_agents_new = (
-            state.agents.energy_agents
-            - are_agents_reproducing * self.energy_cost_reprod
+        energy_agents_new = state.agents.energy_agents - (
+            agents_reprod * self.energy_cost_reprod
         )
 
         # Initialize the newborn agents
@@ -1159,35 +1192,8 @@ class GridworldEnv(EcoEnvironment):
             0
         )
 
-        # Initialize the newborn agents' position
-        H, W = self.height, self.width
-        dummy_val = 2 * jnp.maximum(H, W)
-
-        # def place_newborn_in_empty_tile(empty_locs, newborn_idx):
-        #     # find the nearest free square to the newborn's parent
-        #     # and place them there
-        #     parent_loc = state.agents.positions_agents[agents_parents[newborn_idx]]
-        #     closest_idx = jnp.argmin(jnp.sum(jnp.abs(empty_locs - parent_loc), axis=1))
-        #     closest_loc = empty_locs[closest_idx]
-        #     empty_locs = empty_locs.at[closest_idx].set([dummy_val, dummy_val])
-        #     return empty_locs, closest_loc
-
-        # if self.allow_multiple_agents_per_tile:
-        #     newborn_positions = state.agents.positions_agents[
-        #         indices_had_reproduced_FILLED
-        #     ]
-        # else:
-        #     agent_map = state.map[..., self.dict_name_channel_to_idx["agents"]]
-        #     empty_locs = jnp.stack(
-        #         jnp.where(agent_map == 0, size=H * W, fill_value=dummy_val), axis=1
-        #     )
-        #     _, newborn_positions = jax.lax.scan(
-        #         place_newborn_in_empty_tile, empty_locs, indices_newborn_agents_FILLED
-        #     )
-
+        # Initialize the newborn agents' positions
         newborn_positions = facing_positions[indices_had_reproduced_FILLED]
-        print(newborn_positions.shape)
-
         positions_agents_new = state.agents.positions_agents.at[
             indices_newborn_agents_FILLED
         ].set(newborn_positions)
@@ -1215,12 +1221,13 @@ class GridworldEnv(EcoEnvironment):
             age_agents=age_agents_new,
             positions_agents=positions_agents_new,
             appearance_agents=appearance_agents_new,
+            parent_agents=parent_agents_new,
         )
         state = state.replace(agents=agents_new)
 
         return (
             state,
-            are_agents_reproducing,
+            agents_reprod,
             are_newborns_agents,
             agents_parents,
             dict_measures,
@@ -1240,49 +1247,61 @@ class GridworldEnv(EcoEnvironment):
             observation_agents (ObservationAgent): the observations of the agents
             dict_measures (Dict[str, jnp.ndarray]): a dictionary of the measures of the environment
         """
+        H, W, C_map = state.map.shape
+        map_vis_field = state.map[
+            :, :, self.list_indexes_channels_visual_field
+        ]  # (H, W, C_map)
+
+        # construct a map giving the index of each agent's parent (for agents not in the initial generation)
+        # note: we set in reverse order to avoid overriding any positions with ghost agents
+        agent_index_map = jnp.zeros((H, W), dtype=jnp.int32) + self.fill_value
+        poses = state.agents.positions_agents[::-1]
+        agent_index_map = agent_index_map.at[poses[:, 0], poses[:, 1]].set(
+            jnp.arange(self.n_agents_max)[::-1]
+        )
+        agent_parent_map = state.agents.parent_agents[agent_index_map]
 
         def get_single_agent_visual_field(
-            agents: AgentGriworld,
+            agent: AgentGridworld,
+            agent_idx,
         ) -> jnp.ndarray:
             """Get the visual field of a single agent.
 
             Args:
-                agent_state (StateAgentGriworld): the state of the agent
+                agent_state (StateAgentGridworld): the state of the agent
 
             Returns:
                 jnp.ndarray: the visual field of the agent, of shape (2 * self.vision_radius + 1, 2 * self.vision_radius + 1, ?)
             """
-            H, W, C_map = state.map.shape
-
             # Construct the map of the visual field of the agent
-            map_vis_field = state.map[:, :, self.list_indexes_channels_visual_field]  # (H, W, C_map)
             # age_idx = self.dict_name_channel_to_idx["agent_ages"]
             # map_vis_field = map_vis_field.at[:, :, age_idx].set(
             #     map_vis_field[:, :, age_idx] / self.age_max
             # )
 
             # Get the visual field of the agent
-            visual_field_x = agents.positions_agents[0] + self.grid_indexes_vision_x
-            visual_field_y = agents.positions_agents[1] + self.grid_indexes_vision_y
+            visual_field_x = agent.positions_agents[0] + self.grid_indexes_vision_x
+            visual_field_y = agent.positions_agents[1] + self.grid_indexes_vision_y
             vis_field = map_vis_field[
                 visual_field_x % H,
                 visual_field_y % W,
             ]  # (2 * self.vision_radius + 1, 2 * self.vision_radius + 1, C_map)
 
+            parent_map_vis_field = agent_parent_map[
+                visual_field_x % H,
+                visual_field_y % W,
+            ]
+            is_offspring_vis_field = (parent_map_vis_field == agent_idx).astype(
+                jnp.int32
+            )
+            vis_field = jnp.concatenate(
+                [vis_field, is_offspring_vis_field[..., None]], axis=-1
+            )
+
             # Rotate the visual field according to the orientation of the agent
             vis_field = jnp.select(
-                [
-                    agents.orientation_agents == 0,
-                    agents.orientation_agents == 1,
-                    agents.orientation_agents == 2,
-                    agents.orientation_agents == 3,
-                ],
-                [
-                    vis_field,
-                    jnp.rot90(vis_field, k=1, axes=(0, 1)),
-                    jnp.rot90(vis_field, k=2, axes=(0, 1)),
-                    jnp.rot90(vis_field, k=3, axes=(0, 1)),
-                ],
+                [agent.orientation_agents == i for i in range(4)],
+                [jnp.rot90(vis_field, k=j, axes=(0, 1)) for j in range(4)],
             )
 
             # Return the visual field of the agent
@@ -1299,9 +1318,9 @@ class GridworldEnv(EcoEnvironment):
                 agents_reproduced = jnp.zeros_like(state.agents.energy_agents)
             dict_observations["just_reproduced"] = agents_reproduced.astype(jnp.float32)
         if "visual_field" in self.list_observations:
-            dict_observations["visual_field"] = jax.vmap(get_single_agent_visual_field)(
-                state.agents
-            )
+            dict_observations["visual_field"] = jax.vmap(
+                get_single_agent_visual_field, in_axes=(0, 0)
+            )(state.agents, jnp.arange(self.n_agents_max))
 
         # observations = self.ObservationAgentGridworld(
         #     **{
@@ -1310,15 +1329,7 @@ class GridworldEnv(EcoEnvironment):
         #     }
         # )
 
-        dict_measures = {}
-
-        # print(f"Map : {state.map[..., 0]}")
-        # print(f"Agents positions : {state.positions_agents}")
-        # print(f"Agents orientations : {state.orientation_agents}")
-        # print(f"First agent obs : {observations.visual_field[0, ..., 2]}, shape : {observations.visual_field[0, ...].shape}")
-        # raise ValueError("Stop")
-
-        return dict_observations, dict_measures
+        return dict_observations, {}
 
     def compute_measures(
         self,
@@ -1377,12 +1388,16 @@ class GridworldEnv(EcoEnvironment):
                     ]
             # Behavior measures (requires state_species)
             elif name_measure in self.config["metrics"]["measures"]["behavior"]:
-                assert isinstance(self.agent_species, AgentSpecies), f"For behavior measure, you need to give an agent species as attribute of the env after both creation : env.agent_species = agent_species"
-                dict_measures.update(self.compute_behavior_measure(
-                    state_species=state_species,
-                    key_random=key_random,
-                    name_measure=name_measure,
-                ))
+                assert isinstance(
+                    self.agent_species, AgentSpecies
+                ), f"For behavior measure, you need to give an agent species as attribute of the env after both creation : env.agent_species = agent_species"
+                dict_measures.update(
+                    self.compute_behavior_measure(
+                        state_species=state_species,
+                        key_random=key_random,
+                        name_measure=name_measure,
+                    )
+                )
             else:
                 pass  # Pass this measure as it may be computed in other parts of the code
 

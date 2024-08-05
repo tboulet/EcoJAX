@@ -970,7 +970,9 @@ class GridworldEnv(EcoEnvironment):
                 ) + (gain * are_receiving).astype(jnp.float32)
 
                 # compute age difference
-                avg_recv_age = jnp.mean(state.agents.age_agents[are_receiving])
+                avg_recv_age = jnp.sum(
+                    state.agents.age_agents * are_receiving
+                ) / jnp.maximum(1, jnp.sum(are_receiving))
                 age_diff = state.agents.age_agents[i] - avg_recv_age
 
                 return (delta_energy, is_transfer, age_diff)
@@ -990,7 +992,9 @@ class GridworldEnv(EcoEnvironment):
                     are_agents_transferring
                 )
             if "transfer_age_diff" in self.names_measures:
-                dict_measures["transfer_age_diff"] = jnp.nanmean(age_diffs)
+                dict_measures["transfer_age_diff"] = jnp.sum(
+                    age_diffs * is_transfer
+                ) / jnp.maximum(1, jnp.sum(is_transfer))
 
         # ====== Update the physical status of the agents ======
         idle_agents = state.agents.are_existing_agents & (

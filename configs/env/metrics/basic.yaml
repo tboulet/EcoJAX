@@ -4,6 +4,7 @@ measures:
     - n_agents
     - n_plants
     - net_energy_transfer_per_capita
+    - transfer_age_diff
     - eat_success_rate
     - transfer_success_rate
     - reproduce_success_rate

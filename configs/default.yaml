@@ -1,7 +1,7 @@
 # Hyperparameters
-n_timesteps: 250000
+n_timesteps: 500000
 # period_eval : ${eval:'${n_timesteps} / 500'}
-period_eval: 5000
+period_eval: 2000
 period_video: 50000
 n_agents_max: 1000
 n_agents_initial: 1000
@@ -25,7 +25,7 @@ defaults:
   - _self_
   - env: gridworld
   - agents: ne
-  - model: mlp
+  - model: cnn
   - override hydra/hydra_logging: disabled
   - override hydra/job_logging: disabled
 

@@ -68,7 +68,6 @@ list_observations:
   - visual_field
   - energy
   - age
-  - just_reproduced
 
 # A list indicating which channels the agent can observe in its visual field
 list_channels_visual_field:
@@ -95,7 +94,7 @@ dim_appearance: 3
 age_max: 500
 
 # The initial energy of an agent
-energy_initial: 100
+energy_initial: 50
 # The energy amount obtained by eating a food tile
 energy_food: 20
 # The energy threshold under which an agent dies
@@ -118,8 +117,8 @@ energy_transfer_loss: 5
 # The energy an agent gains by being the subject of a 'transfer' action
 energy_transfer_gain: 5
 
-move_prob_initial: 0.2
-move_prob_gradient: 0.016
+move_prob_initial: 0.0
+move_prob_gradient: 0.02
 
 allow_multiple_agents_per_tile: False
 

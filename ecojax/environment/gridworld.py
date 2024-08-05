@@ -804,114 +804,83 @@ class GridworldEnv(EcoEnvironment):
         d_pos = jnp.array([jnp.cos(angle), -jnp.sin(angle)]).astype(jnp.int32)
         return (position + d_pos) % jnp.array([self.height, self.width])
 
-    def compute_new_position_and_orientation(
-        self,
-        key_random: jnp.ndarray,
-        curr_pos: jnp.ndarray,
-        curr_ori: jnp.ndarray,
-        action: jnp.ndarray,
-        move_success_prob: jnp.ndarray,
-    ) -> Tuple[jnp.ndarray, jnp.ndarray]:
-        condlist: List[jnp.ndarray] = []
-        choicelist_position: List[jnp.ndarray] = []
-        choicelist_orientation: List[jnp.ndarray] = []
-
-        for name_action_move in ["forward", "backward", "left", "right"]:
-            # Check if the action is a move action
-            if name_action_move not in self.list_actions:
-                continue
-
-            # Add the action to the list of possible actions related to moving
-            condlist.append(action == self.action_to_idx[name_action_move])
-
-            # Add the new orientation to the list of possible orientations
-            direction = ["forward", "left", "backward", "right"].index(name_action_move)
-            new_ori = (curr_ori + direction) % 4
-            choicelist_orientation.append(new_ori)
-
-            # Add the new position to the list of possible positions
-            new_pos = self.get_facing_pos(curr_pos, new_ori)
-            choicelist_position.append(new_pos)
-
-        # Select the new position and orientation of the agent based on the action
-        new_pos = jnp.select(
-            condlist=condlist,
-            choicelist=choicelist_position,
-            default=curr_pos,
+    def compute_new_positions(
+        self, key_random, curr_positions, facing_positions, is_moving, ages
+    ):
+        success_probs = jnp.minimum(
+            self.move_prob_initial + (self.move_prob_gradient * ages),
+            1,
+        )
+        is_moving &= jax.random.bernoulli(key_random, p=success_probs).astype(int)
+        return jnp.where(
+            is_moving[:, None],
+            facing_positions,
+            curr_positions,
         )
 
-        new_ori = jnp.select(
-            condlist=condlist,
-            choicelist=choicelist_orientation,
-            default=curr_ori,
-        )
-
-        # Decide if the move is successful
-        success = jax.random.bernoulli(key=key_random, p=move_success_prob)
-        new_pos = jnp.where(success, new_pos, curr_pos)
-
-        return new_pos, new_ori
+    def compute_new_orientations(self, curr_orientations, actions):
+        turning_left = (actions == self.action_to_idx["left"]).astype(jnp.int32)
+        turning_right = (actions == self.action_to_idx["right"]).astype(jnp.int32)
+        d_ori = turning_left + (3 * turning_right)
+        return (curr_orientations + d_ori) % 4
 
     def move_agents_allow_multiple_occupancy(
         self, key_random: jnp.ndarray, state: StateEnvGridworld, actions: jnp.ndarray
     ):
-        keys = jax.random.split(key_random, num=state.agents.positions_agents.shape[0])
-        success_probs = jnp.minimum(
-            self.move_prob_initial
-            + (self.move_prob_gradient * state.agents.age_agents),
-            1,
+        is_moving = (actions == self.action_to_idx["forward"]).astype(jnp.int32)
+        facing_positions = jax.vmap(self.get_facing_pos, in_axes=(0, 0))(
+            state.agents.positions_agents, state.agents.orientation_agents
         )
-        return jax.vmap(
-            self.compute_new_position_and_orientation, in_axes=(0, 0, 0, 0, 0)
-        )(
-            keys,
+        new_positions = self.compute_new_positions(
+            key_random,
             state.agents.positions_agents,
-            state.agents.orientation_agents,
-            actions,
-            success_probs,
+            facing_positions,
+            is_moving,
+            state.agents.age_agents,
         )
+        new_orientations = self.compute_new_orientations(
+            state.agents.orientation_agents, actions
+        )
+        return new_positions, new_orientations
 
     def move_agents_enforce_single_occupancy(
         self, key_random: jnp.ndarray, state: StateEnvGridworld, actions: jnp.ndarray
     ):
-        num_agents = state.agents.positions_agents.shape[0]
-        keys = jax.random.split(key_random, num=num_agents)
-        success_probs = jnp.minimum(
-            self.move_prob_initial
-            + (self.move_prob_gradient * state.agents.age_agents),
-            1,
+        H, W = state.map.shape[:2]
+        agent_map = state.map[:, :, self.dict_name_channel_to_idx["agents"]]
+
+        # first we need to filter the set of agents that are
+        # trying to move to ensure that no agent moves to an occupied cell, and at most
+        # one agent moves into any free cell.
+        is_moving = (actions == self.action_to_idx["forward"]).astype(jnp.int32)
+        facing_positions = jax.vmap(self.get_facing_pos, in_axes=(0, 0))(
+            state.agents.positions_agents, state.agents.orientation_agents
+        )
+        is_moving &= agent_map[facing_positions[:, 0], facing_positions[:, 1]] == 0
+
+        facing_tiles = facing_positions[:, 0] * W + facing_positions[:, 1]
+        indices = jnp.lexsort((jnp.arange(self.n_agents_max), facing_tiles))
+        sorted_is_moving, sorted_facing = is_moving[indices], facing_tiles[indices]
+        same_as_prev = jnp.concatenate(
+            [jnp.array([False]), sorted_facing[1:] == sorted_facing[:-1]]
+        )
+        is_moving = jnp.where(same_as_prev, 0, sorted_is_moving)[jnp.argsort(indices)]
+
+        # now we can compute the new positions
+        new_positions = self.compute_new_positions(
+            key_random,
+            state.agents.positions_agents,
+            facing_positions,
+            is_moving,
+            state.agents.age_agents,
         )
 
-        def process_single_agent(agent_map, agent_idx):
-            curr_pos = state.agents.positions_agents[agent_idx]
-            curr_ori = state.agents.orientation_agents[agent_idx]
-            new_pos, new_ori = self.compute_new_position_and_orientation(
-                keys[agent_idx],
-                curr_pos,
-                curr_ori,
-                actions[agent_idx],
-                success_probs[agent_idx],
-            )
-
-            # check whether new position is occupied - if so, agent stays in place
-            new_pos = jnp.where(
-                agent_map[new_pos[0], new_pos[1]] > 0,
-                curr_pos,
-                new_pos,
-            )
-
-            agent_map = agent_map.at[new_pos[0], new_pos[1]].set(1)
-            return agent_map, jnp.array([new_pos[0], new_pos[1], new_ori])
-
-        agent_map = state.map[..., self.dict_name_channel_to_idx["agents"]]
-        agent_map, outputs = jax.lax.scan(
-            process_single_agent, agent_map, jnp.arange(num_agents)
+        # finally, compute new orientations
+        new_orientations = self.compute_new_orientations(
+            state.agents.orientation_agents, actions
         )
 
-        return (
-            outputs[:, :2],
-            outputs[:, 2],
-        )
+        return new_positions, new_orientations
 
     def step_action_agents(
         self,

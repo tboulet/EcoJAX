@@ -952,7 +952,7 @@ class GridworldEnv(EcoEnvironment):
                 target_pos = self.get_facing_pos(
                     state.agents.positions_agents[i], state.agents.orientation_agents[i]
                 )
-                are_receiving = (
+                are_receiving = state.agents.are_existing_agents & (
                     (state.agents.positions_agents == target_pos)
                     .all(axis=1)
                     .astype(jnp.int32)
@@ -970,23 +970,31 @@ class GridworldEnv(EcoEnvironment):
                 ) + (gain * are_receiving).astype(jnp.float32)
 
                 # compute age difference
+                num_recv = jnp.sum(are_receiving)
                 avg_recv_age = jnp.sum(
                     state.agents.age_agents * are_receiving
-                ) / jnp.maximum(1, jnp.sum(are_receiving))
+                ) / jnp.maximum(1, num_recv)
                 age_diff = state.agents.age_agents[i] - avg_recv_age
 
-                return (delta_energy, is_transfer, age_diff)
+                # determine if transfer is to offspring
+                # this is hacky but works IFF we can guarantee that max 1 agent receives transfer
+                recv_parent = jnp.sum(
+                    state.agents.parent_agents * are_receiving
+                ).astype(int)
+                is_to_offspring = (
+                    is_transfer
+                    & (state.agents.parent_agents[i] == recv_parent)
+                    & (recv_parent != self.fill_value)
+                )
 
-            transfer_delta_energy, is_transfer, age_diffs = jax.vmap(
+                return (delta_energy, is_transfer, age_diff, is_to_offspring)
+
+            transfer_delta_energy, is_transfer, age_diffs, to_offspring = jax.vmap(
                 per_agent_helper_fn, in_axes=0
             )(jnp.arange(state.agents.energy_agents.size))
             energy_agents_new += transfer_delta_energy.sum(axis=0)
 
             # log some metrics
-            if "net_energy_transfer_per_capita" in self.names_measures:
-                dict_measures["net_energy_transfer_per_capita"] = (
-                    transfer_delta_energy.sum() / state.agents.are_existing_agents.sum()
-                )
             if "transfer_success_rate" in self.names_measures:
                 dict_measures["transfer_success_rate"] = jnp.sum(is_transfer) / jnp.sum(
                     are_agents_transferring
@@ -994,6 +1002,12 @@ class GridworldEnv(EcoEnvironment):
             if "transfer_age_diff" in self.names_measures:
                 dict_measures["transfer_age_diff"] = jnp.sum(
                     age_diffs * is_transfer
+                ) / jnp.maximum(1, jnp.sum(is_transfer))
+            if "num_transfers" in self.names_measures:
+                dict_measures["num_transfers"] = jnp.sum(is_transfer)
+            if "transfer_proportion_to_offspring" in self.names_measures:
+                dict_measures["transfer_proportion_to_offspring"] = jnp.sum(
+                    to_offspring
                 ) / jnp.maximum(1, jnp.sum(is_transfer))
 
         # ====== Update the physical status of the agents ======
@@ -1333,14 +1347,14 @@ class GridworldEnv(EcoEnvironment):
                 dict_measures["n_agents"] = jnp.sum(state.agents.are_existing_agents)
             elif name_measure == "n_plants":
                 dict_measures["n_plants"] = jnp.sum(state.map[..., idx_plants])
-            elif name_measure == "group_size":
-                group_sizes = compute_group_sizes(state.map[..., idx_agents])
-                dict_measures["average_group_size"] = group_sizes.mean()
-                dict_measures["max_group_size"] = group_sizes.max()
-                continue
+            # elif name_measure == "group_size":
+            #     group_sizes = compute_group_sizes(state.map[..., idx_agents])
+            #     dict_measures["average_group_size"] = group_sizes.mean()
+            #     dict_measures["max_group_size"] = group_sizes.max()
+            #     continue
             # Immediate measures
             elif name_measure.startswith("do_action_"):
-                str_action = name_measure[len("do_action_") :]
+                str_action = name_measure[len("do_action_"):]
                 if str_action in self.list_actions:
                     dict_measures[name_measure] = (
                         actions == self.action_to_idx[str_action]
@@ -1393,25 +1407,25 @@ class GridworldEnv(EcoEnvironment):
                     jnp.nan,
                 )
 
-        # Aggregate the measures over the lifespan
-        are_just_dead_agents = state_new.agents.are_existing_agents & (
-            ~state_new.agents.are_existing_agents
-            | (state_new.agents.age_agents < state_new.agents.age_agents)
+        # # Aggregate the measures over the lifespan
+        are_just_dead_agents = state.agents.are_existing_agents & (
+             ~state_new.agents.are_existing_agents
+             | (state_new.agents.age_agents < state_new.agents.age_agents)
         )
 
-        dict_metrics_lifespan = {}
-        new_list_metrics_lifespan = []
-        for agg, metrics in zip(self.aggregators_lifespan, state.metrics_lifespan):
-            new_metrics = agg.update_metrics(
-                metrics=metrics,
-                dict_measures=dict_measures,
-                are_alive=state_new.agents.are_existing_agents,
-                are_just_dead=are_just_dead_agents,
-                ages=state_new.agents.age_agents,
-            )
-            dict_metrics_lifespan.update(agg.get_dict_metrics(new_metrics))
-            new_list_metrics_lifespan.append(new_metrics)
-        state_new_new = state_new.replace(metrics_lifespan=new_list_metrics_lifespan)
+        # dict_metrics_lifespan = {}
+        # new_list_metrics_lifespan = []
+        # for agg, metrics in zip(self.aggregators_lifespan, state.metrics_lifespan):
+        #     new_metrics = agg.update_metrics(
+        #         metrics=metrics,
+        #         dict_measures=dict_measures,
+        #         are_alive=state_new.agents.are_existing_agents,
+        #         are_just_dead=are_just_dead_agents,
+        #         ages=state_new.agents.age_agents,
+        #     )
+        #     dict_metrics_lifespan.update(agg.get_dict_metrics(new_metrics))
+        #     new_list_metrics_lifespan.append(new_metrics)
+        # state_new_new = state_new.replace(metrics_lifespan=new_list_metrics_lifespan)
 
         # Aggregate the measures over the population
         dict_metrics_population = {}

@@ -1440,14 +1440,14 @@ class GridworldEnv(EcoEnvironment):
             )
             dict_metrics_population.update(agg.get_dict_metrics(new_metrics))
             new_list_metrics_population.append(new_metrics)
-        state_new_new = state_new_new.replace(
+        state_new_new = state_new.replace(
             metrics_population=new_list_metrics_population
         )
 
         # Get the final metrics
         dict_metrics = {
             **dict_measures,
-            **dict_metrics_lifespan,
+            # **dict_metrics_lifespan,
             **dict_metrics_population,
         }
 

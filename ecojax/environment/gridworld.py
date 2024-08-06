@@ -952,11 +952,10 @@ class GridworldEnv(EcoEnvironment):
                 target_pos = self.get_facing_pos(
                     state.agents.positions_agents[i], state.agents.orientation_agents[i]
                 )
-                are_receiving = (
+                are_receiving = (state.agents.are_existing_agents & (
                     (state.agents.positions_agents == target_pos)
                     .all(axis=1)
-                    .astype(jnp.int32)
-                )
+                )).astype(jnp.int32)
                 is_transfer = are_agents_transferring[i] & jnp.any(are_receiving)
 
                 loss = is_transfer * self.energy_transfer_loss

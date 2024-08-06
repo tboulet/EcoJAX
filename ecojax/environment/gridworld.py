@@ -952,11 +952,11 @@ class GridworldEnv(EcoEnvironment):
                 target_pos = self.get_facing_pos(
                     state.agents.positions_agents[i], state.agents.orientation_agents[i]
                 )
-                are_receiving = state.agents.are_existing_agents & (
-                    (state.agents.positions_agents == target_pos)
-                    .all(axis=1)
-                    .astype(jnp.int32)
-                )
+
+                are_receiving = (
+                    state.agents.are_existing_agents
+                    & (state.agents.positions_agents == target_pos).all(axis=1)
+                ).astype(jnp.int32)
                 is_transfer = are_agents_transferring[i] & jnp.any(are_receiving)
 
                 loss = is_transfer * self.energy_transfer_loss
@@ -1354,7 +1354,7 @@ class GridworldEnv(EcoEnvironment):
             #     continue
             # Immediate measures
             elif name_measure.startswith("do_action_"):
-                str_action = name_measure[len("do_action_"):]
+                str_action = name_measure[len("do_action_") :]
                 if str_action in self.list_actions:
                     dict_measures[name_measure] = (
                         actions == self.action_to_idx[str_action]
@@ -1409,8 +1409,8 @@ class GridworldEnv(EcoEnvironment):
 
         # # Aggregate the measures over the lifespan
         are_just_dead_agents = state.agents.are_existing_agents & (
-             ~state_new.agents.are_existing_agents
-             | (state_new.agents.age_agents < state_new.agents.age_agents)
+            ~state_new.agents.are_existing_agents
+            | (state_new.agents.age_agents < state_new.agents.age_agents)
         )
 
         # dict_metrics_lifespan = {}

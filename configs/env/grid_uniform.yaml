@@ -1,8 +1,8 @@
 name : Gridworld
 
 # The dimensions of the gridworld
-height : 200
-width : 200
+height : 220
+width : 220
 
 # Whether the env is terminal, i.e. the simulation stops when all agents are dead
 is_terminal : True
@@ -33,7 +33,7 @@ radius_sun_perception : 40
 # ======================== Food Dynamics ========================
 
 # The initial proportion of food tiles at the beginning of the simulation
-proportion_plant_initial : 0.5
+proportion_plant_initial : 0.0
 
 # The rule for a tile to be a food-tile is the following :
 # P(food spawn) = sigmoid(
@@ -63,6 +63,34 @@ radius_plant_asphyxia : 20
 
 
 
+# ======================== Fruit parameters ========================
+
+# Whether to add fruits to the simulation
+do_fruits : True
+
+# The initial proportion of fruit tiles at the beginning of the simulation
+proportion_fruit_initial : 0.0
+
+# The base probability of a non-fruit tile to grow spontaneously a fruit
+p_base_fruit_growth : 0.0035
+
+# The maximum absolute value of the energy of a fruit. The value of a fruit will vary between -max_abs and max_abs
+energy_fruit_max_abs : 10
+
+# The number of tiles of the side of a fruit cluster. Must be a divider of H and W.
+side_cluster_fruits: 11
+
+# The list of variabilities of the energy of the fruits, of length 4
+variability_fruits:
+  - 0
+  - 0.1
+  - 0.3
+  - 0.9
+
+# The variability mode, either "time" (cluster's energy value changes over time) or "space" (cluster's energy value changes over space)
+mode_variability_fruits: "space"
+
+
 # ======================== Agent Parameters ========================
 
 # A list indicating which type of observation use
@@ -75,13 +103,17 @@ list_observations:
 list_channels_visual_field:
   - plants
   - agents
+  - fruits_0
+  - fruits_1
+  - fruits_2
+  - fruits_3
 
 # A list indicating which actions the agent has to choose from
 list_actions:
   - forward
   - right
   - left
-  # - eat
+  - eat
   # - reproduce
   # - transfer
   # - nothing

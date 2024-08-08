@@ -138,6 +138,7 @@ class GridworldEnv(EcoEnvironment):
         self.width: int = config["width"]
         self.height: int = config["height"]
         self.is_terminal: bool = config["is_terminal"]
+        self.do_fruits: bool = config["do_fruits"]
         self.list_names_channels: List[str] = [
             "sun",
             "plants",
@@ -146,6 +147,8 @@ class GridworldEnv(EcoEnvironment):
         self.list_names_channels += [
             f"appearance_{i}" for i in range(config["dim_appearance"])
         ]
+        if self.do_fruits:
+            self.list_names_channels += [f"fruits_{i}" for i in range(4)]
         self.dict_name_channel_to_idx: Dict[str, int] = {
             name_channel: idx_channel
             for idx_channel, name_channel in enumerate(self.list_names_channels)
@@ -159,7 +162,9 @@ class GridworldEnv(EcoEnvironment):
             )
         self.dict_name_channel_to_idx_visual_field: Dict[str, int] = {
             name_channel: idx_channel
-            for idx_channel, name_channel in enumerate(config["list_channels_visual_field"])
+            for idx_channel, name_channel in enumerate(
+                config["list_channels_visual_field"]
+            )
         }
         self.n_channels_visual_field: int = len(self.list_indexes_channels_visual_field)
         # Metrics parameters
@@ -236,7 +241,70 @@ class GridworldEnv(EcoEnvironment):
         self.kernel_plant_asphyxia = jnp.ones(
             (config["radius_plant_asphyxia"], config["radius_plant_asphyxia"])
         ) / (config["radius_plant_asphyxia"] ** 2)
-
+        # Fruits parameters
+        if self.do_fruits:
+            self.proportion_fruit_initial: float = config["proportion_fruit_initial"]
+            self.p_base_fruit_growth: float = config["p_base_fruit_growth"]
+            self.energy_fruit_max_abs: float = config["energy_fruit_max_abs"]
+            self.side_cluster_fruits: int = config["side_cluster_fruits"]
+            assert (
+                self.height % self.side_cluster_fruits == 0
+                and self.width % self.side_cluster_fruits == 0
+            ), "The side of the cluster of fruits must divide the height and width of the map"
+            assert (
+                self.side_cluster_fruits % 2 == 1
+            ), "The side of the cluster of fruits must be odd"
+            self.range_cluster_fruits: int = self.side_cluster_fruits // 2
+            self.variability_fruits: List[float] = config["variability_fruits"]
+            self.mode_variability_fruits: str = config["mode_variability_fruits"]
+            self.coords_clusters_to_fruit_id: Dict[
+                Tuple[int, int], Tuple[int, float]
+            ] = {}
+            n_clusters_x = self.height // self.side_cluster_fruits
+            n_clusters_y = self.width // self.side_cluster_fruits
+            self.id_fruits_to_map_value_fruit_i : Dict[int, jnp.ndarray] = {}
+            for x in range(n_clusters_x):
+                for y in range(n_clusters_y):
+                    # Get the coordinates of the center of the cluster
+                    coords_center = (
+                        x * self.side_cluster_fruits + self.range_cluster_fruits,
+                        y * self.side_cluster_fruits + self.range_cluster_fruits,
+                    )
+                    # Determine the fruit identifier depending on the cluster
+                    if x % 2 == 0 and y % 2 == 0:
+                        id_fruit = 0
+                    elif x % 2 == 0 and y % 2 == 1:
+                        id_fruit = 1
+                    elif x % 2 == 1 and y % 2 == 0:
+                        id_fruit = 2
+                    else:
+                        id_fruit = 3
+                    # Assign initial value depending on the variability mode
+                    if self.mode_variability_fruits == "time":
+                        pass
+                    elif self.mode_variability_fruits == "space":
+                        w = self.variability_fruits[id_fruit]
+                        value_cluster = (
+                            self.energy_fruit_max_abs
+                            * (jnp.cos(w * jnp.pi * x))
+                            * (jnp.cos(w * jnp.pi * y))
+                        )
+                        self.id_fruits_to_map_value_fruit_i[id_fruit] = jnp.zeros(shape=(self.height, self.width))
+                        self.id_fruits_to_map_value_fruit_i[id_fruit].at[
+                            coords_center[0]
+                            - self.range_cluster_fruits : coords_center[0]
+                            + self.range_cluster_fruits
+                            + 1,
+                            coords_center[1]
+                            - self.range_cluster_fruits : coords_center[1]
+                            + self.range_cluster_fruits
+                            + 1,
+                        ].set(value_cluster)
+                    else:
+                        raise ValueError(
+                            "The mode_variability_fruits must be either 'time' or 'space'"
+                        )
+                    self.coords_clusters_to_fruit_id[coords_center] = id_fruit
         # ======================== Agent Parameters ========================
 
         # Observations
@@ -344,6 +412,28 @@ class GridworldEnv(EcoEnvironment):
                 shape=(H, W),
             )
         )
+
+        # Initialize the fruits
+        for coords_center, id_fruit in self.coords_clusters_to_fruit_id.items():
+            key_random, subkey = jax.random.split(key_random)
+            map = map.at[
+                coords_center[0]
+                - self.range_cluster_fruits : coords_center[0]
+                + self.range_cluster_fruits
+                + 1,
+                coords_center[1]
+                - self.range_cluster_fruits : coords_center[1]
+                + self.range_cluster_fruits
+                + 1,
+                self.dict_name_channel_to_idx[f"fruits_{id_fruit}"],
+            ].set(
+                jax.random.bernoulli(
+                    key=subkey,
+                    p=self.proportion_fruit_initial,
+                    shape=(self.side_cluster_fruits, self.side_cluster_fruits),
+                )
+            )
+
         # Initialize the agents
         key_random, subkey = jax.random.split(key_random)
         are_existing_agents = jnp.array(
@@ -527,7 +617,14 @@ class GridworldEnv(EcoEnvironment):
 
         # Update the state
         map_new = state.map.at[:, :, idx_agents].set(map_agents_new)
-        map_new = map_new.at[:, :, idx_agents + 1 :].set(map_appearances_new)
+        map_new = map_new.at[
+            :,
+            :,
+            [
+                self.dict_name_channel_to_idx[f"appearance_{i}"]
+                for i in range(self.config["dim_appearance"])
+            ],
+        ].set(map_appearances_new)
         state: StateEnvGridworld = state.replace(
             map=map_new,
             timestep=t + 1,
@@ -666,11 +763,10 @@ class GridworldEnv(EcoEnvironment):
                     filename=f"{self.dir_videos}/videos_agents/video_agent_{max(0, t-self.n_steps_per_video)}_to_{t}.mp4",
                     video=state.video_agent,
                 )
-                
+
         # Signal if env terminated
         if ~jnp.any(state.agents.are_existing_agents):
             tqdm.write("Environment is done.")
-            
 
     # ================== Helper functions ==================
 
@@ -774,6 +870,35 @@ class GridworldEnv(EcoEnvironment):
         )
         return state.replace(map=state.map.at[:, :, idx_plants].set(map_plants))
 
+    def step_grow_fruits(
+        self, state: StateEnvGridworld, key_random: jnp.ndarray
+    ) -> StateEnvGridworld:
+        """Grow fruits.
+        """    
+        map = state.map    
+        for coords_center, id_fruit in self.coords_clusters_to_fruit_id.items():
+            key_random, subkey = jax.random.split(key_random)
+            idx_fruit_i = self.dict_name_channel_to_idx[f"fruits_{id_fruit}"]            
+            map = map.at[
+                coords_center[0]
+                - self.range_cluster_fruits : coords_center[0]
+                + self.range_cluster_fruits
+                + 1,
+                coords_center[1]
+                - self.range_cluster_fruits : coords_center[1]
+                + self.range_cluster_fruits
+                + 1,
+                idx_fruit_i,
+            ].add(
+                jax.random.bernoulli(
+                    key=subkey,
+                    p=self.p_base_fruit_growth,
+                    shape=(self.side_cluster_fruits, self.side_cluster_fruits),
+                )
+            )
+            map = map.at[:, :, idx_fruit_i].set(jnp.clip(map[:, :, idx_fruit_i], 0, 1))
+        return state.replace(map=map)
+        
     def step_update_sun(
         self, state: StateEnvGridworld, key_random: jnp.ndarray
     ) -> StateEnvGridworld:
@@ -822,6 +947,30 @@ class GridworldEnv(EcoEnvironment):
             ),
         )
 
+    def get_map_fruit_energy(self, state: StateEnvGridworld, id_fruit: int, key_random: jnp.ndarray) -> jnp.ndarray:
+        """Get the map of the energy of the fruits, as an array of shape (H, W).
+
+        Args:
+            state (StateEnvGridworld): the state of the environment
+            id_fruit (int): the indicator of the fruit, between 0 and 3
+            key_random (jnp.ndarray): the random key
+
+        Returns:
+            jnp.ndarray: the map of the energy of the fruits, as an array of shape (H, W)
+        """
+        idx_fruit_i = self.dict_name_channel_to_idx[f"fruits_{id_fruit}"]
+        map_fruits = state.map[:, :, idx_fruit_i] # (H, W), whether there is a fruit
+        if self.mode_variability_fruits == "space":
+            map_value_fruit_i = self.id_fruits_to_map_value_fruit_i[id_fruit]
+            return map_fruits * map_value_fruit_i
+        elif self.mode_variability_fruits == "time":
+            w = self.variability_fruits[id_fruit]
+            t = state.timestep
+            value_fruit = self.energy_fruit_max_abs * jnp.cos(2 * jnp.pi * w * t / self.age_max)
+            return map_fruits * value_fruit
+        else:
+            raise ValueError(f"Unknown mode_variability_fruits: {self.mode_variability_fruits}")
+    
     def get_single_agent_new_position_and_orientation(
         self,
         agent_position: jnp.ndarray,
@@ -926,9 +1075,16 @@ class GridworldEnv(EcoEnvironment):
             .add(are_agents_eating)
         )  # map of the number of (existing) agents trying to eat at each cell
 
-        map_food_energy_bonus_available_per_agent = (
-            self.energy_food * map_plants / jnp.maximum(1, map_agents_try_eating)
-        )  # map of the energy available at each cell per (existing) agent trying to eat
+        # ====== Compute the energy bonus obtainable on each tile ======
+        # Add the energy bonus from the plants
+        map_food_energy_bonus_available_per_agent = self.energy_food * map_plants
+        # Add the energy bonus from the fruits
+        if self.do_fruits:
+            for id_fruit in range(4):
+                map_fruit_energy = self.get_map_fruit_energy(state=state, id_fruit=id_fruit, key_random=key_random)
+                map_food_energy_bonus_available_per_agent += map_fruit_energy
+                    
+        map_food_energy_bonus_available_per_agent /= jnp.maximum(1, map_agents_try_eating) # divide by the number of agents trying to eat at each cell
         food_energy_bonus = (
             map_food_energy_bonus_available_per_agent[
                 positions_agents_new[:, 0], positions_agents_new[:, 1]
@@ -939,10 +1095,16 @@ class GridworldEnv(EcoEnvironment):
             dict_measures["amount_food_eaten"] = food_energy_bonus
         energy_agents_new = state.agents.energy_agents + food_energy_bonus
 
-        # Remove plants that have been eaten
-        map_plants -= map_agents_try_eating * map_plants
-        map_plants = jnp.clip(map_plants, 0, 1)
-
+        # Remove plants and fruits that have been eaten        
+        map = state.map
+        indexes_plants_and_fruits = [idx_plants] + [
+            self.dict_name_channel_to_idx[f"fruits_{i}"]
+            for i in range(4)
+        ]
+        for idx in indexes_plants_and_fruits:
+            map = map.at[:, :, idx].set(map[:, :, idx] - map_agents_try_eating * map[:, :, idx])
+        state = state.replace(map = map)
+        
         # ====== Handle any energy transfer actions ======
         if "transfer" in self.list_actions:
             # Check if any agents are transferring energy
@@ -1010,7 +1172,7 @@ class GridworldEnv(EcoEnvironment):
             appearance_agents=appearance_agents_new,
         )
         state = state.replace(
-            map=state.map.at[:, :, idx_plants].set(map_plants),
+            # map=state.map.at[:, :, idx_plants].set(map_plants),
             agents=agents_new,
         )
 
@@ -1020,7 +1182,10 @@ class GridworldEnv(EcoEnvironment):
         # Grow plants
         key_random, subkey = jax.random.split(key_random)
         state = self.step_grow_plants(state=state, key_random=subkey)
-
+        # Grow fruits
+        if self.do_fruits:
+            key_random, subkey = jax.random.split(key_random)
+            state = self.step_grow_fruits(state=state, key_random=subkey)
         # Return the new state, as well as some metrics
         return state, dict_measures
 
@@ -1258,6 +1423,13 @@ class GridworldEnv(EcoEnvironment):
                 dict_measures["n_agents"] = jnp.sum(state.agents.are_existing_agents)
             elif name_measure == "n_plants":
                 dict_measures["n_plants"] = jnp.sum(state.map[..., idx_plants])
+            elif name_measure == "values_fruits":
+                for i in range(4):
+                    idx_fruit_i = self.dict_name_channel_to_idx[f"fruits_{i}"]
+                    if self.mode_variability_fruits == "time":
+                        w = self.variability_fruits[i]
+                        t = state.timestep
+                        value_fruit = self.energy_fruit_max_abs * jnp.cos(2 * jnp.pi * w * t / self.age_max)
             elif name_measure == "group_size":
                 group_sizes = compute_group_sizes(state.map[..., idx_agents])
                 dict_measures["average_group_size"] = group_sizes.mean()
@@ -1286,12 +1458,16 @@ class GridworldEnv(EcoEnvironment):
                     ]
             # Behavior measures (requires state_species)
             elif name_measure in self.config["metrics"]["measures"]["behavior"]:
-                assert isinstance(self.agent_species, AgentSpecies), f"For behavior measure, you need to give an agent species as attribute of the env after both creation : env.agent_species = agent_species"
-                dict_measures.update(self.compute_behavior_measure(
-                    state_species=state_species,
-                    key_random=key_random,
-                    name_measure=name_measure,
-                ))
+                assert isinstance(
+                    self.agent_species, AgentSpecies
+                ), f"For behavior measure, you need to give an agent species as attribute of the env after both creation : env.agent_species = agent_species"
+                dict_measures.update(
+                    self.compute_behavior_measure(
+                        state_species=state_species,
+                        key_random=key_random,
+                        name_measure=name_measure,
+                    )
+                )
             else:
                 pass  # Pass this measure as it may be computed in other parts of the code
 
@@ -1392,10 +1568,10 @@ class GridworldEnv(EcoEnvironment):
             n = self.n_agents_max
             v = self.vision_range_agent
             names_action_to_xy = {
-                "forward": (jnp.full(n, v+1), jnp.full(n, v)),
-                "left": (jnp.full(n, v), jnp.full(n, v-1)),
-                "right": (jnp.full(n, v), jnp.full(n, v+1)),
-                "backward": (jnp.full(n, v-1), jnp.full(n, v)),
+                "forward": (jnp.full(n, v + 1), jnp.full(n, v)),
+                "left": (jnp.full(n, v), jnp.full(n, v - 1)),
+                "right": (jnp.full(n, v), jnp.full(n, v + 1)),
+                "backward": (jnp.full(n, v - 1), jnp.full(n, v)),
             }
             names_action_to_xy = {
                 key: xy
@@ -1467,21 +1643,22 @@ class GridworldEnv(EcoEnvironment):
             )
         return dict_measures
 
-
     def obs_idx_to_meaning(self) -> Dict[str, str]:
         # Assume MLP model with visual field in first position
         idx_plant = self.dict_name_channel_to_idx["plants"]
         v = self.vision_range_agent
         side = 2 * v + 1
-        return {idx_plant * side ** 2 + (v+1) * side + v : "PlantInFront",
-                idx_plant * side ** 2 + v * side + v-1 : "PlantToLeft",
-                idx_plant * side ** 2 + v * side + v+1 : "PlantToRight",
-                idx_plant * side ** 2 + (v-1) * side + v : "PlantBehind"
-            }
-    
+        return {
+            idx_plant * side**2 + (v + 1) * side + v: "PlantInFront",
+            idx_plant * side**2 + v * side + v - 1: "PlantToLeft",
+            idx_plant * side**2 + v * side + v + 1: "PlantToRight",
+            idx_plant * side**2 + (v - 1) * side + v: "PlantBehind",
+        }
+
     def action_idx_to_meaning(self) -> Dict[int, str]:
-        return {idx : action_str for action_str, idx in self.action_to_idx.items()}
-    
+        return {idx: action_str for action_str, idx in self.action_to_idx.items()}
+
+
 # ================== Helper functions ==================
 
 

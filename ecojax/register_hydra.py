@@ -20,7 +20,7 @@ def register_hydra_resolvers():
     
     Example usage :
     ```yaml
-    # config.yaml
+    # configs/default.yaml
     key1: value1
     key2: ${eval:'${key1} /2'}
     ```

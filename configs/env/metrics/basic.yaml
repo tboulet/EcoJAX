@@ -74,4 +74,8 @@ config_video:
     "sun" : "yellow"
     "plants" : "green"
     "agents" : "blue"
+    "fruits_0" : "red"
+    "fruits_1" : "orange"
+    "fruits_2" : "purple"
+    "fruits_3" : "pink"
   color_background : "gray"

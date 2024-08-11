@@ -517,6 +517,7 @@ class GridworldEnv(EcoEnvironment):
         ) = self.step_reproduce_agents(
             state=state_new, actions=actions, key_random=subkey
         )
+        dict_measures["are_newborns"] = are_newborns_agents
         dict_measures_all.update(dict_measures)
         state_new = update_agent_map(state_new)
 
@@ -560,7 +561,7 @@ class GridworldEnv(EcoEnvironment):
         dict_measures_all.update(dict_measures)
 
         # ============ (4) Get the ecological information ============
-        are_just_dead_agents = state_new.agents.are_existing_agents & (
+        are_just_dead_agents = state.agents.are_existing_agents & (
             ~state_new.agents.are_existing_agents
             | (state_new.agents.age_agents < state_new.agents.age_agents)
         )
@@ -597,10 +598,10 @@ class GridworldEnv(EcoEnvironment):
                 )
 
         # Update and compute the metrics
-        state_new, dict_metrics = self.compute_metrics(
-            state=state, state_new=state_new, dict_measures=dict_measures_all
-        )
-        info = {"metrics": dict_metrics}
+        # state_new, dict_metrics = self.compute_metrics(
+        #     state=state, state_new=state_new, dict_measures=dict_measures_all
+        # )
+        info = {"metrics": dict_measures_all}
 
         # ============ (7) Manage the video ============
         # Reset the video to empty if t = 0 mod n_steps_per_video
@@ -812,6 +813,7 @@ class GridworldEnv(EcoEnvironment):
             1,
         )
         is_moving &= jax.random.bernoulli(key_random, p=success_probs).astype(int)
+
         return jnp.where(
             is_moving[:, None],
             facing_positions,
@@ -841,7 +843,7 @@ class GridworldEnv(EcoEnvironment):
         new_orientations = self.compute_new_orientations(
             state.agents.orientation_agents, actions
         )
-        return new_positions, new_orientations
+        return new_positions, new_orientations, facing_positions
 
     def move_agents_enforce_single_occupancy(
         self, key_random: jnp.ndarray, state: StateEnvGridworld, actions: jnp.ndarray
@@ -852,11 +854,11 @@ class GridworldEnv(EcoEnvironment):
         # first we need to filter the set of agents that are
         # trying to move to ensure that no agent moves to an occupied cell, and at most
         # one agent moves into any free cell.
-        is_moving = (actions == self.action_to_idx["forward"]).astype(jnp.int32)
+        is_attempting_move = (actions == self.action_to_idx["forward"]).astype(jnp.int32)
         facing_positions = jax.vmap(self.get_facing_pos, in_axes=(0, 0))(
             state.agents.positions_agents, state.agents.orientation_agents
         )
-        is_moving &= agent_map[facing_positions[:, 0], facing_positions[:, 1]] == 0
+        is_moving = is_attempting_move & (agent_map[facing_positions[:, 0], facing_positions[:, 1]] == 0)
 
         facing_tiles = facing_positions[:, 0] * W + facing_positions[:, 1]
         indices = jnp.lexsort((jnp.arange(self.n_agents_max), facing_tiles))
@@ -880,7 +882,7 @@ class GridworldEnv(EcoEnvironment):
             state.agents.orientation_agents, actions
         )
 
-        return new_positions, new_orientations
+        return new_positions, new_orientations, facing_positions
 
     def step_action_agents(
         self,
@@ -902,10 +904,25 @@ class GridworldEnv(EcoEnvironment):
             if self.allow_multiple_agents_per_tile
             else self.move_agents_enforce_single_occupancy
         )
-
-        positions_agents_new, orientation_agents_new = move_func(
+        positions_agents_new, orientation_agents_new, facing_positions = move_func(
             key_random, state, actions
         )
+
+        # FOR FEEDING EXPERIMENTS:
+        # we want to determine the number of agents facing a tile containing another
+        # agent, and then the number of those agents where the agent they're
+        # facing is their offspring
+        def facing_offspring(idx):
+            same_pos = jnp.all(
+                state.agents.positions_agents == facing_positions[idx],
+                axis=-1
+            ).astype(int)
+            is_offspring = (state.agents.parent_agents == idx).astype(int)
+            return jnp.sum(same_pos), jnp.sum(same_pos * is_offspring)
+
+        facing_agents, facing_offsprings = jax.vmap(facing_offspring)(jnp.arange(self.n_agents_max))
+        dict_measures["num_facing_agent"] = jnp.sum(facing_agents)
+        dict_measures["num_facing_offspring"] = jnp.sum(facing_offsprings)
 
         # ====== Perform the eating action of the agents ======
         if "eat" in self.list_actions:
@@ -969,46 +986,47 @@ class GridworldEnv(EcoEnvironment):
                     -loss
                 ) + (gain * are_receiving).astype(jnp.float32)
 
-                # compute age difference
-                num_recv = jnp.sum(are_receiving)
-                avg_recv_age = jnp.sum(
-                    state.agents.age_agents * are_receiving
-                ) / jnp.maximum(1, num_recv)
-                age_diff = state.agents.age_agents[i] - avg_recv_age
+                # # compute age difference
+                # num_recv = jnp.sum(are_receiving)
+                # avg_recv_age = jnp.sum(
+                #     state.agents.age_agents * are_receiving
+                # ) / jnp.maximum(1, num_recv)
+                # age_diff = state.agents.age_agents[i] - avg_recv_age
 
                 # determine if transfer is to offspring
-                # this is hacky but works IFF we can guarantee that max 1 agent receives transfer
-                recv_parent = jnp.sum(
-                    state.agents.parent_agents * are_receiving
-                ).astype(int)
+                # NOTE - assumes transfer is to only one agent
+                recv_agent = jnp.argmax(are_receiving)
+                recv_parent = state.agents.parent_agents[recv_agent]
                 is_to_offspring = (
                     is_transfer
-                    & (state.agents.parent_agents[i] == recv_parent)
-                    & (recv_parent != self.fill_value)
+                    & (recv_parent == i)
                 )
 
-                return (delta_energy, is_transfer, age_diff, is_to_offspring)
+                return (delta_energy, is_transfer, recv_agent, is_to_offspring)
 
-            transfer_delta_energy, is_transfer, age_diffs, to_offspring = jax.vmap(
+            transfer_delta_energy, is_transfer, recv_agents, to_offspring = jax.vmap(
                 per_agent_helper_fn, in_axes=0
-            )(jnp.arange(state.agents.energy_agents.size))
+            )(jnp.arange(self.n_agents_max))
             energy_agents_new += transfer_delta_energy.sum(axis=0)
 
             # log some metrics
-            if "transfer_success_rate" in self.names_measures:
-                dict_measures["transfer_success_rate"] = jnp.sum(is_transfer) / jnp.sum(
-                    are_agents_transferring
-                )
-            if "transfer_age_diff" in self.names_measures:
-                dict_measures["transfer_age_diff"] = jnp.sum(
-                    age_diffs * is_transfer
-                ) / jnp.maximum(1, jnp.sum(is_transfer))
+            dict_measures["feeders"] = is_transfer
+            dict_measures["feedees"] = recv_agents
+            dict_measures["to_offspring"] = to_offspring
+            # if "transfer_success_rate" in self.names_measures:
+            #     dict_measures["transfer_success_rate"] = jnp.sum(is_transfer) / jnp.sum(
+            #         are_agents_transferring
+            #     )
+            # if "transfer_age_diff" in self.names_measures:
+            #     dict_measures["transfer_age_diff"] = jnp.sum(
+            #         age_diffs * is_transfer
+            #     ) / jnp.maximum(1, jnp.sum(is_transfer))
             if "num_transfers" in self.names_measures:
                 dict_measures["num_transfers"] = jnp.sum(is_transfer)
-            if "transfer_proportion_to_offspring" in self.names_measures:
-                dict_measures["transfer_proportion_to_offspring"] = jnp.sum(
-                    to_offspring
-                ) / jnp.maximum(1, jnp.sum(is_transfer))
+            # if "transfer_proportion_to_offspring" in self.names_measures:
+            #     dict_measures["transfer_proportion_to_offspring"] = jnp.sum(
+            #         to_offspring
+            #     ) / jnp.maximum(1, jnp.sum(is_transfer))
 
         # ====== Update the physical status of the agents ======
         idle_agents = state.agents.are_existing_agents & (
@@ -1031,9 +1049,14 @@ class GridworldEnv(EcoEnvironment):
         )
         if "life_expectancy" in self.names_measures:
             just_died = state.agents.are_existing_agents & ~are_existing_agents_new
-            le = jnp.sum(just_died * state.agents.age_agents) / jnp.maximum(
-                1, jnp.sum(just_died)
+            le = jnp.where(
+                just_died,
+                state.agents.age_agents,
+                jnp.nan
             )
+            # le = jnp.sum(just_died * state.agents.age_agents) / jnp.maximum(
+            #     1, jnp.sum(just_died)
+            # )
             dict_measures["life_expectancy"] = le
 
         appearance_agents_new = (
@@ -1373,45 +1396,45 @@ class GridworldEnv(EcoEnvironment):
                     dict_measures[f"appearance_{i}"] = state.agents.appearance_agents[
                         :, i
                     ]
-            # Behavior measures (requires state_species)
-            elif name_measure in self.config["metrics"]["measures"]["behavior"]:
-                assert isinstance(
-                    self.agent_species, AgentSpecies
-                ), f"For behavior measure, you need to give an agent species as attribute of the env after both creation : env.agent_species = agent_species"
-                dict_measures.update(
-                    self.compute_behavior_measure(
-                        state_species=state_species,
-                        key_random=key_random,
-                        name_measure=name_measure,
-                    )
-                )
-            else:
-                pass  # Pass this measure as it may be computed in other parts of the code
+            # # Behavior measures (requires state_species)
+            # elif name_measure in self.config["metrics"]["measures"]["behavior"]:
+            #     assert isinstance(
+            #         self.agent_species, AgentSpecies
+            #     ), f"For behavior measure, you need to give an agent species as attribute of the env after both creation : env.agent_species = agent_species"
+            #     dict_measures.update(
+            #         self.compute_behavior_measure(
+            #             state_species=state_species,
+            #             key_random=key_random,
+            #             name_measure=name_measure,
+            #         )
+            #     )
+            # else:
+            #     pass  # Pass this measure as it may be computed in other parts of the code
 
         # Return the dictionary of measures
         return dict_measures
 
-    def compute_metrics(
-        self,
-        state: StateEnvGridworld,
-        state_new: StateEnvGridworld,
-        dict_measures: Dict[str, jnp.ndarray],
-    ):
+    # def compute_metrics(
+    #     self,
+    #     state: StateEnvGridworld,
+    #     state_new: StateEnvGridworld,
+    #     dict_measures: Dict[str, jnp.ndarray],
+    # ):
 
         # Set the measures to NaN for the agents that are not existing
-        for name_measure, measures in dict_measures.items():
-            if name_measure not in self.config["metrics"]["measures"]["environmental"]:
-                dict_measures[name_measure] = jnp.where(
-                    state_new.agents.are_existing_agents,
-                    measures,
-                    jnp.nan,
-                )
+        # for name_measure, measures in dict_measures.items():
+        #     if name_measure not in self.config["metrics"]["measures"]["environmental"] + ["life_expectancy"]:
+        #         dict_measures[name_measure] = jnp.where(
+        #             state_new.agents.are_existing_agents,
+        #             measures,
+        #             jnp.nan,
+        #         )
 
         # # Aggregate the measures over the lifespan
-        are_just_dead_agents = state.agents.are_existing_agents & (
-            ~state_new.agents.are_existing_agents
-            | (state_new.agents.age_agents < state_new.agents.age_agents)
-        )
+        # are_just_dead_agents = state.agents.are_existing_agents & (
+        #     ~state_new.agents.are_existing_agents
+        #     | (state_new.agents.age_agents < state_new.agents.age_agents)
+        # )
 
         # dict_metrics_lifespan = {}
         # new_list_metrics_lifespan = []
@@ -1428,39 +1451,39 @@ class GridworldEnv(EcoEnvironment):
         # state_new_new = state_new.replace(metrics_lifespan=new_list_metrics_lifespan)
 
         # Aggregate the measures over the population
-        dict_metrics_population = {}
-        new_list_metrics_population = []
-        for agg, metrics in zip(self.aggregators_population, state.metrics_population):
-            new_metrics = agg.update_metrics(
-                metrics=metrics,
-                dict_measures=dict_measures,
-                are_alive=state_new.agents.are_existing_agents,
-                are_just_dead=are_just_dead_agents,
-                ages=state_new.agents.age_agents,
-            )
-            dict_metrics_population.update(agg.get_dict_metrics(new_metrics))
-            new_list_metrics_population.append(new_metrics)
-        state_new_new = state_new.replace(
-            metrics_population=new_list_metrics_population
-        )
+        # dict_metrics_population = {}
+        # new_list_metrics_population = []
+        # for agg, metrics in zip(self.aggregators_population, state.metrics_population):
+        #     new_metrics = agg.update_metrics(
+        #         metrics=metrics,
+        #         dict_measures=dict_measures,
+        #         are_alive=state_new.agents.are_existing_agents,
+        #         are_just_dead=are_just_dead_agents,
+        #         ages=state_new.agents.age_agents,
+        #     )
+        #     dict_metrics_population.update(agg.get_dict_metrics(new_metrics))
+        #     new_list_metrics_population.append(new_metrics)
+        # state_new_new = state_new.replace(
+        #     metrics_population=new_list_metrics_population
+        # )
 
         # Get the final metrics
-        dict_metrics = {
-            **dict_measures,
-            # **dict_metrics_lifespan,
-            **dict_metrics_population,
-        }
+        # dict_metrics = {
+        #     **dict_measures,
+        #     # **dict_metrics_lifespan,
+        #     **dict_metrics_population,
+        # }
 
-        # Arrange metrics in right format
-        for name_metric in list(dict_metrics.keys()):
-            *names, name_measure = name_metric.split("/")
-            if len(names) == 0:
-                name_metric_new = name_measure
-            else:
-                name_metric_new = f"{name_measure}/{' '.join(names[::-1])}"
-            dict_metrics[name_metric_new] = dict_metrics.pop(name_metric)
+        # # Arrange metrics in right format
+        # for name_metric in list(dict_metrics.keys()):
+        #     *names, name_measure = name_metric.split("/")
+        #     if len(names) == 0:
+        #         name_metric_new = name_measure
+        #     else:
+        #         name_metric_new = f"{name_measure}/{' '.join(names[::-1])}"
+        #     dict_metrics[name_metric_new] = dict_metrics.pop(name_metric)
 
-        return state_new_new, dict_metrics
+        # return state_new_new, dict_metrics
 
 
 # ================== Helper functions ==================

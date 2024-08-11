@@ -3,9 +3,9 @@ measures:
   global:
     - params_agents
   immediate: []
-  state:
-    - strength_mutation
-    - weights_agents
+  state: []
+    # - strength_mutation
+    # - weights_agents
   behavior: []
 
 aggregators_lifespan: []

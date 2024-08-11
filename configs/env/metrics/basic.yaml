@@ -6,6 +6,8 @@ measures:
     - num_transfers
     - transfer_age_diff
     - transfer_proportion_to_offspring
+    - num_facing_agent
+    - num_facing_offspring
     - eat_success_rate
     - transfer_success_rate
     - reproduce_success_rate

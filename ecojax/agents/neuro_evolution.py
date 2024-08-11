@@ -309,12 +309,13 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
         agent.replace(age=agent.age + 1)
         # ============== Measures ==============
         probs = jax.nn.softmax(logits)
-        dict_measures = {
-            "prob_max": jnp.max(probs),
-            "prob_min": jnp.min(probs),
-            "prob_median": jnp.median(probs),
-            "entropy": -jnp.sum(probs * jnp.log(probs)),
-        }
+        # dict_measures = {
+        #     "prob_max": jnp.max(probs),
+        #     "prob_min": jnp.min(probs),
+        #     "prob_median": jnp.median(probs),
+        #     "entropy": -jnp.sum(probs * jnp.log(probs)),
+        # }
+        dict_measures = {}
         # Update the agent's state and act
         return agent, action, dict_measures
 

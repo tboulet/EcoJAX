@@ -20,6 +20,9 @@ measures:
     - age
     - x
     - appearance
+    - do_eat_iff_ressource
+    - do_eat_if_ressource
+    - dont_eat_if_no_ressource
   behavior:
     # []
     - appetite

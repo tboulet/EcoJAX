@@ -204,10 +204,12 @@ class AggregatorLifespanCumulative(Aggregator):
                         condlist=[
                             ~are_alive,
                             ages == 1,
+                            value_measure == jnp.nan,
                         ],
                         choicelist=[
                             jnp.nan,
                             value_measure,
+                            value_metric,
                         ],
                         default=value_metric + value_measure,
                     )
@@ -253,10 +255,12 @@ class AggregatorLifespanAverage(Aggregator):
                         condlist=[
                             ~are_alive,
                             ages == 1,
+                            value_measure == jnp.nan,
                         ],
                         choicelist=[
                             jnp.nan,
                             value_measure,
+                            value_metric,
                         ],
                         default=(value_metric * (ages - 1) + value_measure) / ages,
                     )
@@ -306,10 +310,12 @@ class AggregatorLifespanVariation(Aggregator):
                     condlist=[
                         ~are_alive,
                         ages == 1,
+                        value_measure == jnp.nan,
                     ],
                     choicelist=[
                         jnp.nan,
                         value_measure,
+                        first_value,
                     ],
                     default=first_value,
                 )
@@ -319,10 +325,12 @@ class AggregatorLifespanVariation(Aggregator):
                         condlist=[
                             ~are_alive,
                             ages == 1,
+                            value_measure == jnp.nan,
                         ],
                         choicelist=[
                             jnp.nan,
                             0,
+                            jnp.nan,
                         ],
                         default=value_measure - first_value,
                     )

@@ -38,3 +38,11 @@ class BaseLogger(ABC):
     ):
         """Log ecp metrics"""
         pass
+    
+    def log_maps(
+        self,
+        dict_maps: Dict[str, List[List[float]]],
+        timestep: int,
+    ):
+        """Log dictionary of maps"""
+        pass

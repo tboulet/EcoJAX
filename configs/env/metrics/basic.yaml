@@ -5,6 +5,7 @@ measures:
     - n_plants
     - net_energy_transfer_per_capita
     # - group_size # commented for now cause it's only implemented through a non jittable function
+    - values_fruits
   immediate:
     - do_action_eat
     - do_action_transfer

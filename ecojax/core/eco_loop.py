@@ -131,10 +131,11 @@ def eco_loop(
 
         # Log the metrics
         metrics_global.update(get_runtime_metrics())
-        metrics_scalar, metrics_histogram = get_dict_metrics_by_type(metrics_global)
+        metrics_scalar, metrics_histogram, metrics_map = get_dict_metrics_by_type(metrics_global)
         for logger in list_loggers:
             logger.log_scalars(metrics_scalar, t)
             logger.log_histograms(metrics_histogram, t)
+            logger.log_maps(metrics_map, t)
             logger.log_eco_metrics(global_state.eco_information, t)
 
     def step_eco_loop(x: Tuple[StateGlobal, Dict[str, Any]]) -> jnp.ndarray:
@@ -210,10 +211,11 @@ def eco_loop(
     metrics_env = info_env.get("metrics", {})
     metrics_species = info_species.get("metrics", {})
     metrics_global = {**metrics_env, **metrics_species}
-    metrics_scalar, metrics_histogram = get_dict_metrics_by_type(metrics_global)
+    metrics_scalar, metrics_histogram, metrics_map = get_dict_metrics_by_type(metrics_global)
     for logger in list_loggers:
         logger.log_scalars(metrics_scalar, timestep=0)
         logger.log_histograms(metrics_histogram, timestep=0)
+        logger.log_maps(metrics_map, timestep=0)
         logger.log_eco_metrics(eco_information, timestep=0)
     info = {"metrics": metrics_global}
 

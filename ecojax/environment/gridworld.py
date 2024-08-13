@@ -260,11 +260,11 @@ class GridworldEnv(EcoEnvironment):
             self.coords_clusters_to_fruit_id: Dict[
                 Tuple[int, int], Tuple[int, float]
             ] = {}
-            n_clusters_x = self.height // self.side_cluster_fruits
-            n_clusters_y = self.width // self.side_cluster_fruits
-            self.id_fruits_to_map_value_fruit_i : Dict[int, jnp.ndarray] = {}
-            for x in range(n_clusters_x):
-                for y in range(n_clusters_y):
+            self.n_clusters_x = self.height // self.side_cluster_fruits
+            self.n_clusters_y = self.width // self.side_cluster_fruits
+            self.id_fruits_to_map_value_fruit_i : Dict[int, jnp.ndarray] = {id_fruit : jnp.zeros(shape=(self.height, self.width)) for id_fruit in range(4)}
+            for x in range(self.n_clusters_x):
+                for y in range(self.n_clusters_y):
                     # Get the coordinates of the center of the cluster
                     coords_center = (
                         x * self.side_cluster_fruits + self.range_cluster_fruits,
@@ -289,8 +289,7 @@ class GridworldEnv(EcoEnvironment):
                             * (jnp.cos(w * jnp.pi * x))
                             * (jnp.cos(w * jnp.pi * y))
                         )
-                        self.id_fruits_to_map_value_fruit_i[id_fruit] = jnp.zeros(shape=(self.height, self.width))
-                        self.id_fruits_to_map_value_fruit_i[id_fruit].at[
+                        self.id_fruits_to_map_value_fruit_i[id_fruit] = self.id_fruits_to_map_value_fruit_i[id_fruit].at[
                             coords_center[0]
                             - self.range_cluster_fruits : coords_center[0]
                             + self.range_cluster_fruits
@@ -669,15 +668,6 @@ class GridworldEnv(EcoEnvironment):
             state_species=state_species,
         )
         dict_measures_all.update(dict_measures)
-
-        # Set the measures to NaN for the agents that are not existing
-        for name_measure, measures in dict_measures_all.items():
-            if name_measure not in self.config["metrics"]["measures"]["environmental"]:
-                dict_measures_all[name_measure] = jnp.where(
-                    state.agents.are_existing_agents,
-                    measures,
-                    jnp.nan,
-                )
 
         # Update and compute the metrics
         state, dict_metrics = self.compute_metrics(
@@ -1424,12 +1414,36 @@ class GridworldEnv(EcoEnvironment):
             elif name_measure == "n_plants":
                 dict_measures["n_plants"] = jnp.sum(state.map[..., idx_plants])
             elif name_measure == "values_fruits":
-                for i in range(4):
-                    idx_fruit_i = self.dict_name_channel_to_idx[f"fruits_{i}"]
-                    if self.mode_variability_fruits == "time":
-                        w = self.variability_fruits[i]
+                if self.mode_variability_fruits == "time":
+                    for id_fruit in range(4):
+                        w = self.variability_fruits[id_fruit]
                         t = state.timestep
                         value_fruit = self.energy_fruit_max_abs * jnp.cos(2 * jnp.pi * w * t / self.age_max)
+                        dict_measures[f"value_fruits {id_fruit}/value_fruits"] = value_fruit
+                elif self.mode_variability_fruits == "space":
+                    id_fruits_to_minimap_value_fruit_i : Dict[int, jnp.ndarray] = {id_fruit : jnp.zeros((self.n_clusters_x, self.n_clusters_y)) for id_fruit in range(4)}
+                    for x in range(self.n_clusters_x):
+                        for y in range(self.n_clusters_y):
+                            # Get the coordinates of the center of the cluster
+                            coords_center = (
+                                x * self.side_cluster_fruits + self.range_cluster_fruits,
+                                y * self.side_cluster_fruits + self.range_cluster_fruits,
+                            )
+                            # Determine the fruit identifier depending on the cluster
+                            if x % 2 == 0 and y % 2 == 0:
+                                id_fruit = 0
+                            elif x % 2 == 0 and y % 2 == 1:
+                                id_fruit = 1
+                            elif x % 2 == 1 and y % 2 == 0:
+                                id_fruit = 2
+                            else:
+                                id_fruit = 3
+                            value_fruit = self.id_fruits_to_map_value_fruit_i[id_fruit][coords_center[0], coords_center[1]]
+                            id_fruits_to_minimap_value_fruit_i[id_fruit] = id_fruits_to_minimap_value_fruit_i[id_fruit].at[x, y].set(value_fruit)
+                    for id_fruit in range(4):
+                        dict_measures[f"minimap_value_fruits {id_fruit}"] = id_fruits_to_minimap_value_fruit_i[id_fruit]        
+                else:
+                    raise ValueError(f"Unknown mode_variability_fruits: {self.mode_variability_fruits}")
             elif name_measure == "group_size":
                 group_sizes = compute_group_sizes(state.map[..., idx_agents])
                 dict_measures["average_group_size"] = group_sizes.mean()
@@ -1452,9 +1466,9 @@ class GridworldEnv(EcoEnvironment):
             elif name_measure == "y":
                 dict_measures[name_measure] = state.agents.positions_agents[:, 1]
             elif name_measure == "appearance":
-                for i in range(self.config["dim_appearance"]):
-                    dict_measures[f"appearance_{i}"] = state.agents.appearance_agents[
-                        :, i
+                for id_fruit in range(self.config["dim_appearance"]):
+                    dict_measures[f"appearance_{id_fruit}"] = state.agents.appearance_agents[
+                        :, id_fruit
                     ]
             # Behavior measures (requires state_species)
             elif name_measure in self.config["metrics"]["measures"]["behavior"]:
@@ -1484,8 +1498,16 @@ class GridworldEnv(EcoEnvironment):
         # Set the measures to NaN for the agents that are not existing
         for name_measure, measures in dict_measures.items():
             if name_measure not in self.config["metrics"]["measures"]["environmental"]:
+                # Skip the measures that are not of shape (n_max_agents, ...)
+                if measures.shape[0] != self.n_agents_max:
+                    continue
+                # Expand the mask to the shape of the measures
+                mask = state.agents.are_existing_agents
+                for _ in range(measures.ndim - 1):
+                    mask = jnp.expand_dims(mask, axis=-1)
+                # Turn to NaN the measures of the agents that are not existing
                 dict_measures[name_measure] = jnp.where(
-                    state_new.agents.are_existing_agents,
+                    mask,
                     measures,
                     jnp.nan,
                 )

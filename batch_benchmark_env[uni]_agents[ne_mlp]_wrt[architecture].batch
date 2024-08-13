@@ -46,7 +46,7 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 # Iterate over the seeds
 seed_max=10
-benchmark_name='benchmark_architecture'
+benchmark_name='benchmark_architecture2'
 for seed in $(seq 1 $seed_max); do
     for hidden_dims in '[]' '[16]' '[16, 16]' '[16, 32, 16]'; do
         mkdir -p "logs/run_$initial_date/hidden_dims_$hidden_dims"

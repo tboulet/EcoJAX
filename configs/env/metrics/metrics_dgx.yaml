@@ -5,6 +5,7 @@ measures:
     - n_plants
     - net_energy_transfer_per_capita
     # - group_size # commented for now cause it's only implemented through a non jittable function
+    - values_fruits
   immediate:
     - do_action_eat
     - do_action_transfer
@@ -19,7 +20,11 @@ measures:
     - age
     - x
     - appearance
+    - do_eat_iff_ressource
+    - do_eat_if_ressource
+    - dont_eat_if_no_ressource
   behavior:
+    # []
     - appetite
 
 behavior_measures_on_render: 
@@ -73,4 +78,8 @@ config_video:
     "sun" : "yellow"
     "plants" : "green"
     "agents" : "blue"
+    "fruits_0" : "red"
+    "fruits_1" : "orange"
+    "fruits_2" : "purple"
+    "fruits_3" : "pink"
   color_background : "gray"

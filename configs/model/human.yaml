@@ -1,0 +1,4 @@
+name: HumanModel
+
+list_actions: ${env.list_actions}
+list_channels_visual_field : ${env.list_channels_visual_field}

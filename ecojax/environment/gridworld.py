@@ -454,12 +454,14 @@ class GridworldEnv(EcoEnvironment):
         ].add(are_existing_agents)
 
         key_random, subkey = jax.random.split(key_random)
-        orientation_agents = jax.random.randint(
-            key=subkey,
-            shape=(self.n_agents_max,),
-            minval=0,
-            maxval=4,
-        )
+        # orientation_agents = jax.random.randint(
+        #     key=subkey,
+        #     shape=(self.n_agents_max,),
+        #     minval=0,
+        #     maxval=4,
+        # )
+        orientation_agents = jnp.zeros(self.n_agents_max, dtype=jnp.int32)
+        
         energy_agents = jnp.ones(self.n_agents_max) * self.energy_initial
         age_agents = jnp.zeros(self.n_agents_max)
         appearance_agents = (
@@ -998,13 +1000,19 @@ class GridworldEnv(EcoEnvironment):
                     direction = 3
                 else:
                     raise ValueError(f"Incorrect implementation")
+                print(f"Direction: {direction}") 
+                print(f"Agent orientation: {agent_orientation}")
                 agent_orientation_new = (agent_orientation + direction) % 4
+                print(f"Agent orientation new: {agent_orientation_new}")
                 choicelist_orientation.append(agent_orientation_new)
                 # Add the new position to the list of possible positions
                 angle_new = agent_orientation_new * jnp.pi / 2
                 d_position = jnp.array(
                     [-jnp.cos(angle_new), -jnp.sin(angle_new)]
                 ).astype(jnp.int32)
+                print(f"Agent position: {agent_position}")
+                print(f"d_position: {d_position}")
+                print(f"Agent position + d_position: {agent_position + d_position}")
                 agent_position_new = agent_position + d_position
                 agent_position_new = agent_position_new % jnp.array([H, W])
                 choicelist_position.append(agent_position_new)

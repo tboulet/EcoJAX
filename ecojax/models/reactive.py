@@ -40,8 +40,12 @@ class ReactiveModel(BaseModel):
         # Get the greedy action
         condlist = []
         choicelist = []
+        print(visual_field_plants[..., v-1:v+2, v-1:v+2])
         for name_action in self.list_actions:
-            if name_action == "right":
+            if name_action == "eat":
+                condlist.append(visual_field_plants[v, v] == 1)
+                choicelist.append(self.list_actions.index(name_action))
+            elif name_action == "right":
                 condlist.append(visual_field_plants[v, v+1] == 1)
                 choicelist.append(self.list_actions.index(name_action))
             elif name_action == "left":

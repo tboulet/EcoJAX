@@ -24,8 +24,8 @@ measures:
     - do_eat_if_ressource
     - dont_eat_if_no_ressource
   behavior:
-    # []
-    - appetite
+    []
+    # - appetite
 
 behavior_measures_on_render: 
   []

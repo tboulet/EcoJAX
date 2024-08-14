@@ -239,8 +239,8 @@ def eco_loop(
                 global_state, info = step_eco_loop((global_state, info))
 
     # JIT after first steps
-    step_eco_loop = jax.jit(step_eco_loop)
-    do_continue_eco_loop = jax.jit(do_continue_eco_loop)
+    # step_eco_loop = jax.jit(step_eco_loop)
+    # do_continue_eco_loop = jax.jit(do_continue_eco_loop)
 
     # @jax.jit # only works with while_loop, scan, and fori_loop
     def do_n_steps(global_state, info):

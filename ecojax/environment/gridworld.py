@@ -1054,9 +1054,6 @@ class GridworldEnv(EcoEnvironment):
                 state.agents.age_agents,
                 jnp.nan
             )
-            # le = jnp.sum(just_died * state.agents.age_agents) / jnp.maximum(
-            #     1, jnp.sum(just_died)
-            # )
             dict_measures["life_expectancy"] = le
 
         appearance_agents_new = (
@@ -1258,9 +1255,16 @@ class GridworldEnv(EcoEnvironment):
             dict_measures (Dict[str, jnp.ndarray]): a dictionary of the measures of the environment
         """
         H, W, C_map = state.map.shape
-        map_vis_field = state.map[
+
+        # normalize the ages of the agents in the visual field
+        age_idx = self.dict_name_channel_to_idx["agent_ages"]
+        map_vis_field = state.map.at[:, :, age_idx].set(
+            state.map[:, :, age_idx] / self.age_max
+        )
+
+        map_vis_field = map_vis_field[
             :, :, self.list_indexes_channels_visual_field
-        ]  # (H, W, C_map)
+        ]
 
         # construct a map giving the index of each agent's parent (for agents not in the initial generation)
         # note: we set in reverse order to avoid overriding any positions with ghost agents
@@ -1283,19 +1287,13 @@ class GridworldEnv(EcoEnvironment):
             Returns:
                 jnp.ndarray: the visual field of the agent, of shape (2 * self.vision_radius + 1, 2 * self.vision_radius + 1, ?)
             """
-            # Construct the map of the visual field of the agent
-            # age_idx = self.dict_name_channel_to_idx["agent_ages"]
-            # map_vis_field = map_vis_field.at[:, :, age_idx].set(
-            #     map_vis_field[:, :, age_idx] / self.age_max
-            # )
-
             # Get the visual field of the agent
             visual_field_x = agent.positions_agents[0] + self.grid_indexes_vision_x
             visual_field_y = agent.positions_agents[1] + self.grid_indexes_vision_y
             vis_field = map_vis_field[
                 visual_field_x % H,
                 visual_field_y % W,
-            ]  # (2 * self.vision_radius + 1, 2 * self.vision_radius + 1, C_map)
+            ]  # (2 * self.vision_radius + 1, 2 * self.vision_radius + 1, ...)
 
             parent_map_vis_field = agent_parent_map[
                 visual_field_x % H,

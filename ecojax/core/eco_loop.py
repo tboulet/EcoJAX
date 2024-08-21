@@ -1,4 +1,5 @@
 # Logging
+from collections import defaultdict
 import os
 import cProfile
 
@@ -73,7 +74,9 @@ def eco_loop(
     dir_metrics: str = config["log_dir_path"]
     run_name: str = config["run_name"]
 
-    log_metrics_interval = 100
+    enhanced_logging_start = n_timesteps - 50000
+    log_metrics_interval = 500
+    flush_interval = 10000
 
     print(f"\nStarting run {run_name}")
 
@@ -210,10 +213,14 @@ def eco_loop(
         key_random=subkey,
     )
 
-    def create_data_dict(keys, dtype=jnp.int16):
-        return {key: jnp.array([], dtype=dtype) for key in keys}
+    def create_data_dict(keys):
+        return {key: [] for key in keys}
 
-    def save_data(data_dict, filename):
+    def save_data(data_dict, filename, concat=True):
+        if concat:
+            data_dict = {
+                k: jnp.concatenate(v) for k, v in data_dict.items()
+            }
         fp = os.path.join(dir_metrics, filename)
         pd.DataFrame(data_dict).to_csv(fp, index=False)
 
@@ -221,106 +228,87 @@ def eco_loop(
         save_data(data_dict, filename)
         return create_data_dict(data_dict.keys())
 
-    # EVENT DATA
-    feeding_data_keys = ["timestep", "feeder", "feedee", "feeder_age", "feedee_age"]
-    birth_data_keys = ["timestep", "agent"]
-    death_data_keys = ["timestep", "agent", "age"]
-    offspring_feeding_data = create_data_dict(feeding_data_keys)
-    birth_data = create_data_dict(birth_data_keys)
-    death_data = create_data_dict(death_data_keys)
+    # data dicts
+    feeding_data = defaultdict(list)
+    birth_data = defaultdict(list)
+    death_data = defaultdict(list)
+    metrics_data = defaultdict(list)
 
-    # GENERAL METRICS DATA
-    metrics_data_keys = [
-        "timestep",
-        "n_agents",
-        "n_plants",
-        "num_feedings",
-        "prop_feed_offspring",
-        "prop_face_offspring",
-    ]
-    metrics_data = create_data_dict(metrics_data_keys, dtype=jnp.float32)
-
-    def process_step_data(t, global_state, info):
-        # process feeding data
-        feeders = jnp.where(info["metrics"]["to_offspring"] == 1)[0]
-        feedees = info["metrics"]["feedees"][feeders].astype(jnp.int16)
-        feeder_ages = info["metrics"]["age"][feeders]
-        feedee_ages = info["metrics"]["age"][feedees]
-        timesteps = jnp.full_like(feeders, t)
-        for key, arr in zip(
-            feeding_data_keys,
-            [timesteps, feeders, feedees, feeder_ages, feedee_ages],
-        ):
-            offspring_feeding_data[key] = jnp.concatenate(
-                [offspring_feeding_data[key], arr], dtype=jnp.int16
-            )
-
-        # process birth data
-        newborns = jnp.where(global_state.eco_information.are_newborns_agents == 1)[
-            0
-        ].astype(jnp.int16)
-        timesteps = jnp.full_like(newborns, t)
-        for key, arr in zip(birth_data_keys, [timesteps, newborns]):
-            birth_data[key] = jnp.concatenate([birth_data[key], arr], dtype=jnp.int16)
-
-        # process death data
-        life_exp = info["metrics"]["life_expectancy"]
-        dead_agents = jnp.where(~jnp.isnan(life_exp))[0].astype(jnp.int16)
-        ages = life_exp[dead_agents]
-        timesteps = jnp.full_like(dead_agents, t)
-        for key, arr in zip(death_data_keys, [timesteps, dead_agents, ages]):
-            death_data[key] = jnp.concatenate([death_data[key], arr], dtype=jnp.int16)
-
-        # process metrics data
+    def process_step_data_basic(t, info):
         if t % log_metrics_interval:
-            num_feed = jnp.sum(info["metrics"]["feeders"])
+            num_feed = jnp.sum(info["metrics"]["feeders"] > 0)
             prop_feed_offspring = jnp.sum(
-                info["metrics"]["to_offspring"]
+                info["metrics"]["to_offspring"] > 0
             ) / jnp.maximum(1, num_feed)
             prop_face_offspring = info["metrics"]["num_facing_offspring"] / jnp.maximum(
                 1, info["metrics"]["num_facing_agent"]
             )
-            for key, val in zip(
-                metrics_data_keys,
-                [
-                    t,
-                    info["metrics"]["n_agents"],
-                    info["metrics"]["n_plants"],
-                    num_feed,
-                    prop_feed_offspring,
-                    prop_face_offspring,
-                ],
-            ):
-                metrics_data[key] = jnp.concatenate(
-                    [metrics_data[key], jnp.array([val])], dtype=jnp.float32
-                )
+            life_exp = jnp.nanmean(info["metrics"]["life_expectancy"])
+            metrics_data["timestep"].append(t)
+            metrics_data["n_agents"].append(info["metrics"]["n_agents"])
+            metrics_data["n_plants"].append(info["metrics"]["n_plants"])
+            metrics_data["life_expectancy"].append(life_exp)
+            metrics_data["num_feedings"].append(num_feed)
+            metrics_data["prop_feed_offspring"].append(prop_feed_offspring)
+            metrics_data["prop_face_offspring"].append(prop_face_offspring)
+
+
+    def process_step_data_enhanced(t, global_state, info):
+        # process feeding data
+        feeders = jnp.where(info["metrics"]["feeders"] == 1)[0].astype(jnp.int32)
+        # feeders = jnp.where(info["metrics"]["to_offspring"] == 1)[0].astype(jnp.int32)
+        feedees = info["metrics"]["feedees"][feeders].astype(jnp.int32)
+        feeding_data["feeder"].append(feeders)
+        feeding_data["feedee"].append(feedees)
+        feeding_data["feeder_age"].append(info["metrics"]["age"][feeders].astype(jnp.int32))
+        feeding_data["feedee_age"].append(info["metrics"]["age"][feedees].astype(jnp.int32))
+        feeding_data["to_offspring"].append(info["metrics"]["to_offspring"][feeders].astype(jnp.int32))
+        feeding_data["timestep"].append(jnp.full_like(feeders, t))
+
+        # process birth data
+        newborns = jnp.where(global_state.eco_information.are_newborns_agents == 1)[
+            0
+        ].astype(jnp.int32)
+        birth_data["agent"].append(newborns)
+        birth_data["timestep"].append(jnp.full_like(newborns, t))
+
+        # process death data
+        life_exp = info["metrics"]["life_expectancy"].astype(jnp.int32)
+        dead_agents = jnp.where(life_exp > 0)[0].astype(jnp.int32)
+        death_data["agent"].append(dead_agents)
+        death_data["age"].append(life_exp[dead_agents])
+        death_data["timestep"].append(jnp.full_like(dead_agents, t))
 
     # Do (some?) first step(s) to get global_state and info at the right structure
     for t in range(1):
         with RuntimeMeter("warmup steps"):
             # if do_continue_eco_loop((global_state, info)):
             global_state, info = step_eco_loop((global_state, info))
-            process_step_data(t, global_state, info)
+            process_step_data_basic(t, info)
 
     # JIT after first steps
     step_eco_loop = jax.jit(step_eco_loop)
     # do_continue_eco_loop = jax.jit(do_continue_eco_loop)
     #
 
-    t, flush_interval = int(global_state.timestep_run), 100
+    t = int(global_state.timestep_run)
     pbar = tqdm(total=n_timesteps, desc="Running simulation", initial=t)
     while global_state.timestep_run < n_timesteps:
         global_state, info = step_eco_loop((global_state, info))
-        process_step_data(t, global_state, info)
+
+        process_step_data_basic(t, info)
+        if t >= enhanced_logging_start:
+            process_step_data_enhanced(t, global_state, info)
 
         if t % flush_interval == 0 and t >= flush_interval:
-            tqdm.write(f"Flushing data at timestep {t}...")
-            offspring_feeding_data = flush_data(
-                offspring_feeding_data, f"offspring_feeding_data_{t}.csv"
-            )
-            birth_data = flush_data(birth_data, f"birth_data_{t}.csv")
-            death_data = flush_data(death_data, f"death_data_{t}.csv")
-            save_data(metrics_data, "metrics_data.csv")
+            tqdm.write(f"Saving data at timestep {t}...")
+            if t >= enhanced_logging_start:
+                feeding_data = flush_data(
+                    feeding_data, f"feeding_data_{t}.csv"
+                )
+                birth_data = flush_data(birth_data, f"birth_data_{t}.csv")
+                death_data = flush_data(death_data, f"death_data_{t}.csv")
+            save_data(metrics_data, "metrics_data.csv", concat=False)
 
         t_new = int(global_state.timestep_run)
         pbar.update(t_new - t)

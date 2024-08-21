@@ -66,13 +66,14 @@ radius_plant_asphyxia: 20
 # A list indicating which type of observation use
 list_observations:
   - visual_field
-  - energy
-  - age
+  # - energy
+  # - age
 
 # A list indicating which channels the agent can observe in its visual field
 list_channels_visual_field:
   - plants
   - agents
+  - agent_ages
 
 # A list indicating which actions the agent has to choose from
 list_actions:
@@ -94,7 +95,7 @@ dim_appearance: 3
 age_max: 500
 
 # The initial energy of an agent
-energy_initial: 50
+energy_initial: 65
 # The energy amount obtained by eating a food tile
 energy_food: 20
 # The energy threshold under which an agent dies

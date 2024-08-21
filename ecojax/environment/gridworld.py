@@ -1000,19 +1000,13 @@ class GridworldEnv(EcoEnvironment):
                     direction = 3
                 else:
                     raise ValueError(f"Incorrect implementation")
-                print(f"Direction: {direction}") 
-                print(f"Agent orientation: {agent_orientation}")
                 agent_orientation_new = (agent_orientation + direction) % 4
-                print(f"Agent orientation new: {agent_orientation_new}")
                 choicelist_orientation.append(agent_orientation_new)
                 # Add the new position to the list of possible positions
                 angle_new = agent_orientation_new * jnp.pi / 2
                 d_position = jnp.array(
                     [-jnp.cos(angle_new), -jnp.sin(angle_new)]
                 ).astype(jnp.int32)
-                print(f"Agent position: {agent_position}")
-                print(f"d_position: {d_position}")
-                print(f"Agent position + d_position: {agent_position + d_position}")
                 agent_position_new = agent_position + d_position
                 agent_position_new = agent_position_new % jnp.array([H, W])
                 choicelist_position.append(agent_position_new)
@@ -1022,14 +1016,12 @@ class GridworldEnv(EcoEnvironment):
             condlist=condlist,
             choicelist=choicelist_position,
             default=agent_position,
-        )
-
+        )        
         agent_orientation_new = jnp.select(
             condlist=condlist,
             choicelist=choicelist_orientation,
             default=agent_orientation,
         )
-
         return agent_position_new, agent_orientation_new
 
     def step_action_agents(
@@ -1361,7 +1353,15 @@ class GridworldEnv(EcoEnvironment):
                 visual_field_x % H,
                 visual_field_y % W,
             ]  # (2 * self.vision_radius + 1, 2 * self.vision_radius + 1, C_map)
-
+            
+            # print(f"{map_vis_field[..., 0]=}")
+            # print(f"{agents.positions_agents=}")
+            # print(f"{self.grid_indexes_vision_x=}")
+            # print(f"{self.grid_indexes_vision_y=}")
+            # print(f"{visual_field_x=}")
+            # print(f"{visual_field_y=}")
+            # print(f"{vis_field[..., 0]=}")
+            
             # Rotate the visual field according to the orientation of the agent
             vis_field = jnp.select(
                 [
@@ -1372,9 +1372,9 @@ class GridworldEnv(EcoEnvironment):
                 ],
                 [
                     vis_field,
-                    jnp.rot90(vis_field, k=1, axes=(0, 1)),
+                    jnp.rot90(vis_field, k=3, axes=(0, 1)), # if we turn left, the observation should be rotated right, eg 270 degrees
                     jnp.rot90(vis_field, k=2, axes=(0, 1)),
-                    jnp.rot90(vis_field, k=3, axes=(0, 1)),
+                    jnp.rot90(vis_field, k=1, axes=(0, 1)),
                 ],
             )
 
@@ -1692,11 +1692,11 @@ class GridworldEnv(EcoEnvironment):
         v = self.vision_range_agent
         side = 2 * v + 1
         return {
-            idx_plant * side**2 + (v + 1) * side + v: "PlantInFront",
-            idx_plant * side**2 + v * side + v - 1: "PlantToLeft",
-            idx_plant * side**2 + v * side + v + 1: "PlantToRight",
-            idx_plant * side**2 + (v - 1) * side + v: "PlantBehind",
-            idx_plant * side**2 + v * side + v: "PlantCenter",
+            idx_plant * side**2 + (v - 1) * side + v: "PlantOnForward",
+            idx_plant * side**2 + v * side + v - 1: "PlantOnLeft",
+            idx_plant * side**2 + v * side + v + 1: "PlantOnRight",
+            idx_plant * side**2 + (v + 1) * side + v: "PlantOnBackward",
+            idx_plant * side**2 + v * side + v: "PlantOnCenter",
         }
 
     def action_idx_to_meaning(self) -> Dict[int, str]:

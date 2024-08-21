@@ -56,7 +56,8 @@ def eco_loop(
     # Hyperparameters
     n_timesteps: int = config["n_timesteps"]
     period_eval: int = int(max(1, config["period_eval"]))
-
+    do_jit: bool = config["do_jit"]
+    
     # Logging
     do_wandb: bool = config["do_wandb"]
     do_tb: bool = config["do_tb"]
@@ -239,8 +240,10 @@ def eco_loop(
                 global_state, info = step_eco_loop((global_state, info))
 
     # JIT after first steps
-    # step_eco_loop = jax.jit(step_eco_loop)
-    # do_continue_eco_loop = jax.jit(do_continue_eco_loop)
+    if do_jit:
+        print("JIT compiling step functions...")
+        step_eco_loop = jax.jit(step_eco_loop)
+        do_continue_eco_loop = jax.jit(do_continue_eco_loop)
 
     # @jax.jit # only works with while_loop, scan, and fori_loop
     def do_n_steps(global_state, info):

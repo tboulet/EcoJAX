@@ -33,7 +33,7 @@ radius_sun_perception : 40
 # ======================== Food Dynamics ========================
 
 # The initial proportion of food tiles at the beginning of the simulation
-proportion_plant_initial : 0.0
+proportion_plant_initial : 0.5
 
 # The rule for a tile to be a food-tile is the following :
 # P(food spawn) = sigmoid(
@@ -52,12 +52,12 @@ p_base_plant_death : 0.0
 factor_sun_effect : 0
 
 # The factor of the effect of the presence of food on the growth of food
-factor_plant_reproduction : 4
+factor_plant_reproduction : 0
 # The radius of the effect of the presence of food on the growth of food
 radius_plant_reproduction : 10
 
 # The factor of the effect of the presence of food on the death of food
-factor_plant_asphyxia : 4
+factor_plant_asphyxia : 0
 # The radius of the effect of the presence of food on the death of food
 radius_plant_asphyxia : 20
 
@@ -103,10 +103,10 @@ list_observations:
 list_channels_visual_field:
   - plants
   - agents
-  - fruits_0
-  - fruits_1
-  - fruits_2
-  - fruits_3
+  # - fruits_0
+  # - fruits_1
+  # - fruits_2
+  # - fruits_3
 
 # A list indicating which actions the agent has to choose from
 list_actions:
@@ -130,7 +130,7 @@ age_max : 500
 # The initial energy of an agent
 energy_initial : 50
 # The energy amount obtained by eating a food tile
-energy_food : 5
+energy_food : 10
 # The energy threshold under which an agent dies
 energy_thr_death : 0
 # The maximal amount of energy an agent can have

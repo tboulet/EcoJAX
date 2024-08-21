@@ -81,7 +81,8 @@ class Runner:
         # Run name
         run_name = f"[{agent_species_name}_{model_name}_{env_name}]_{datetime.datetime.now().strftime('%dth%mmo_%Hh%Mmin%Ss')}_seed{seed}"
         run_name = self.config.get("run_name", run_name)
-        benchmark_name = self.config.get("benchmark_name", None)
+        if hasattr(self.config, "benchmark_name"):
+            print(f"Running in benchmark {self.config['benchmark_name']}")
         self.config["run_name"] = run_name
 
         # Create the env

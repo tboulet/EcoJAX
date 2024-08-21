@@ -26,7 +26,7 @@ defaults:
   - _self_
   - env : grid_uniform
   - agents : ne
-  - model : mlp
+  - model : perc
   - override hydra/hydra_logging: disabled  
   - override hydra/job_logging: disabled 
 

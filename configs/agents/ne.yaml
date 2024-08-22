@@ -5,4 +5,4 @@ hp_initial:
 # ======================== Defaults sub-configs and other Hydra config ========================
 defaults:
   - _self_
-  - metrics : basic
+  - metrics : base_agents_metrics

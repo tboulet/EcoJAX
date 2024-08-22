@@ -1611,10 +1611,10 @@ class GridworldEnv(EcoEnvironment):
             n = self.n_agents_max
             v = self.vision_range_agent
             names_action_to_xy = {
-                "forward": (jnp.full(n, v + 1), jnp.full(n, v)),
+                "forward": (jnp.full(n, v - 1), jnp.full(n, v)),
                 "left": (jnp.full(n, v), jnp.full(n, v - 1)),
                 "right": (jnp.full(n, v), jnp.full(n, v + 1)),
-                "backward": (jnp.full(n, v - 1), jnp.full(n, v)),
+                "backward": (jnp.full(n, v + 1), jnp.full(n, v)),
             }
             names_action_to_xy = {
                 key: xy

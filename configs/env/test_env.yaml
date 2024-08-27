@@ -1,8 +1,8 @@
 name : Gridworld
 
 # The dimensions of the gridworld
-height : 100
-width : 100
+height : 11
+width : 11
 
 # Whether the env is terminal, i.e. the simulation stops when all agents are dead
 is_terminal : True
@@ -20,7 +20,7 @@ period_sun : 300
 # - "brownian" : the sun moves in a brownian motion
 # - "sine" : the sun moves in a sine wave between south and north
 # - "linear" : the sun moves in a linear way and wraps around the gridworld when reaching the south
-method_sun : "linear"
+method_sun : "none"
 
 # The radius of the effect of the sun, i.e. the distance at which the sun increase food's growth
 radius_sun_effect : 10
@@ -33,7 +33,7 @@ radius_sun_perception : 40
 # ======================== Food Dynamics ========================
 
 # The initial proportion of food tiles at the beginning of the simulation
-proportion_plant_initial : 0.01
+proportion_plant_initial : 0.3
 
 # The rule for a tile to be a food-tile is the following :
 # P(food spawn) = sigmoid(
@@ -44,23 +44,51 @@ proportion_plant_initial : 0.01
 # - logit(p_base_die_food) * 1_if_tile_is_food
 
 # The base probability of a non-food tile to grow spontaneously
-p_base_plant_growth : 0.01
+p_base_plant_growth : 0.0
 # The base probability of a food tile to die spontaneously
-p_base_plant_death : 0.005
+p_base_plant_death : 0.0
 
 # The factor of the sun's effect on the growth of food
-factor_sun_effect : 5
+factor_sun_effect : 0
 
 # The factor of the effect of the presence of food on the growth of food
-factor_plant_reproduction : 4
+factor_plant_reproduction : 2
 # The radius of the effect of the presence of food on the growth of food
 radius_plant_reproduction : 10
 
 # The factor of the effect of the presence of food on the death of food
-factor_plant_asphyxia : 12
+factor_plant_asphyxia : 0
 # The radius of the effect of the presence of food on the death of food
 radius_plant_asphyxia : 20
 
+
+
+# ======================== Fruit parameters ========================
+
+# Whether to add fruits to the simulation
+do_fruits : False
+
+# The initial proportion of fruit tiles at the beginning of the simulation
+proportion_fruit_initial : 0.4
+
+# The base probability of a non-fruit tile to grow spontaneously a fruit
+p_base_fruit_growth : 0.0
+
+# The maximum absolute value of the energy of a fruit. The value of a fruit will vary between -max_abs and max_abs
+energy_fruit_max_abs : 10
+
+# The number of tiles of the side of a fruit cluster. Must be a divider of H and W.
+side_cluster_fruits: 11
+
+# The list of variabilities of the energy of the fruits, of length 4
+variability_fruits:
+  - 0
+  - 0.1
+  - 0.3
+  - 0.9
+
+# The variability mode, either "time" (cluster's energy value changes over time) or "space" (cluster's energy value changes over space)
+mode_variability_fruits: "space"
 
 
 # ======================== Agent Parameters ========================
@@ -74,22 +102,25 @@ list_observations:
 # A list indicating which channels the agent can observe in its visual field
 list_channels_visual_field:
   - plants
-  - agents
+  # - agents
+  # - fruits
 
 # A list indicating which actions the agent has to choose from
 list_actions:
   - forward
-  - right
   - left
+  - backward
+  - right
   - eat
-  - reproduce
-  - transfer
+  # - reproduce
+  # - transfer
+  # - nothing
 
 # The vision range of an agent. If of value v, the agent will receive the information v tiles around it, so a (2v+1)*(2v+1) grid
-vision_range_agent : 10
+vision_range_agent : 1
 
 # The dimension of the agent's appearance space
-dim_appearance : 3
+dim_appearance : 0
 
 # The maximum age of an agent
 age_max : 500
@@ -100,17 +131,17 @@ energy_initial : 50
 energy_food : 10
 # The energy threshold under which an agent dies
 energy_thr_death : 0
+# The maximal amount of energy an agent can have
+energy_max : ${env.energy_req_reprod}
 
 # The energy required to be able to reproduce
-energy_req_reprod : 80
+energy_req_reprod : ${eval:'${env.energy_initial} * 2'}
 # The energy cost of reproduction
-energy_cost_reprod : 20
-# The maximal amount of energy an agent can have
-energy_max : ${eval:'${env.energy_initial} * 3'}
+energy_cost_reprod : ${eval:'${env.energy_initial} * 1.2'}
 
 
 
 # ======================== Defaults sub-configs and other Hydra config ========================
 defaults:
   - _self_
-  - metrics : base_env_metrics
+  - metrics : metrics_test

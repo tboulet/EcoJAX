@@ -1535,8 +1535,8 @@ class GridworldEnv(EcoEnvironment):
 
         # Aggregate the measures over the lifespan
         are_just_dead_agents = state_new.agents.are_existing_agents & (
-            ~state_new.agents.are_existing_agents
-            | (state_new.agents.age_agents < state_new.agents.age_agents)
+            ~state.agents.are_existing_agents
+            | (state_new.agents.age_agents < state.agents.age_agents)
         )
 
         dict_metrics_lifespan = {}

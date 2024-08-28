@@ -4,6 +4,8 @@ n_timesteps : 5000
 period_eval : 500 
 n_agents_max : 500
 n_agents_initial : 10
+do_jit: True
+
 
 
 # Logging

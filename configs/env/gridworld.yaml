@@ -113,4 +113,4 @@ energy_max : ${eval:'${env.energy_initial} * 3'}
 # ======================== Defaults sub-configs and other Hydra config ========================
 defaults:
   - _self_
-  - metrics : basic
+  - metrics : base_env_metrics

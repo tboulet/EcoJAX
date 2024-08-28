@@ -38,10 +38,10 @@ class HumanModel(BaseModel):
         v = visual_field_plants.shape[0] // 2
         
         # Print the visual field
-        print(visual_field_plants)
-        print(obs)
-        jprint(visual_field_plants)
-        jprint(obs)
+        print(f"Visual field plant: {visual_field_plants}")
+        # print(obs)
+        # jprint(visual_field_plants)
+        # jprint(obs)
         
         # Get the greedy action
         idx_action = input()

@@ -19,7 +19,7 @@ n_agents_initial : 200
 # do_render : True
 # do_global_log : True
 
-do_wandb : False
+do_wandb : True
 wandb_config:
   project : EcoJAX
 do_tb : True

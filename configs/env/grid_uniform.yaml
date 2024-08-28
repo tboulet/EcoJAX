@@ -33,7 +33,7 @@ radius_sun_perception : 40
 # ======================== Food Dynamics ========================
 
 # The initial proportion of food tiles at the beginning of the simulation
-proportion_plant_initial : 0.1
+proportion_plant_initial : 0.3
 
 # The rule for a tile to be a food-tile is the following :
 # P(food spawn) = sigmoid(
@@ -52,7 +52,7 @@ p_base_plant_death : 0.0
 factor_sun_effect : 0
 
 # The factor of the effect of the presence of food on the growth of food
-factor_plant_reproduction : 2
+factor_plant_reproduction : 0
 # The radius of the effect of the presence of food on the growth of food
 radius_plant_reproduction : 10
 
@@ -69,10 +69,10 @@ radius_plant_asphyxia : 20
 do_fruits : False
 
 # The initial proportion of fruit tiles at the beginning of the simulation
-proportion_fruit_initial : 0.0
+proportion_fruit_initial : 0.4
 
 # The base probability of a non-fruit tile to grow spontaneously a fruit
-p_base_fruit_growth : 0.005
+p_base_fruit_growth : 0.0
 
 # The maximum absolute value of the energy of a fruit. The value of a fruit will vary between -max_abs and max_abs
 energy_fruit_max_abs : 10
@@ -103,23 +103,21 @@ list_observations:
 list_channels_visual_field:
   - plants
   - agents
-  # - fruits_0
-  # - fruits_1
-  # - fruits_2
-  # - fruits_3
+  # - fruits
 
 # A list indicating which actions the agent has to choose from
 list_actions:
   - forward
-  - right
   - left
+  - backward
+  - right
   - eat
   # - reproduce
   # - transfer
   # - nothing
 
 # The vision range of an agent. If of value v, the agent will receive the information v tiles around it, so a (2v+1)*(2v+1) grid
-vision_range_agent : 1
+vision_range_agent : 3
 
 # The dimension of the agent's appearance space
 dim_appearance : 0
@@ -130,7 +128,7 @@ age_max : 500
 # The initial energy of an agent
 energy_initial : 50
 # The energy amount obtained by eating a food tile
-energy_food : 10
+energy_food : 20
 # The energy threshold under which an agent dies
 energy_thr_death : 0
 # The maximal amount of energy an agent can have
@@ -146,4 +144,4 @@ energy_cost_reprod : ${eval:'${env.energy_initial} * 1.2'}
 # ======================== Defaults sub-configs and other Hydra config ========================
 defaults:
   - _self_
-  - metrics : basic
+  - metrics : base_env_metrics

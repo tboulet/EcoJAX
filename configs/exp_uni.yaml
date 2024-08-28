@@ -3,8 +3,10 @@ seed:
 n_timesteps : 100000
 # period_eval : ${eval:'${n_timesteps} / 500'}
 period_eval : 500
-n_agents_max : 1
-n_agents_initial : 1
+n_agents_max : 1000
+n_agents_initial : 200
+do_jit: True
+
 
 
 # Logging
@@ -38,7 +40,7 @@ defaults:
   - _self_
   - env : grid_uniform
   - agents : ne
-  - model : cnn
+  - model : perc
   - override hydra/hydra_logging: disabled  
   - override hydra/job_logging: disabled 
 

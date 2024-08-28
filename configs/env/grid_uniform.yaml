@@ -52,7 +52,7 @@ p_base_plant_death : 0.0
 factor_sun_effect : 0
 
 # The factor of the effect of the presence of food on the growth of food
-factor_plant_reproduction : 2
+factor_plant_reproduction : 0
 # The radius of the effect of the presence of food on the growth of food
 radius_plant_reproduction : 10
 
@@ -128,7 +128,7 @@ age_max : 500
 # The initial energy of an agent
 energy_initial : 50
 # The energy amount obtained by eating a food tile
-energy_food : 10
+energy_food : 20
 # The energy threshold under which an agent dies
 energy_thr_death : 0
 # The maximal amount of energy an agent can have

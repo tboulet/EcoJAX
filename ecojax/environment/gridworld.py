@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Type, TypeVar
 import jax
 import jax.numpy as jnp
 from jax.numpy import ndarray
+from matplotlib import pyplot as plt
 from matplotlib.pylab import f
 import numpy as np
 from jax import random
@@ -218,6 +219,7 @@ class GridworldEnv(EcoEnvironment):
                 self.dict_idx_channel_to_color_tag_agent[idx_agent_channel] = (
                     self.color_tag_unknown_channel
                 )
+        self.timesteps_render = []
         # Sun Parameters
         self.period_sun: int = config["period_sun"]
         self.method_sun: str = config["method_sun"]
@@ -346,10 +348,7 @@ class GridworldEnv(EcoEnvironment):
                 low=None,
                 high=None,
             )
-        if "energy" in self.list_observations:
-            observation_dict["energy"] = ContinuousSpace(shape=(), low=0, high=None)
-        if "age" in self.list_observations:
-            observation_dict["age"] = ContinuousSpace(shape=(), low=0, high=None)
+        self.internal_measures_first_agent: Dict[str, List[jnp.ndarray]] = {"energy": [], "age": []}
         self.observation_space = DictSpace(observation_dict)
 
         # Actions
@@ -726,6 +725,7 @@ class GridworldEnv(EcoEnvironment):
     def render(self, state: StateEnvGridworld, force_render: bool = False) -> None:
         """The rendering function of the environment. It saves the RGB map of the environment as a video."""
         t = state.timestep
+        self.timesteps_render.append(t)
 
         # Save videos of simulation and agent0 visual field
         def save_video(video: jnp.ndarray, filename: str) -> None:
@@ -757,6 +757,30 @@ class GridworldEnv(EcoEnvironment):
                     video=state.video_agent,
                 )
 
+        # Log the life of the first agent
+        output_dir = './logs/curves_agent/'
+        os.makedirs(output_dir, exist_ok=True)
+        # Add the measures of the first agent to the internal measures
+        if state.agents.are_existing_agents[0]:
+            self.internal_measures_first_agent["energy"].append(state.agents.energy_agents[0])
+            self.internal_measures_first_agent["age"].append(state.agents.age_agents[0])
+        else:
+            for measure_name in self.internal_measures_first_agent.keys():
+                self.internal_measures_first_agent[measure_name].append(jnp.nan)
+        # Loop through the dictionary and create a plot for each measure
+        for measure_name, values in self.internal_measures_first_agent.items():
+            values = jnp.array(values)
+            plt.figure()  # Create a new figure
+            plt.plot(self.timesteps_render, values, label=measure_name, marker='o')  # Plot the values
+            plt.title(f'Curve for {measure_name}')  # Set the title
+            plt.xlabel('Timestep')  # Label x-axis
+            plt.ylabel('Value')  # Label y-axis
+            plt.legend()  # Show legend
+            plt.grid(True)  # Show grid
+            file_path = os.path.join(output_dir, f'curve_{measure_name}.png')  # Define file path
+            plt.savefig(file_path)  # Save the plot as a PNG file
+            plt.close()  # Close the plot to free memory
+        
         # Signal if env terminated
         if ~jnp.any(state.agents.are_existing_agents):
             tqdm.write("Environment is done.")

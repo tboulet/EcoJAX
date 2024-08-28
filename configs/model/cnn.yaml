@@ -1,6 +1,7 @@
 name: CNN
 cnn_config:
-  hidden_dims: [32, 16, 8]
+  # hidden_dims: [32, 16, 8]
+  hidden_dims: [16, 8]
   kernel_size: 5
   strides: 1
 dim_cnn_output: 8

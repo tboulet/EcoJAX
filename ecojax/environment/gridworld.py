@@ -345,7 +345,7 @@ class GridworldEnv(EcoEnvironment):
             # The novelty hunger of an agent, of shape (4,) and in R+
             if "novelty_hunger" in self.list_observations:
                 novelty_hunger: jnp.ndarray
-                
+
             # The number of childrens of an agent, of shape () and in N
             if "n_childrens" in self.list_observations:
                 n_childrens: jnp.ndarray
@@ -1148,12 +1148,12 @@ class GridworldEnv(EcoEnvironment):
         map_food_energy_bonus_available_per_agent /= jnp.maximum(
             1, map_agents_try_eating
         )  # divide by the number of agents trying to eat at each cell
-        food_energy_bonus = (
+        food_energy_bonus_available_per_agent = (
             map_food_energy_bonus_available_per_agent[
                 positions_agents_new[:, 0], positions_agents_new[:, 1]
             ]
-            * are_agents_eating
         )
+        food_energy_bonus = food_energy_bonus_available_per_agent * are_agents_eating
         # Reset novelty hunger of fruit i if the agent eats in a tile containing fruit i
         novelty_hunger_new = state.agents.novelty_hunger  # (n, 4)
         if self.do_fruits:
@@ -1180,18 +1180,24 @@ class GridworldEnv(EcoEnvironment):
             dict_measures["amount_food_eaten"] = food_energy_bonus
         if "do_eat_if_ressource" in self.names_measures:
             dict_measures["do_eat_if_ressource"] = jnp.select(
-                condlist=[food_energy_bonus > 0, food_energy_bonus <= 0],
+                condlist=[
+                    food_energy_bonus_available_per_agent > 0,
+                    food_energy_bonus_available_per_agent <= 0,
+                ],
                 choicelist=[are_agents_eating, jnp.nan],
             )
         if "dont_eat_if_no_ressource" in self.names_measures:
             dict_measures["dont_eat_if_no_ressource"] = jnp.select(
-                condlist=[food_energy_bonus > 0, food_energy_bonus <= 0],
+                condlist=[
+                    food_energy_bonus_available_per_agent > 0,
+                    food_energy_bonus_available_per_agent <= 0,
+                ],
                 choicelist=[jnp.nan, ~are_agents_eating],
             )
         if "do_eat_iff_ressource" in self.names_measures:
             dict_measures["do_eat_iff_ressource"] = are_agents_eating * (
-                food_energy_bonus > 0
-            ) + (~are_agents_eating) * (food_energy_bonus <= 0)
+                food_energy_bonus_available_per_agent > 0
+            ) + (~are_agents_eating) * (food_energy_bonus_available_per_agent <= 0)
         energy_agents_new = state.agents.energy_agents + food_energy_bonus
 
         # Remove plants and fruits that have been eaten
@@ -1834,6 +1840,12 @@ class GridworldEnv(EcoEnvironment):
         idx_plant = self.dict_name_channel_to_idx["plants"]
         v = self.vision_range_agent
         side = 2 * v + 1
+        res = {}
+        for idx in range(len(self.list_indexes_channels_visual_field)):
+            for x in range(side):
+                for y in range(side):
+                    res[side**2 * idx + x * side + y] = f"VisualField_{idx}_({x},{y})"
+        return res
         return {
             idx_plant * side**2 + (v - 1) * side + v: "PlantOnForward",
             idx_plant * side**2 + v * side + v - 1: "PlantOnLeft",

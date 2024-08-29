@@ -1,8 +1,8 @@
 name : Gridworld
 
 # The dimensions of the gridworld
-height : 11
-width : 11
+height : 10
+width : 10
 
 # Whether the env is terminal, i.e. the simulation stops when all agents are dead
 is_terminal : True
@@ -66,7 +66,7 @@ radius_plant_asphyxia : 20
 # ======================== Fruit parameters ========================
 
 # Whether to add fruits to the simulation
-do_fruits : False
+do_fruits : True
 
 # The initial proportion of fruit tiles at the beginning of the simulation
 proportion_fruit_initial : 0.4
@@ -78,7 +78,7 @@ p_base_fruit_growth : 0.0
 energy_fruit_max_abs : 10
 
 # The number of tiles of the side of a fruit cluster. Must be a divider of H and W.
-side_cluster_fruits: 11
+side_cluster_fruits: 5
 
 # The list of variabilities of the energy of the fruits, of length 4
 variability_fruits:
@@ -98,12 +98,17 @@ list_observations:
   - visual_field
   - energy
   - age
+  - novelty_hunger
+  - n_childrens
 
 # A list indicating which channels the agent can observe in its visual field
 list_channels_visual_field:
   - plants
-  # - agents
-  # - fruits
+  - agents
+  - fruits_0
+  - fruits_1
+  - fruits_2
+  - fruits_3
 
 # A list indicating which actions the agent has to choose from
 list_actions:

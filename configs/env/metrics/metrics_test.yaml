@@ -18,6 +18,8 @@ measures:
   state:
     - energy
     - age
+    - novelty_hunger
+    - n_childrens
     - x
     - appearance
     - do_eat_iff_ressource
@@ -52,13 +54,13 @@ aggregators_population:
   - class_string : ecojax.metrics.aggregators:AggregatorPopulationMean
     config:
       keys_measures : ${merge:${env.metrics.measures.immediate}, ${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
-      keys_measures_prefix : [life, last_final]
+      keys_measures_prefix : [life, last_final, novelty_hunger]
       n_agents : ${n_agents_max}
       prefix_metric : pop_mean
   - class_string : ecojax.metrics.aggregators:AggregatorPopulationStd
     config:
       keys_measures : ${merge:${env.metrics.measures.behavior}, ${env.metrics.measures.state}}
-      keys_measures_prefix : [life, last_final]
+      keys_measures_prefix : [life, last_final, novelty_hunger]
       n_agents : ${n_agents_max}
       prefix_metric : pop_std
 

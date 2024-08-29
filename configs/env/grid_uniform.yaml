@@ -33,7 +33,7 @@ radius_sun_perception : 40
 # ======================== Food Dynamics ========================
 
 # The initial proportion of food tiles at the beginning of the simulation
-proportion_plant_initial : 0.3
+proportion_plant_initial : 0.4
 
 # The rule for a tile to be a food-tile is the following :
 # P(food spawn) = sigmoid(
@@ -44,7 +44,7 @@ proportion_plant_initial : 0.3
 # - logit(p_base_die_food) * 1_if_tile_is_food
 
 # The base probability of a non-food tile to grow spontaneously
-p_base_plant_growth : 0.001
+p_base_plant_growth : 0.0005
 # The base probability of a food tile to die spontaneously
 p_base_plant_death : 0.0
 
@@ -66,13 +66,13 @@ radius_plant_asphyxia : 20
 # ======================== Fruit parameters ========================
 
 # Whether to add fruits to the simulation
-do_fruits : False
+do_fruits : True
 
 # The initial proportion of fruit tiles at the beginning of the simulation
 proportion_fruit_initial : 0.4
 
 # The base probability of a non-fruit tile to grow spontaneously a fruit
-p_base_fruit_growth : 0.0
+p_base_fruit_growth : 0.01
 
 # The maximum absolute value of the energy of a fruit. The value of a fruit will vary between -max_abs and max_abs
 energy_fruit_max_abs : 10
@@ -98,12 +98,17 @@ list_observations:
   - visual_field
   - energy
   - age
+  - novelty_hunger
+  - n_childrens
 
 # A list indicating which channels the agent can observe in its visual field
 list_channels_visual_field:
   - plants
   - agents
-  # - fruits
+  - fruits_0
+  - fruits_1
+  - fruits_2
+  - fruits_3
 
 # A list indicating which actions the agent has to choose from
 list_actions:

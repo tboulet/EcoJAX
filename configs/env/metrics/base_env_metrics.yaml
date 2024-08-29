@@ -18,6 +18,8 @@ measures:
   state:
     - energy
     - age
+    - novelty_hunger
+    - n_childrens
     - x
     - appearance
     - do_eat_iff_ressource

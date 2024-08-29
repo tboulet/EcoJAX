@@ -46,7 +46,7 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 # Iterate over the seeds
 seed_max=10
-benchmark_name='benchmark_vision_range_agent2'
+benchmark_name='benchmark_vision_range_agent4'
 for seed in $(seq 1 $seed_max); do
     for vision_range_agent in 1 2 3 5; do
         mkdir -p "logs/run_$initial_date/vision_range_agent_$vision_range_agent"

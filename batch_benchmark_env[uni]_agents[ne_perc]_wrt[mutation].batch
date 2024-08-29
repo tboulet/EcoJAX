@@ -46,7 +46,7 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 # Iterate over the seeds
 seed_max=10
-benchmark_name='benchmark_mutation2'
+benchmark_name='benchmark_mutation3'
 for seed in $(seq 1 $seed_max); do
     for mut in 0.001 0.01 0.1 1 10; do
         mkdir -p "logs/run_$initial_date/mut_$mut"

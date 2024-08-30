@@ -3,17 +3,22 @@ name: RL_Agents
 # ======================== Agent's Hyperparameter ========================
 # The initial hyperparameters of the population
 hp_initial:
-  lr: 0.001
+  lr: 0.01
   gamma: 0.99
-  epsilon: 0.1
-  strength_mutation: 0.001
+  epsilon: 0.05
+  strength_mutation: 0.1
 # The name of the exploration strategy, among epsilon_greedy, softmax, and greedy
 name_exploration: epsilon_greedy
+# The size of the replay buffer
+size_replay_buffer: 100
+# The batch size
+batch_size: 32
 
 # ======================== Evolution Hyperparameters ========================
 mode_weights_transmission: final # initial, final, none
 
 # ======================== Models Config ========================
+
 # The configuration of the reward model
 reward_model:
   func_weight_diff: constant # constant, linear, exponential

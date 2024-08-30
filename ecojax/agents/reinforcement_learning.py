@@ -24,7 +24,7 @@ from ecojax.evolution.mutator import mutate_scalar, mutation_gaussian_noise
 from ecojax.models.mlp import MLP_Model
 from ecojax.types import ActionAgent, ObservationAgent
 import ecojax.spaces as spaces
-from ecojax.utils import instantiate_class, jprint
+from ecojax.utils import instantiate_class, jbreakpoint, jprint
 
 
 @dataclass
@@ -37,6 +37,18 @@ class HyperParametersRL:
     epsilon: float
     # The mutation strength of the agent
     strength_mutation: float
+
+
+@dataclass
+class TransitionRL:
+    # The internal observation of the agent
+    x_t: jnp.ndarray
+    # The action of the agent
+    a_t: int
+    # The reward of the agent
+    r_t: float
+    # The next internal observation of the agent
+    x_t_next: jnp.ndarray
 
 
 @dataclass
@@ -59,6 +71,8 @@ class AgentRL(PyTreeNode):
     obs_last: jnp.ndarray
     # The last action of the agent
     action_last: int
+    # The replay buffer of the agent
+    replay_buffer: TransitionRL  # Batched
 
 
 @dataclass
@@ -150,7 +164,8 @@ class RL_AgentSpecies(AgentSpecies):
         model_class: Type[BaseModel],
         config_model: Dict,
     ):
-        super().__init__(config=config,
+        super().__init__(
+            config=config,
             n_agents_max=n_agents_max,
             n_agents_initial=n_agents_initial,
             observation_space=observation_space,
@@ -158,16 +173,17 @@ class RL_AgentSpecies(AgentSpecies):
             model_class=model_class,
             config_model=config_model,
         )
-        assert isinstance(action_space, spaces.DiscreteSpace), f"Only DiscreteSpace is supported for now, got {action_space}"
+        assert isinstance(
+            action_space, spaces.DiscreteSpace
+        ), f"Only DiscreteSpace is supported for now, got {action_space}"
         self.n_actions = action_space.n
 
         # Sensor model : this model converts the observation to "sensations", which are some internal neuro-evolved representation of the observation
-        n_sensations = config["n_sensations"]
+        self.n_sensations = config["n_sensations"]
+        self.space_output_sensor = spaces.ContinuousSpace(self.n_sensations)
         self.sensor_model = model_class(
             space_input=observation_space,
-            space_output=spaces.ContinuousSpace(
-                n_sensations,
-            ),
+            space_output=self.space_output_sensor,
             **config_model,
         )
         print(f"Sensor model: {self.sensor_model.get_table_summary()}")
@@ -175,7 +191,7 @@ class RL_AgentSpecies(AgentSpecies):
         # Decision model : this RL model converts the sensations to the decision (actions)
         config_decision_model = config["decision_model"]
         self.decision_model = MLP_Model(
-            space_input=spaces.ContinuousSpace(n_sensations),
+            space_input=spaces.ContinuousSpace(self.n_sensations),
             space_output=spaces.ContinuousSpace(self.n_actions),
             **config_decision_model,
         )
@@ -274,7 +290,10 @@ class RL_AgentSpecies(AgentSpecies):
             key_random, subkey = random.split(key_random)
             variables = self.decision_model.get_initialized_variables(subkey)
             params_decision = variables.get("params", {})
-        if params_decision_initial is None and self.mode_weights_transmission == "initial":
+        if (
+            params_decision_initial is None
+            and self.mode_weights_transmission == "initial"
+        ):
             key_random, subkey = random.split(key_random)
             variables = self.decision_model.get_initialized_variables(subkey)
             params_decision_initial = variables.get("params", {})
@@ -289,6 +308,19 @@ class RL_AgentSpecies(AgentSpecies):
         #     x=obs_dummy,
         #     key_random=subkey,
         # )
+
+        # Create an empty replay buffer, ie a replay buffer filled with dummy transitions
+        key_random, subkey = random.split(key_random)
+        x_t_dummy = self.space_output_sensor.sample(subkey)
+        replay_buffer = jax.vmap(
+            lambda _: TransitionRL(
+                x_t=jnp.zeros(self.n_sensations),
+                a_t=-1,
+                r_t=0.0,
+                x_t_next=jnp.zeros(self.n_sensations),
+            )
+        )(jnp.arange(self.config["size_replay_buffer"]))
+
         return AgentRL(
             age=0,
             hp=hp,
@@ -299,6 +331,7 @@ class RL_AgentSpecies(AgentSpecies):
             do_exist=do_exist,
             obs_last=obs_dummy,  # dummy observation
             action_last=-1,  # dummy action
+            replay_buffer=replay_buffer,
         )
 
     def init_tr_state(self, agent: AgentRL) -> train_state.TrainState:
@@ -366,7 +399,7 @@ class RL_AgentSpecies(AgentSpecies):
             )
             return genes_inherited
 
-        new_agents = tree_map(
+        new_agents: AgentRL = tree_map(
             manage_genetic_component_inheritance,
             state.agents,
             agents_mutated,
@@ -549,23 +582,67 @@ class RL_AgentSpecies(AgentSpecies):
                 x={"obs": agent.obs_last, "obs_next": obs},
                 key_random=subkey,
             )
-
-            # Perform the RL step (1-step memory DQN)
-            def loss_fn(params_decision):
-                q_values_last = self.decision_model.apply(
-                    variables={"params": params_decision},
-                    x=internal_obs_last,
-                    key_random=key_random,
+            
+            # Add the transition to the replay buffer
+            transition = TransitionRL(
+                    x_t=internal_obs_last,
+                    a_t=agent.action_last,
+                    r_t=reward_last,
+                    x_t_next=internal_obs,
                 )
-                q_value_last = q_values_last[agent.action_last]
-                target = reward_last + agent.hp.gamma * jnp.max(q_values)
-                loss_q = (q_value_last - target) ** 2
+            idx_transition_in_replay_buffer = (agent.age-1) % self.config["size_replay_buffer"]
+            replay_buffer_new = jax.tree_map(
+                lambda x_replay_buffer, x_transition: x_replay_buffer.at[idx_transition_in_replay_buffer].set(x_transition),
+                agent.replay_buffer,
+                transition,   
+            )      
+            agent = agent.replace(replay_buffer=replay_buffer_new)     
+            
+            # Sample batch_size transitions from the replay buffer
+            key_random, subkey = random.split(key_random)
+            batch_size = self.config["batch_size"]
+            indices = random.randint(subkey, shape=(batch_size,), minval=0, maxval=self.config["size_replay_buffer"])
+            # indices = indices % jnp.min(agent.age, self.config["size_replay_buffer"]) # Make sure to sample only the transitions that have been lived
+            transitions = jax.tree_map(lambda x: x[indices], agent.replay_buffer) # Transitions batch_size-batched
+            x_t_batch = transitions.x_t
+            a_t_batch = transitions.a_t
+            r_t_batch = transitions.r_t
+            x_t_next_batch = transitions.x_t_next
+            
+            # Compute the loss as a Q-value loss on a batch of transitions
+            key_random, *batch_subkeys = random.split(key_random, 2 * self.config["batch_size"])
+            
+            
+                
+            def loss_fn(params_decision):
+                # Compute the Q-values
+                def get_q_values(x_t: jnp.ndarray, key_random: jnp.ndarray):
+                    """Function to compute the Q-values of the decision model.
+                    From an agent i decision model parameters theta_i and an internal observation x_t of shape (n_sensations,), compute the agent i Q-values of x_t, as an array of shape (n_actions,).
+
+                    Args:
+                        x_t (jnp.ndarray): the internal observation of the agent, of shape (n_sensations,)
+                        key_random (jnp.ndarray): the random key
+                        
+                    Returns:
+                        jnp.ndarray: the Q-values of the agent, of shape (n_actions,)
+                    """
+                    return self.decision_model.apply(
+                        variables={"params": params_decision},
+                        x=x_t,
+                        key_random=key_random,
+                    )
+                q_values_xt = jax.vmap(get_q_values, in_axes=(0, 0))(x_t_batch, batch_subkeys[0::2]) # (batch_size, n_actions)
+                q_values_xt_next = jax.vmap(get_q_values, in_axes=(0, 0))(x_t_next_batch, batch_subkeys[1::2]) # (batch_size, n_actions)
+                q_xt_at = q_values_xt[jnp.arange(batch_size), a_t_batch] # (batch_size,)
+                
+                # Compute the loss
+                target = r_t_batch + agent.hp.gamma * jnp.max(q_values_xt_next, axis=1) # (batch_size,)
+                loss_q = jnp.mean((q_xt_at - target) ** 2)
                 loss_q *= (
                     agent.hp.lr
                 )  # Scale the loss by the learning rate to simulate learning rate
-                loss_q *= (
-                    agent.age >= 1
-                )  # Only learn at age 1 (and more) when you have already seen a transition
+                loss_q *= (agent.age > 0) # Only learn after the first step
                 return loss_q
 
             grad_fn = jax.value_and_grad(loss_fn)
@@ -618,17 +695,17 @@ class RL_AgentSpecies(AgentSpecies):
         Args:
             state (StateSpecies): the state of the species to render
             force_render (bool): whether to force the rendering even if the species is not in a state where it should be rendered
-        """        
+        """
         # Log heatmaps of the weights
         try:
             weights = state.agents.params_decision["Dense_0"]["kernel"].mean(axis=0)
             n_obs, n_actions = weights.shape
             bias = state.agents.params_decision["Dense_0"]["bias"].mean(axis=0)
             plt.figure(figsize=(10, 8))
-            sns.heatmap(weights, annot=True, cmap='viridis', cbar=True)
-            plt.xlabel('Actions')
-            plt.ylabel('Observations')
-            plt.title('Heatmap of Weights')
+            sns.heatmap(weights, annot=True, cmap="viridis", cbar=True)
+            plt.xlabel("Actions")
+            plt.ylabel("Observations")
+            plt.title("Heatmap of Weights")
             os.makedirs("logs/heatmaps", exist_ok=True)
             plt.savefig(f"logs/heatmaps/heatmap.png")
 
@@ -637,19 +714,27 @@ class RL_AgentSpecies(AgentSpecies):
             sum_weights = np.sum(weights, axis=0)
 
             fig, ax = plt.subplots(figsize=(10, 6))
-            bars1 = ax.bar(x - width/2, bias, width, label='Bias', color='skyblue')
-            bars2 = ax.bar(x + width/2, sum_weights, width, label='Sum of Weights', color='lightgreen')
+            bars1 = ax.bar(x - width / 2, bias, width, label="Bias", color="skyblue")
+            bars2 = ax.bar(
+                x + width / 2,
+                sum_weights,
+                width,
+                label="Sum of Weights",
+                color="lightgreen",
+            )
 
             # Add some text for labels, title and custom x-axis tick labels, etc.
-            ax.set_xlabel('Actions')
-            ax.set_ylabel('Values')
-            ax.set_title('Bias and Sum of Weights for Each Action')
+            ax.set_xlabel("Actions")
+            ax.set_ylabel("Values")
+            ax.set_title("Bias and Sum of Weights for Each Action")
             ax.set_xticks(x)
             ax.set_xticklabels(x)
             ax.legend()
 
             # Path to save the combined bar chart
-            combined_bar_chart_path = os.path.join("logs/heatmaps/bias and sum weights.png")
+            combined_bar_chart_path = os.path.join(
+                "logs/heatmaps/bias and sum weights.png"
+            )
 
             # Save the combined bar chart
             plt.savefig(combined_bar_chart_path)
@@ -657,8 +742,7 @@ class RL_AgentSpecies(AgentSpecies):
 
         except Exception as e:
             print(f"Error in agents render: {e}")
-            
-            
+
     def compute_measures(
         self,
         state: StateSpeciesRL,

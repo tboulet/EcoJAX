@@ -209,7 +209,7 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
             )
             return genes_inherited
 
-        new_agents = tree_map(
+        new_agents : AgentNE = tree_map(
             manage_genetic_component_inheritance,
             state.agents,
             agents_mutated,
@@ -232,6 +232,7 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
             batch_observations=batch_observations,
         )
         dict_measures_all.update(dict_measures)
+        
         # ============ Compute the metrics ============
 
         # Compute some measures

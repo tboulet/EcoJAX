@@ -98,17 +98,17 @@ list_observations:
   - visual_field
   - energy
   - age
-  - novelty_hunger
-  - n_childrens
+  # - novelty_hunger
+  # - n_childrens
 
 # A list indicating which channels the agent can observe in its visual field
 list_channels_visual_field:
   - plants
-  - agents
-  - fruits_0
-  - fruits_1
-  - fruits_2
-  - fruits_3
+  # - agents
+  # - fruits_0
+  # - fruits_1
+  # - fruits_2
+  # - fruits_3
 
 # A list indicating which actions the agent has to choose from
 list_actions:

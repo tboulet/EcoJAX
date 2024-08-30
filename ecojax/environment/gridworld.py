@@ -322,6 +322,20 @@ class GridworldEnv(EcoEnvironment):
                     self.coords_clusters_to_fruit_id[coords_center] = id_fruit
         # ======================== Agent Parameters ========================
 
+        # Agent's internal dynamics
+        self.age_max: int = config["age_max"]
+        self.energy_initial: float = config["energy_initial"]
+        self.energy_food: float = config["energy_food"]
+        self.energy_thr_death: float = config["energy_thr_death"]
+        self.energy_req_reprod: float = config["energy_req_reprod"]
+        self.energy_cost_reprod: float = config["energy_cost_reprod"]
+        self.energy_max: float = config["energy_max"]
+        self.energy_transfer_loss: float = config.get("energy_transfer_loss", 0.0)
+        self.energy_transfer_gain: float = config.get("energy_transfer_gain", 0.0)
+        # Other
+        self.fill_value: int = self.n_agents_max
+        self.novelty_hunger_value_initial = 0
+        
         # Observations
         self.list_observations: List[str] = config["list_observations"]
         assert (
@@ -370,6 +384,22 @@ class GridworldEnv(EcoEnvironment):
                 low=None,
                 high=None,
             )
+        if "energy" in self.list_observations:
+            observation_dict["energy"] = ContinuousSpace(
+                shape=(), low=0.0, high=self.energy_max
+            )
+        if "age" in self.list_observations:
+            observation_dict["age"] = ContinuousSpace(
+                shape=(), low=0.0, high=self.age_max
+            )
+        if "novelty_hunger" in self.list_observations:
+            observation_dict["novelty_hunger"] = ContinuousSpace(
+                shape=(4,), low=0.0, high=self.age_max
+            )
+        if "n_childrens" in self.list_observations:
+            observation_dict["n_childrens"] = DiscreteSpace(
+                shape=(), low=0, high=None
+            )
         self.internal_measures_first_agent: Dict[str, List[jnp.ndarray]] = {
             "energy": [],
             "age": [],
@@ -386,18 +416,7 @@ class GridworldEnv(EcoEnvironment):
         }
         self.n_actions = len(self.list_actions)
 
-        # Agent's internal dynamics
-        self.age_max: int = config["age_max"]
-        self.energy_initial: float = config["energy_initial"]
-        self.energy_food: float = config["energy_food"]
-        self.energy_thr_death: float = config["energy_thr_death"]
-        self.energy_req_reprod: float = config["energy_req_reprod"]
-        self.energy_cost_reprod: float = config["energy_cost_reprod"]
-        self.energy_max: float = config["energy_max"]
-        self.energy_transfer_loss: float = config.get("energy_transfer_loss", 0.0)
-        self.energy_transfer_gain: float = config.get("energy_transfer_gain", 0.0)
-        # Other
-        self.fill_value: int = self.n_agents_max
+        
 
     def reset(
         self,
@@ -501,7 +520,7 @@ class GridworldEnv(EcoEnvironment):
             energy_agents=jnp.full((self.n_agents_max,), self.energy_initial),
             age_agents=jnp.zeros(self.n_agents_max),
             appearance_agents=appearance_agents,
-            novelty_hunger=jnp.full((self.n_agents_max, 4), self.age_max / 2),
+            novelty_hunger=jnp.full((self.n_agents_max, 4), self.novelty_hunger_value_initial),
             n_childrens=jnp.zeros(self.n_agents_max, dtype=jnp.int_),
         )
 
@@ -1406,7 +1425,7 @@ class GridworldEnv(EcoEnvironment):
         )
         novelty_hunger_new = state.agents.novelty_hunger.at[
             indices_newborn_agents_FILLED
-        ].set(self.age_max / 2)
+        ].set(self.novelty_hunger_value_initial)
         n_childrens_new = state.agents.n_childrens.at[
             indices_had_reproduced_FILLED
         ].set(0)

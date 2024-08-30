@@ -4,7 +4,7 @@ n_timesteps : 100000
 # period_eval : ${eval:'${n_timesteps} / 500'}
 period_eval : 10
 n_agents_max : 10
-n_agents_initial : 10
+n_agents_initial : ${n_agents_max}
 do_jit: True
 
 

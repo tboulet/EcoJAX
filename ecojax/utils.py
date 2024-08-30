@@ -222,10 +222,15 @@ def check_jax_device():
         print(f"Error while checking JAX device: {e}")
         
 
-def jprint(x):
+def jprint(x, msg = None):
     """Print the value of x using JAX's print function, even inside of a JAX jit function"""
-    jax.debug.print("{x}", x=x)
-    
+    if msg is not None:
+        jax.debug.print(msg + " :")
+        jax.debug.print("{x}", x=x)
+    else:
+        jax.debug.print("{x}", x=x)
+    jax.debug.print("")
+        
 def jbreakpoint():
     """Breakpoint inside a JAX jit function"""
     jax.debug.breakpoint()

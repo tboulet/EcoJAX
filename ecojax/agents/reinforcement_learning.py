@@ -42,13 +42,13 @@ class HyperParametersRL:
 @dataclass
 class TransitionRL:
     # The internal observation of the agent
-    x_t: jnp.ndarray
+    x: jnp.ndarray
     # The action of the agent
-    a_t: int
+    action: int
     # The reward of the agent
-    r_t: float
+    reward: float
     # The next internal observation of the agent
-    x_t_next: jnp.ndarray
+    x_next: jnp.ndarray
 
 
 @dataclass
@@ -211,8 +211,10 @@ class RL_AgentSpecies(AgentSpecies):
         print(f"Reward model: {self.reward_model.get_table_summary()}")
 
         # Hyperparameters
-        self.mode_weights_transmission: str = self.config["mode_weights_transmission"]
         self.name_exploration: str = self.config["name_exploration"]
+        self.size_replay_buffer: int = self.config["size_replay_buffer"]
+        self.batch_size: int = self.config["batch_size"]
+        self.mode_weights_transmission: str = self.config["mode_weights_transmission"]
 
         # Metrics parameters
         self.names_measures: List[str] = sum(
@@ -303,23 +305,17 @@ class RL_AgentSpecies(AgentSpecies):
             params_reward = variables.get("params", {})
         key_random, subkey = random.split(key_random)
         obs_dummy = self.observation_space.sample(subkey)
-        # internal_obs_dummy = self.model_sensor.apply(
-        #     variables={"params": params_sensor},
-        #     x=obs_dummy,
-        #     key_random=subkey,
-        # )
 
         # Create an empty replay buffer, ie a replay buffer filled with dummy transitions
-        key_random, subkey = random.split(key_random)
-        x_t_dummy = self.space_output_sensor.sample(subkey)
+        key_random, subkey1, subkey2 = random.split(key_random, 3)
         replay_buffer = jax.vmap(
             lambda _: TransitionRL(
-                x_t=jnp.zeros(self.n_sensations),
-                a_t=-1,
-                r_t=0.0,
-                x_t_next=jnp.zeros(self.n_sensations),
+                x=random.normal(subkey1, shape=(self.n_sensations,)),
+                action=-1,
+                reward=0.42,
+                x_next=random.normal(subkey2, shape=(self.n_sensations,)),
             )
-        )(jnp.arange(self.config["size_replay_buffer"]))
+        )(jnp.arange(self.size_replay_buffer))
 
         return AgentRL(
             age=0,
@@ -412,7 +408,7 @@ class RL_AgentSpecies(AgentSpecies):
         new_do_exist = new_do_exist | are_newborns_agents  # Add the newborn agents
         new_agents = new_agents.replace(do_exist=new_do_exist)
 
-        new_state = state.replace(agents=new_agents)
+        new_state : StateSpeciesRL = state.replace(agents=new_agents)
 
         # ================== Agent-wise reaction ==================
         key_random, subkey = random.split(key_random)
@@ -523,7 +519,8 @@ class RL_AgentSpecies(AgentSpecies):
         state: StateSpeciesRL,
         batch_observations: ObservationAgent,  # Batched
     ) -> Tuple[StateSpeciesRL, ActionAgent]:  # Batched
-
+        jbreakpoint()
+        # return 
         def react_single_agent(
             key_random: jnp.ndarray,
             agent: AgentRL,
@@ -536,24 +533,22 @@ class RL_AgentSpecies(AgentSpecies):
             Dict[str, jnp.ndarray],
         ]:
             # =============== Inference part =================
-            # Compute internal observation (sensation)
-            internal_obs = self.sensor_model.apply(
+            
+            # Compute internal observation (sensation) : x_t = sensor_model(o_t)
+            x_t = self.sensor_model.apply(
                 variables={"params": agent.params_sensor},
                 x=obs,
                 key_random=key_random,
             )
-            internal_obs_last = self.sensor_model.apply(
-                variables={"params": agent.params_sensor},
-                x=agent.obs_last,
-                key_random=key_random,
-            )
-            # Compute the Q-values
+            
+            # Compute the Q-values : Q(x_t, .) = decision_model(x_t)
             q_values = self.decision_model.apply(
                 variables={"params": agent.params_decision},
-                x=internal_obs,
+                x=x_t,
                 key_random=key_random,
             )
-            # Pick an action using the exploration method
+            
+            # Pick an action using the exploration method : a_t = exploration_policy(Q(x_t, .))
             if self.name_exploration == "epsilon_greedy":
                 key_random, subkey1, subkey2 = random.split(key_random, 3)
                 action = jax.lax.cond(
@@ -574,8 +569,12 @@ class RL_AgentSpecies(AgentSpecies):
                 raise NotImplementedError(
                     f"Exploration method {self.name_exploration} not implemented"
                 )
+            
+            
+            
             # ============== Learning part =================
-            # Compute the reward
+            
+            # Compute the reward : r_t = reward_model(o_t, o_{t+1})
             key_random, subkey = random.split(key_random)
             reward_last = self.reward_model.apply(
                 variables={"params": agent.params_reward},
@@ -584,38 +583,41 @@ class RL_AgentSpecies(AgentSpecies):
             )
             
             # Add the transition to the replay buffer
+            x_t_last = self.sensor_model.apply(
+                variables={"params": agent.params_sensor},
+                x=agent.obs_last,
+                key_random=key_random,
+            )
             transition = TransitionRL(
-                    x_t=internal_obs_last,
-                    a_t=agent.action_last,
-                    r_t=reward_last,
-                    x_t_next=internal_obs,
+                    x=x_t_last,
+                    action=agent.action_last,
+                    reward=reward_last,
+                    x_next=x_t,
                 )
-            idx_transition_in_replay_buffer = (agent.age-1) % self.config["size_replay_buffer"]
-            replay_buffer_new = jax.tree_map(
+            idx_transition_in_replay_buffer = (agent.age-1) % self.size_replay_buffer
+            agent = agent.replace(replay_buffer = jax.tree_map(
                 lambda x_replay_buffer, x_transition: x_replay_buffer.at[idx_transition_in_replay_buffer].set(x_transition),
                 agent.replay_buffer,
                 transition,   
-            )      
-            agent = agent.replace(replay_buffer=replay_buffer_new)     
-            
-            # Sample batch_size transitions from the replay buffer
+            )     ) 
+
+            # Sample B transitions from the replay buffer
             key_random, subkey = random.split(key_random)
-            batch_size = self.config["batch_size"]
-            indices = random.randint(subkey, shape=(batch_size,), minval=0, maxval=self.config["size_replay_buffer"])
-            # indices = indices % jnp.min(agent.age, self.config["size_replay_buffer"]) # Make sure to sample only the transitions that have been lived
-            transitions = jax.tree_map(lambda x: x[indices], agent.replay_buffer) # Transitions batch_size-batched
-            x_t_batch = transitions.x_t
-            a_t_batch = transitions.a_t
-            r_t_batch = transitions.r_t
-            x_t_next_batch = transitions.x_t_next
-            
+            indices = random.randint(subkey, shape=(self.batch_size,), minval=0, maxval=self.size_replay_buffer)
+            indices = indices % jnp.minimum(agent.age, self.size_replay_buffer) # Make sure to sample only the transitions that have been lived
+            batch_transitions = jax.tree_map(lambda x: x[indices], agent.replay_buffer) # Transitions B-batched
+            x_batch = batch_transitions.x
+            a_batch = batch_transitions.action
+            r_batch = batch_transitions.reward
+            x_next_batch = batch_transitions.x_next
+
             # Compute the loss as a Q-value loss on a batch of transitions
-            key_random, *batch_subkeys = random.split(key_random, 2 * self.config["batch_size"])
+            key_random, subkey = random.split(key_random)
+            batch_subkeys = random.split(key_random, 2 * self.batch_size)
             
-            
-                
             def loss_fn(params_decision):
                 # Compute the Q-values
+                jprint(params_decision, "params_decision")
                 def get_q_values(x_t: jnp.ndarray, key_random: jnp.ndarray):
                     """Function to compute the Q-values of the decision model.
                     From an agent i decision model parameters theta_i and an internal observation x_t of shape (n_sensations,), compute the agent i Q-values of x_t, as an array of shape (n_actions,).
@@ -632,21 +634,30 @@ class RL_AgentSpecies(AgentSpecies):
                         x=x_t,
                         key_random=key_random,
                     )
-                q_values_xt = jax.vmap(get_q_values, in_axes=(0, 0))(x_t_batch, batch_subkeys[0::2]) # (batch_size, n_actions)
-                q_values_xt_next = jax.vmap(get_q_values, in_axes=(0, 0))(x_t_next_batch, batch_subkeys[1::2]) # (batch_size, n_actions)
-                q_xt_at = q_values_xt[jnp.arange(batch_size), a_t_batch] # (batch_size,)
+                q_values_xt = jax.vmap(get_q_values, in_axes=(0, 0))(x_batch, batch_subkeys[0::2]) # (B, n_actions)
+                jprint(q_values_xt, "q_values_xt")
+                q_values_xt_next = jax.vmap(get_q_values, in_axes=(0, 0))(x_next_batch, batch_subkeys[1::2]) # (B, n_actions)
+                jprint(q_values_xt_next, "q_values_xt_next")
+                q_xt_at = q_values_xt[jnp.arange(self.batch_size), a_batch] # (B,)
+                jprint(q_xt_at, "q_xt_at")
                 
                 # Compute the loss
-                target = r_t_batch + agent.hp.gamma * jnp.max(q_values_xt_next, axis=1) # (batch_size,)
+                target = r_batch + agent.hp.gamma * jnp.max(q_values_xt_next, axis=1) # (B,)
+                jprint(target, "target")
                 loss_q = jnp.mean((q_xt_at - target) ** 2)
+                loss_q = jnp.sqrt(loss_q)
+                jprint(loss_q, "loss_q")
                 loss_q *= (
                     agent.hp.lr
                 )  # Scale the loss by the learning rate to simulate learning rate
+                jprint(loss_q, "loss_q")
                 loss_q *= (agent.age > 0) # Only learn after the first step
+                jprint(loss_q, "loss_q")
                 return loss_q
 
             grad_fn = jax.value_and_grad(loss_fn)
             loss_q, grads = grad_fn(tr_state.params)
+            jprint(grads, "grads")
             tr_state = tr_state.apply_gradients(grads=grads)
 
             # Update the agent's state
@@ -655,6 +666,7 @@ class RL_AgentSpecies(AgentSpecies):
                 age=agent.age + 1,
                 obs_last=obs,
                 action_last=action,
+                # TODO : we could also transmit x_last here
             )
 
             # ============== Measures ==============
@@ -669,7 +681,7 @@ class RL_AgentSpecies(AgentSpecies):
             }
             # Update the agent's state and act
             return agent, tr_state, action, dict_measures
-
+        
         batch_keys = random.split(key_random, self.n_agents_max)
         new_agents, batch_tr_state, actions, dict_measures = jax.vmap(
             react_single_agent

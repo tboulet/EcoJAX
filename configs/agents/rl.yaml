@@ -10,9 +10,9 @@ hp_initial:
 # The name of the exploration strategy, among epsilon_greedy, softmax, and greedy
 name_exploration: epsilon_greedy
 # The size of the replay buffer
-size_replay_buffer: 100
+size_replay_buffer: 5
 # The batch size
-batch_size: 32
+batch_size: 2
 
 # ======================== Evolution Hyperparameters ========================
 mode_weights_transmission: final # initial, final, none
@@ -23,7 +23,7 @@ mode_weights_transmission: final # initial, final, none
 reward_model:
   func_weight_diff: constant # constant, linear, exponential
 # The dimension of the latent space corresponding to the internal representation of the observation
-n_sensations: 10
+n_sensations: 4
 # The configuration of the decision model
 decision_model:
   hidden_dims: []

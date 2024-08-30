@@ -26,7 +26,7 @@ class MLP_Model(BaseModel):
     """
 
     hidden_dims: List[int]
-    name_activation_fn : str = "relu"
+    name_activation_fn: str = "relu"
 
     def obs_to_encoding(
         self, obs: ObservationAgent, key_random: jnp.ndarray
@@ -36,7 +36,7 @@ class MLP_Model(BaseModel):
         # Flatten and concatenate observation inputs
         list_spaces_and_values = self.space_input.get_list_spaces_and_values(obs)
         list_vectors = []
-        for (space, x) in list_spaces_and_values:
+        for space, x in list_spaces_and_values:
             if isinstance(space, ContinuousSpace):
                 x = x.reshape((-1,))
                 list_vectors.append(x)
@@ -45,10 +45,14 @@ class MLP_Model(BaseModel):
                 list_vectors.append(one_hot_encoded)
             else:
                 raise ValueError(f"Unknown space type for observation: {type(space)}")
-        x = jnp.concatenate(list_vectors, axis=-1)        
-        
+        x = jnp.concatenate(list_vectors, axis=-1)
+
         # Process the concatenated output with a final MLP
         for hidden_dim in self.hidden_dims:
-            x = nn.Dense(features=hidden_dim)(x)
+            x = nn.Dense(
+                features=hidden_dim,
+            )(x)
             x = self.activation_fn(name_activation_fn=self.name_activation_fn, x=x)
+
+        print(f"obs: {obs}")
         return x

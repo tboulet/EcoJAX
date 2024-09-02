@@ -17,7 +17,17 @@ measures:
   behavior: []
 
 aggregators_lifespan:
-  []
+  - class_string : ecojax.metrics.aggregators:AggregatorLifespanCumulative
+    config:
+      keys_measures : ${agents.metrics.measures.immediate}
+      n_agents : ${n_agents_max}
+      prefix_metric : life_cum
+      log_final : true
+  - class_string : ecojax.metrics.aggregators:AggregatorLifespanAverage
+    config:
+      keys_measures : ${merge:${agents.metrics.measures.immediate}, ${agents.metrics.measures.state}, ${agents.metrics.measures.behavior}}
+      n_agents : ${n_agents_max}
+      prefix_metric : life_avg
 
 aggregators_population:
   - class_string : ecojax.metrics.aggregators:AggregatorPopulationMean
@@ -26,10 +36,3 @@ aggregators_population:
       keys_measures_prefix : [weights, params_reward_model, hp]
       n_agents : ${n_agents_max}
       prefix_metric : pop_mean
-  # - class_string : ecojax.metrics.aggregators:AggregatorPopulationStd
-  #   config:
-  #     keys_measures : ${merge:${agents.metrics.measures.immediate}, ${agents.metrics.measures.state}, ${agents.metrics.measures.behavior}}
-  #     keys_measures_prefix : []
-  #     n_agents : ${n_agents_max}
-  #     prefix_metric : pop_std
-

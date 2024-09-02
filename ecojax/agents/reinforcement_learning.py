@@ -89,11 +89,19 @@ class StateSpeciesRL:
 
 
 class RewardModel(BaseModel):
-    """The reward model of the agent. It maps the observation to the reward."""
+    """The reward model of the agent. It maps the observation to the reward.
+
+    Args:
+        space_input (spaces.DictSpace): the input space of the model
+        space_output (spaces.ContinuousSpace): the output space of the model
+        func_weight_diff (str): the method used to model the reward. Among ["constant", "linear"] (see below)
+        dict_hardcoded_reward (Optional[Dict[str, float]], optional): in case you want to hardcode the reward (Defaults to None, evolved reward). If not None, the dictionnary sets the alpha_k of each component k to a fixed value.
+    """
 
     space_input: spaces.DictSpace
     space_output: spaces.ContinuousSpace
     func_weight_diff: str
+    dict_hardcoded_reward: Optional[Dict[str, float]] = None
 
     def obs_to_encoding(
         self,
@@ -128,26 +136,31 @@ class RewardModel(BaseModel):
                 obs_component = x["obs"][name_space]
                 obs_component_next = x["obs_next"][name_space]
                 diff_obs = obs_component_next - obs_component
-                alpha_diff = self.param(
-                    name=f"alpha_diff_{name_space}",
-                    init_fn=nn.initializers.ones,
-                    shape=(),
-                    dtype=jnp.float32,
-                )
-                if self.func_weight_diff == "constant":
-                    reward += alpha_diff * diff_obs
-                elif self.func_weight_diff == "linear":
-                    beta_diff = self.param(
-                        name=f"beta_diff_{name_space}",
+                if self.dict_hardcoded_reward is None:
+                    alpha_diff = self.param(
+                        name=f"alpha_diff_{name_space}",
                         init_fn=nn.initializers.ones,
                         shape=(),
                         dtype=jnp.float32,
                     )
-                    reward += (alpha_diff + obs_component * beta_diff) * diff_obs
+                    if self.func_weight_diff == "constant":
+                        # The additional reward due to component k will be proportional to the variation of component k : r_t += alpha_k * (o_{t+1}_k - o_t_k)
+                        reward += alpha_diff * diff_obs
+                    elif self.func_weight_diff == "linear":
+                        # The additional reward due to component k will be proportional to the variation of component k, but the proportionality factor can vary affinely with the component value : r_t += (alpha_k + beta_k * o_t_k) * (o_{t+1}_k - o_t_k)
+                        beta_diff = self.param(
+                            name=f"beta_diff_{name_space}",
+                            init_fn=nn.initializers.ones,
+                            shape=(),
+                            dtype=jnp.float32,
+                        )
+                        reward += (alpha_diff + obs_component * beta_diff) * diff_obs
+                    else:
+                        raise NotImplementedError(
+                            f"Function {self.func_weight_diff} not implemented"
+                        )
                 else:
-                    raise NotImplementedError(
-                        f"Function {self.func_weight_diff} not implemented"
-                    )
+                    reward += diff_obs * self.dict_hardcoded_reward[name_space]
         return reward
 
 
@@ -336,7 +349,7 @@ class RL_AgentSpecies(AgentSpecies):
             learning_rate=1
         )  # set tx's learning rate as 1 and scale loss for pseudo-learning rate
         tr_state = train_state.TrainState.create(
-            apply_fn=self.sensor_model.apply, params=agent.params_decision, tx=tx
+            apply_fn=self.decision_model.apply, params=agent.params_decision, tx=tx
         )
         return tr_state
 
@@ -408,7 +421,7 @@ class RL_AgentSpecies(AgentSpecies):
         new_do_exist = new_do_exist | are_newborns_agents  # Add the newborn agents
         new_agents = new_agents.replace(do_exist=new_do_exist)
 
-        new_state : StateSpeciesRL = state.replace(agents=new_agents)
+        new_state: StateSpeciesRL = state.replace(agents=new_agents)
 
         # ================== Agent-wise reaction ==================
         key_random, subkey = random.split(key_random)
@@ -532,21 +545,21 @@ class RL_AgentSpecies(AgentSpecies):
             Dict[str, jnp.ndarray],
         ]:
             # =============== Inference part =================
-            
+
             # Compute internal observation (sensation) : x_t = sensor_model(o_t)
             x_t = self.sensor_model.apply(
                 variables={"params": agent.params_sensor},
                 x=obs,
                 key_random=key_random,
             )
-            
+
             # Compute the Q-values : Q(x_t, .) = decision_model(x_t)
             q_values = self.decision_model.apply(
                 variables={"params": agent.params_decision},
                 x=x_t,
                 key_random=key_random,
             )
-            
+
             # Pick an action using the exploration method : a_t = exploration_policy(Q(x_t, .))
             if self.name_exploration == "epsilon_greedy":
                 key_random, subkey1, subkey2 = random.split(key_random, 3)
@@ -568,11 +581,9 @@ class RL_AgentSpecies(AgentSpecies):
                 raise NotImplementedError(
                     f"Exploration method {self.name_exploration} not implemented"
                 )
-            
-            
-            
+
             # ============== Learning part =================
-            
+
             # Compute the reward : r_t = reward_model(o_t, o_{t+1})
             key_random, subkey = random.split(key_random)
             reward_last = self.reward_model.apply(
@@ -580,7 +591,7 @@ class RL_AgentSpecies(AgentSpecies):
                 x={"obs": agent.obs_last, "obs_next": obs},
                 key_random=subkey,
             )
-            
+
             # Add the transition to the replay buffer
             x_t_last = self.sensor_model.apply(
                 variables={"params": agent.params_sensor},
@@ -588,23 +599,36 @@ class RL_AgentSpecies(AgentSpecies):
                 key_random=key_random,
             )
             transition = TransitionRL(
-                    x=x_t_last,
-                    action=agent.action_last,
-                    reward=reward_last,
-                    x_next=x_t,
+                x=x_t_last,
+                action=agent.action_last,
+                reward=reward_last,
+                x_next=x_t,
+            )
+            idx_transition_in_replay_buffer = (agent.age - 1) % self.size_replay_buffer
+            agent = agent.replace(
+                replay_buffer=jax.tree_map(
+                    lambda x_replay_buffer, x_transition: x_replay_buffer.at[
+                        idx_transition_in_replay_buffer
+                    ].set(x_transition),
+                    agent.replay_buffer,
+                    transition,
                 )
-            idx_transition_in_replay_buffer = (agent.age-1) % self.size_replay_buffer
-            agent = agent.replace(replay_buffer = jax.tree_map(
-                lambda x_replay_buffer, x_transition: x_replay_buffer.at[idx_transition_in_replay_buffer].set(x_transition),
-                agent.replay_buffer,
-                transition,   
-            )     ) 
+            )
 
             # Sample B transitions from the replay buffer
             key_random, subkey = random.split(key_random)
-            indices = random.randint(subkey, shape=(self.batch_size,), minval=0, maxval=self.size_replay_buffer)
-            indices = indices % jnp.minimum(agent.age, self.size_replay_buffer) # Make sure to sample only the transitions that have been lived
-            batch_transitions = jax.tree_map(lambda x: x[indices], agent.replay_buffer) # Transitions B-batched
+            indices = random.randint(
+                subkey,
+                shape=(self.batch_size,),
+                minval=0,
+                maxval=self.size_replay_buffer,
+            )
+            indices = indices % jnp.minimum(
+                agent.age, self.size_replay_buffer
+            )  # Make sure to sample only the transitions that have been lived
+            batch_transitions = jax.tree_map(
+                lambda x: x[indices], agent.replay_buffer
+            )  # Transitions B-batched
             x_batch = batch_transitions.x
             a_batch = batch_transitions.action
             r_batch = batch_transitions.reward
@@ -613,7 +637,7 @@ class RL_AgentSpecies(AgentSpecies):
             # Compute the loss as a Q-value loss on a batch of transitions
             key_random, subkey = random.split(key_random)
             batch_subkeys = random.split(key_random, 2 * self.batch_size)
-            
+
             def loss_fn(params_decision):
                 # Compute the Q-values
                 def get_q_values(x_t: jnp.ndarray, key_random: jnp.ndarray):
@@ -623,27 +647,35 @@ class RL_AgentSpecies(AgentSpecies):
                     Args:
                         x_t (jnp.ndarray): the internal observation of the agent, of shape (n_sensations,)
                         key_random (jnp.ndarray): the random key
-                        
+
                     Returns:
                         jnp.ndarray: the Q-values of the agent, of shape (n_actions,)
                     """
+                    # return tr_state.apply_fn({"params": params_decision}, x_t, key_random)
                     return self.decision_model.apply(
                         variables={"params": params_decision},
                         x=x_t,
                         key_random=key_random,
                     )
-                q_values_xt = jax.vmap(get_q_values, in_axes=(0, 0))(x_batch, batch_subkeys[0::2]) # (B, n_actions)
-                q_values_xt_next = jax.vmap(get_q_values, in_axes=(0, 0))(x_next_batch, batch_subkeys[1::2]) # (B, n_actions)
-                q_xt_at = q_values_xt[jnp.arange(self.batch_size), a_batch] # (B,)
-                
+
+                q_values_xt = jax.vmap(get_q_values, in_axes=(0, 0))(
+                    x_batch, batch_subkeys[0::2]
+                )  # (B, n_actions)
+                q_values_xt_next = jax.vmap(get_q_values, in_axes=(0, 0))(
+                    x_next_batch, batch_subkeys[1::2]
+                )  # (B, n_actions)
+                q_xt_at = q_values_xt[jnp.arange(self.batch_size), a_batch]  # (B,)
+
                 # Compute the loss
-                target = r_batch + agent.hp.gamma * jnp.max(q_values_xt_next, axis=1) # (B,)
+                target = r_batch + agent.hp.gamma * jnp.max(
+                    q_values_xt_next, axis=1
+                )  # (B,)
                 loss_q = jnp.mean((q_xt_at - target) ** 2)
                 loss_q = jnp.sqrt(loss_q)
                 loss_q *= (
                     agent.hp.lr
                 )  # Scale the loss by the learning rate to simulate learning rate
-                loss_q *= (agent.age > 0) # Only learn after the first step
+                loss_q *= agent.age > 0  # Only learn after the first step
                 return loss_q
 
             grad_fn = jax.value_and_grad(loss_fn)
@@ -675,7 +707,7 @@ class RL_AgentSpecies(AgentSpecies):
                     dict_measures[key] = values
             # Update the agent's state and act
             return agent, tr_state, action, dict_measures
-        
+
         batch_keys = random.split(key_random, self.n_agents_max)
         new_agents, batch_tr_state, actions, dict_measures = jax.vmap(
             react_single_agent
@@ -766,14 +798,16 @@ class RL_AgentSpecies(AgentSpecies):
             if "hp" == name_measure:
                 strength_mutation = getattr(state.agents.hp, "strength_mutation")
                 dict_measures["hp strength_mutation"] = strength_mutation
-                dict_measures["hp log10_strength_mutation"] = jnp.log10(strength_mutation)
+                dict_measures["hp log10_strength_mutation"] = jnp.log10(
+                    strength_mutation
+                )
                 dict_measures["hp lr"] = getattr(state.agents.hp, "lr")
                 dict_measures["hp log10_lr"] = jnp.log10(getattr(state.agents.hp, "lr"))
                 dict_measures["hp gamma"] = getattr(state.agents.hp, "gamma")
                 dict_measures["hp epsilon"] = getattr(state.agents.hp, "epsilon")
             if "params_reward_model" == name_measure:
                 for name_param, values_param in state.agents.params_reward.items():
-                    dict_measures[f"params_reward_model {name_param}"] = values_param    
+                    dict_measures[f"params_reward_model {name_param}"] = values_param
             # Behavior measures
             pass
 

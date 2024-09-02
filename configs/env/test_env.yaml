@@ -122,13 +122,17 @@ list_actions:
   # - nothing
 
 # The vision range of an agent. If of value v, the agent will receive the information v tiles around it, so a (2v+1)*(2v+1) grid
-vision_range_agent : 0
+vision_range_agent : 1
 
 # The dimension of the agent's appearance space
 dim_appearance : 0
 
 # The maximum age of an agent
 age_max : 80
+# The allowed situations for an agent to die :
+list_death_events:
+  - age
+  - energy
 
 # The initial energy of an agent
 energy_initial : 50

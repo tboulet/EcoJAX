@@ -4,7 +4,7 @@ name: RL_Agents
 # The initial hyperparameters of the population
 hp_initial:
   lr: 0.01
-  gamma: 0.9
+  gamma: 0.99
   epsilon: 0.05
   strength_mutation: 0.1
 # The name of the exploration strategy, among epsilon_greedy, softmax, and greedy
@@ -12,7 +12,7 @@ name_exploration: epsilon_greedy
 # The size of the replay buffer
 size_replay_buffer: 1000
 # The batch size
-batch_size: 256
+batch_size: 64
 
 # ======================== Evolution Hyperparameters ========================
 mode_weights_transmission: final # initial, final, none
@@ -21,11 +21,9 @@ mode_weights_transmission: final # initial, final, none
 
 # The configuration of the reward model
 reward_model:
-  func_weight_diff: constant # constant, linear, exponential # TODO : delete this as the reward is hardcoded
-  dict_hardcoded_reward:
-    energy: 10
+  func_weight_diff: constant # constant, linear, exponential
 # The dimension of the latent space corresponding to the internal representation of the observation
-n_sensations: 10
+n_sensations: 16
 # The configuration of the decision model
 decision_model:
   hidden_dims: []

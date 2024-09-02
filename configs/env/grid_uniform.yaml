@@ -129,6 +129,10 @@ dim_appearance : 0
 
 # The maximum age of an agent
 age_max : 500
+# The allowed situations for an agent to die :
+list_death_events:
+  - age
+  - energy
 
 # The initial energy of an agent
 energy_initial : 50

@@ -519,8 +519,7 @@ class RL_AgentSpecies(AgentSpecies):
         state: StateSpeciesRL,
         batch_observations: ObservationAgent,  # Batched
     ) -> Tuple[StateSpeciesRL, ActionAgent]:  # Batched
-        jbreakpoint()
-        # return 
+
         def react_single_agent(
             key_random: jnp.ndarray,
             agent: AgentRL,
@@ -617,7 +616,6 @@ class RL_AgentSpecies(AgentSpecies):
             
             def loss_fn(params_decision):
                 # Compute the Q-values
-                jprint(params_decision, "params_decision")
                 def get_q_values(x_t: jnp.ndarray, key_random: jnp.ndarray):
                     """Function to compute the Q-values of the decision model.
                     From an agent i decision model parameters theta_i and an internal observation x_t of shape (n_sensations,), compute the agent i Q-values of x_t, as an array of shape (n_actions,).
@@ -635,29 +633,21 @@ class RL_AgentSpecies(AgentSpecies):
                         key_random=key_random,
                     )
                 q_values_xt = jax.vmap(get_q_values, in_axes=(0, 0))(x_batch, batch_subkeys[0::2]) # (B, n_actions)
-                jprint(q_values_xt, "q_values_xt")
                 q_values_xt_next = jax.vmap(get_q_values, in_axes=(0, 0))(x_next_batch, batch_subkeys[1::2]) # (B, n_actions)
-                jprint(q_values_xt_next, "q_values_xt_next")
                 q_xt_at = q_values_xt[jnp.arange(self.batch_size), a_batch] # (B,)
-                jprint(q_xt_at, "q_xt_at")
                 
                 # Compute the loss
                 target = r_batch + agent.hp.gamma * jnp.max(q_values_xt_next, axis=1) # (B,)
-                jprint(target, "target")
                 loss_q = jnp.mean((q_xt_at - target) ** 2)
                 loss_q = jnp.sqrt(loss_q)
-                jprint(loss_q, "loss_q")
                 loss_q *= (
                     agent.hp.lr
                 )  # Scale the loss by the learning rate to simulate learning rate
-                jprint(loss_q, "loss_q")
                 loss_q *= (agent.age > 0) # Only learn after the first step
-                jprint(loss_q, "loss_q")
                 return loss_q
 
             grad_fn = jax.value_and_grad(loss_fn)
             loss_q, grads = grad_fn(tr_state.params)
-            jprint(grads, "grads")
             tr_state = tr_state.apply_gradients(grads=grads)
 
             # Update the agent's state
@@ -670,7 +660,8 @@ class RL_AgentSpecies(AgentSpecies):
             )
 
             # ============== Measures ==============
-            dict_measures = {
+            dict_measures = {}
+            measures_rl = {
                 "loss_q": loss_q,
                 "q_values_max": jnp.max(q_values),
                 "q_values_mean": jnp.mean(q_values),
@@ -679,6 +670,9 @@ class RL_AgentSpecies(AgentSpecies):
                 "target": reward_last + agent.hp.gamma * jnp.max(q_values),
                 "reward": reward_last,
             }
+            for key, values in measures_rl.items():
+                if key in self.names_measures:
+                    dict_measures[key] = values
             # Update the agent's state and act
             return agent, tr_state, action, dict_measures
         
@@ -769,14 +763,17 @@ class RL_AgentSpecies(AgentSpecies):
             # Immediate measures
             pass
             # State measures
-            if "hp" in name_measure:
+            if "hp" == name_measure:
                 strength_mutation = getattr(state.agents.hp, "strength_mutation")
-                dict_measures["strength_mutation"] = strength_mutation
-                dict_measures["log10/strength_mutation"] = jnp.log10(strength_mutation)
-                dict_measures["lr"] = getattr(state.agents.hp, "lr")
-                dict_measures["log10/lr"] = jnp.log10(getattr(state.agents.hp, "lr"))
-                dict_measures["gamma"] = getattr(state.agents.hp, "gamma")
-                dict_measures["epsilon"] = getattr(state.agents.hp, "epsilon")
+                dict_measures["hp strength_mutation"] = strength_mutation
+                dict_measures["hp log10_strength_mutation"] = jnp.log10(strength_mutation)
+                dict_measures["hp lr"] = getattr(state.agents.hp, "lr")
+                dict_measures["hp log10_lr"] = jnp.log10(getattr(state.agents.hp, "lr"))
+                dict_measures["hp gamma"] = getattr(state.agents.hp, "gamma")
+                dict_measures["hp epsilon"] = getattr(state.agents.hp, "epsilon")
+            if "params_reward_model" == name_measure:
+                for name_param, values_param in state.agents.params_reward.items():
+                    dict_measures[f"params_reward_model {name_param}"] = values_param    
             # Behavior measures
             pass
 

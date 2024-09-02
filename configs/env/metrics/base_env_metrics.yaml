@@ -12,6 +12,7 @@ measures:
     - do_action_reproduce
     - do_action_forward
     - do_action_nothing
+    - do_eat_fruit
     - amount_food_eaten
     - amount_children
     - died

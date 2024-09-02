@@ -66,7 +66,7 @@ radius_plant_asphyxia : 20
 # ======================== Fruit parameters ========================
 
 # Whether to add fruits to the simulation
-do_fruits : True
+do_fruits : False
 
 # The initial proportion of fruit tiles at the beginning of the simulation
 proportion_fruit_initial : 0.4
@@ -104,11 +104,11 @@ list_observations:
 # A list indicating which channels the agent can observe in its visual field
 list_channels_visual_field:
   - plants
-  - agents
-  - fruits_0
-  - fruits_1
-  - fruits_2
-  - fruits_3
+  # - agents
+  # - fruits_0
+  # - fruits_1
+  # - fruits_2
+  # - fruits_3
 
 # A list indicating which actions the agent has to choose from
 list_actions:
@@ -122,7 +122,7 @@ list_actions:
   # - nothing
 
 # The vision range of an agent. If of value v, the agent will receive the information v tiles around it, so a (2v+1)*(2v+1) grid
-vision_range_agent : 3
+vision_range_agent : 1
 
 # The dimension of the agent's appearance space
 dim_appearance : 0
@@ -133,7 +133,7 @@ age_max : 500
 # The initial energy of an agent
 energy_initial : 50
 # The energy amount obtained by eating a food tile
-energy_food : 20
+energy_food : 15
 # The energy threshold under which an agent dies
 energy_thr_death : 0
 # The maximal amount of energy an agent can have

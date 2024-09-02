@@ -116,8 +116,14 @@ class ContinuousSpace(EcojaxSpace):
         Returns:
             float: the sampled value
         """
-        minval = self.low if self.low is not None else -1
-        maxval = self.high if self.high is not None else 1
+        if self.low is None and self.high is None:
+            minval, maxval = -1, 1
+        elif self.low is None:
+            maxval = self.high
+            minval = maxval - 1
+        else:
+            minval = self.low
+            maxval = minval + 1
         return random.uniform(
             key=key_random,
             shape=self.shape,

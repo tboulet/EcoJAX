@@ -335,7 +335,7 @@ class GridworldEnv(EcoEnvironment):
         # Other
         self.fill_value: int = self.n_agents_max
         self.novelty_hunger_value_initial = 0
-        
+
         # Observations
         self.list_observations: List[str] = config["list_observations"]
         assert (
@@ -386,19 +386,23 @@ class GridworldEnv(EcoEnvironment):
             )
         if "energy" in self.list_observations:
             observation_dict["energy"] = ContinuousSpace(
-                shape=(), low=0.0, high=self.energy_max
+                shape=(),
+                low=0.0,
+                high=1.0,
             )
         if "age" in self.list_observations:
             observation_dict["age"] = ContinuousSpace(
-                shape=(), low=0.0, high=self.age_max
+                shape=(),
+                low=0.0,
+                high=1.0,
             )
         if "novelty_hunger" in self.list_observations:
             observation_dict["novelty_hunger"] = ContinuousSpace(
-                shape=(4,), low=0.0, high=self.age_max
+                shape=(4,), low=0.0, high=1.0
             )
         if "n_childrens" in self.list_observations:
-            observation_dict["n_childrens"] = DiscreteSpace(
-                shape=(), low=0, high=None
+            observation_dict["n_childrens"] = ContinuousSpace(
+                shape=(), low=0.0, high=None
             )
         self.internal_measures_first_agent: Dict[str, List[jnp.ndarray]] = {
             "energy": [],
@@ -415,8 +419,6 @@ class GridworldEnv(EcoEnvironment):
             action: idx for idx, action in enumerate(self.list_actions)
         }
         self.n_actions = len(self.list_actions)
-
-        
 
     def reset(
         self,
@@ -520,7 +522,9 @@ class GridworldEnv(EcoEnvironment):
             energy_agents=jnp.full((self.n_agents_max,), self.energy_initial),
             age_agents=jnp.zeros(self.n_agents_max),
             appearance_agents=appearance_agents,
-            novelty_hunger=jnp.full((self.n_agents_max, 4), self.novelty_hunger_value_initial),
+            novelty_hunger=jnp.full(
+                (self.n_agents_max, 4), self.novelty_hunger_value_initial
+            ),
             n_childrens=jnp.zeros(self.n_agents_max, dtype=jnp.int_),
         )
 
@@ -1147,7 +1151,7 @@ class GridworldEnv(EcoEnvironment):
             # Else, agents are eating passively
             are_agents_eating = state.agents.are_existing_agents
 
-        map_agents_try_eating = (
+        map_n_agents_try_eating = (
             jnp.zeros_like(map_agents)
             .at[positions_agents_new[:, 0], positions_agents_new[:, 1]]
             .add(are_agents_eating)
@@ -1165,7 +1169,7 @@ class GridworldEnv(EcoEnvironment):
                 map_food_energy_bonus_available_per_agent += map_fruit_energy
 
         map_food_energy_bonus_available_per_agent /= jnp.maximum(
-            1, map_agents_try_eating
+            1, map_n_agents_try_eating
         )  # divide by the number of agents trying to eat at each cell
         food_energy_bonus_available_per_agent = (
             map_food_energy_bonus_available_per_agent[
@@ -1179,15 +1183,15 @@ class GridworldEnv(EcoEnvironment):
             for id_fruit in range(4):
                 idx_fruit = self.dict_name_channel_to_idx[f"fruits_{id_fruit}"]
                 map_fruit = state.map[..., idx_fruit]
+                are_agents_eating_fruit_i = are_agents_eating & (
+                    map_fruit[positions_agents_new[:, 0], positions_agents_new[:, 1]]
+                    == 1.0
+                )
+                if f"do_eat_fruit" in self.names_measures:
+                    dict_measures[f"do_eat_fruit_{id_fruit}"] = are_agents_eating_fruit_i
                 novelty_hunger_new = novelty_hunger_new.at[:, id_fruit].set(
                     jnp.where(
-                        are_agents_eating
-                        & (
-                            map_fruit[
-                                positions_agents_new[:, 0], positions_agents_new[:, 1]
-                            ]
-                            == 1.0
-                        ),
+                        are_agents_eating_fruit_i,
                         0,  # if the agent eats in a tile containing fruit i, then the novelty hunger of fruit i is reset
                         novelty_hunger_new[:, id_fruit]
                         + 1,  # else, the novelty hunger of fruit i is incremented
@@ -1228,7 +1232,9 @@ class GridworldEnv(EcoEnvironment):
         ]
         for idx in indexes_plants_and_fruits:
             map = map.at[:, :, idx].set(
-                map[:, :, idx] - map_agents_try_eating * map[:, :, idx]
+                jnp.clip(
+                    map[:, :, idx] - map_n_agents_try_eating * map[:, :, idx], 0, 1
+                )
             )
         state = state.replace(map=map)
 
@@ -1281,6 +1287,9 @@ class GridworldEnv(EcoEnvironment):
 
         # ====== Update the physical status of the agents ======
         energy_agents_new -= 1
+        energy_agents_new = jnp.minimum(
+            energy_agents_new, self.energy_max
+        )  # cap energy
         are_existing_agents_new = (
             (energy_agents_new > self.energy_thr_death)
             & state.agents.are_existing_agents
@@ -1522,11 +1531,10 @@ class GridworldEnv(EcoEnvironment):
             dict_observations["energy"] = state.agents.energy_agents / self.energy_max
         if "age" in self.list_observations:
             dict_observations["age"] = state.agents.age_agents / self.age_max
-        if "novelty_hunger" in self.list_observations and self.do_fruits:
-            for id_fruit in range(4):
-                dict_observations[f"novelty_hunger_{id_fruit}"] = (
-                    state.agents.novelty_hunger[:, id_fruit] / self.age_max
-                )
+        if "novelty_hunger" in self.list_observations:
+            dict_observations["novelty_hunger"] = (
+                state.agents.novelty_hunger / self.age_max
+            )
         if "n_childrens" in self.list_observations:
             dict_observations["n_childrens"] = state.agents.n_childrens
         if "visual_field" in self.list_observations:
@@ -1815,12 +1823,18 @@ class GridworldEnv(EcoEnvironment):
                     ]
                     .set(1)
                 )
-
-                obs = dict(
-                    energy=jnp.full(n, 5),  # very low energy
-                    age=jnp.full(n, 50),
-                    visual_field=visual_field,
-                )
+                assert (
+                    "visual_field" in self.list_observations
+                ), "Visual field is required to compute appetite"
+                obs = {"visual_field": visual_field}
+                if "age" in self.list_observations:
+                    obs["age"] = jnp.full(n, 50) / self.age_max
+                if "energy" in self.list_observations:
+                    obs["energy"] = jnp.full(n, 5) / self.energy_max  # very low energy
+                if "n_childrens" in self.list_observations:
+                    obs["n_childrens"] = jnp.zeros(n)
+                if "novelty_hunger" in self.list_observations:
+                    obs["novelty_hunger"] = jnp.zeros((n, 4))
                 key_random, subkey = jax.random.split(key_random)
                 _, actions, _ = self.agent_species.react(
                     state_species,

@@ -102,7 +102,8 @@ class BaseModel(nn.Module, ABC):
                     # (d_encoding,) -> (d_output,) : apply dense layer
                     output = nn.Dense(
                         features=d_output,
-                        bias_init=nn.initializers.ones_init(), # TODO : optionalize this, and find a way so that zeros doesnt create NaNs
+                        # bias_init=nn.initializers.ones_init(), # TODO : optionalize this, and find a way so that zeros doesnt create NaNs
+                        bias_init=nn.initializers.zeros_init(),
                     )(x)
             elif len(shape_output) == 0:
                 # (d_encoding,) -> ()
@@ -161,7 +162,6 @@ class BaseModel(nn.Module, ABC):
         Returns:
             Tuple[jnp.ndarray]: a tuple of the requested outputs
         """
-
         # Convert the observation to a vector encoding
         encoding = self.obs_to_encoding(x, key_random)
 

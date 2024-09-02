@@ -54,5 +54,4 @@ class MLP_Model(BaseModel):
             )(x)
             x = self.activation_fn(name_activation_fn=self.name_activation_fn, x=x)
 
-        print(f"obs: {obs}")
         return x

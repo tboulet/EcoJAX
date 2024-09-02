@@ -3,10 +3,17 @@ measures:
   global: 
     - params_agents
   immediate:
-    []
+    - reward
   state:
-    - strength_mutation
+    - hp
+    - params_reward_model
     - weights_agents
+    - loss_q
+    - q_values_max
+    - q_values_min
+    - q_values_mean
+    - q_values_median
+    - target
   behavior: []
 
 aggregators_lifespan:
@@ -16,7 +23,7 @@ aggregators_population:
   - class_string : ecojax.metrics.aggregators:AggregatorPopulationMean
     config:
       keys_measures : ${merge:${agents.metrics.measures.immediate}, ${agents.metrics.measures.state}, ${agents.metrics.measures.behavior}}
-      keys_measures_prefix : [weights]
+      keys_measures_prefix : [weights, params_reward_model, hp]
       n_agents : ${n_agents_max}
       prefix_metric : pop_mean
   # - class_string : ecojax.metrics.aggregators:AggregatorPopulationStd

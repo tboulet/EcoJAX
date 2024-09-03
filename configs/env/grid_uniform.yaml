@@ -128,7 +128,7 @@ vision_range_agent : 3
 dim_appearance : 0
 
 # The maximum age of an agent
-age_max : 500
+age_max : 200
 # The allowed situations for an agent to die :
 list_death_events:
   - age

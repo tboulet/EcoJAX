@@ -24,6 +24,9 @@ reward_model:
   func_weight_diff: constant # constant, linear, exponential # TODO : delete this as the reward is hardcoded
   dict_hardcoded_reward:
     energy: 10
+    age: 0
+    n_childrens: 60
+    
 # The dimension of the latent space corresponding to the internal representation of the observation
 n_sensations: 10
 # The configuration of the decision model

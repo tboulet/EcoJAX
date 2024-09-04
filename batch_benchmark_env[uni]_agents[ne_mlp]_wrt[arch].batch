@@ -46,11 +46,18 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 # Iterate over the seeds
 seed_max=10
-benchmark_name='benchmark_architecture3'
+benchmark_name='benchmark_architecture6'
 for _ in $(seq 1 $seed_max); do
-    seed = $RANDOM
-    for hidden_dims in '[]' '[16]' '[16, 16]' '[16, 32, 16]'; do
+    seed=$RANDOM
+    for hidden_dims in "[]" "[16]" "[16, 16]" "[16, 32, 16]"; do
         mkdir -p "logs/run_$initial_date/hidden_dims_$hidden_dims"
-        python run.py --config-name dgx env/metrics=metrics_dgx +benchmark_name=$benchmark_name seed=$seed model.hidden_dims=$hidden_dims > "logs/run_$initial_date/hidden_dims_$hidden_dims/seed_$seed.log" 2>&1
+        python run.py --config-name dgx \
+            model=mlp\
+            model.hidden_dims=$hidden_dims \
+            do_wandb=True \  # Do not change : log on wandb the results
+            env/metrics=metrics_dgx \  # Do not change : use the metrics_dgx metrics
+            +benchmark_name=$benchmark_name \  # Do not change : benchmark name
+            seed=$seed \  # Do not change : seed
+            > "logs/run_$initial_date/hidden_dims_cnn_$hidden_dims_cnn/seed_$seed.log" 2>&1  # Do not change : log in specific file
     done
 done

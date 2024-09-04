@@ -46,11 +46,17 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 # Iterate over the seeds
 seed_max=10
-benchmark_name='benchmark_age_max'
+benchmark_name='benchmark_age_max6'
 for _ in $(seq 1 $seed_max); do
-    seed = $RANDOM
+    seed=$RANDOM
     for age_max in 20 50 100 200 400; do
         mkdir -p "logs/run_$initial_date/age_max_$age_max"
-        python run.py --config-name dgx env/metrics=metrics_dgx +benchmark_name=$benchmark_name seed=$seed env.age_max=$age_max > "logs/run_$initial_date/age_max_$age_max/seed_$seed.log" 2>&1
+        python run.py --config-name dgx \
+            env.age_max=$age_max \
+            do_wandb=True \  # Do not change : log on wandb the results
+            env/metrics=metrics_dgx \  # Do not change : use the metrics_dgx metrics
+            +benchmark_name=$benchmark_name \  # Do not change : benchmark name
+            seed=$seed \  # Do not change : seed
+            > "logs/run_$initial_date/age_max_$age_max/seed_$seed.log" 2>&1  # Do not change : log in specific file
     done
 done

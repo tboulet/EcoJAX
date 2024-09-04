@@ -21,6 +21,7 @@ names_activations_to_fn: Dict[str, Callable[[jnp.ndarray], jnp.ndarray]] = {
     "sigmoid": nn.sigmoid,
     "leaky_relu": nn.leaky_relu,
     "softplus": nn.softplus,
+    "swish": nn.swish,
 }
 
 
@@ -114,7 +115,7 @@ class CNN(nn.Module):
             x = jnp.transpose(x, (1, 2, 0))
         H, W = x.shape[:2]
 
-        # Apply the CNN
+        # Apply the CNN : (H, W, C) -> (H, W, hidden_dim) -> ... -> (H, W, hidden_dim)
         for hidden_dim in self.hidden_dims:
             x = nn.Conv(
                 features=hidden_dim,
@@ -125,10 +126,10 @@ class CNN(nn.Module):
 
         # Apply the output layer depending on the shape of the output
         if len(self.shape_output) == 0:
-            # Scalar : Do the average of the last layer
+            # If scalar, do the average of the last layer : (H, W, C) -> mean -> ()
             x = jnp.mean(x)
         elif len(self.shape_output) == 1:
-            # Shape (n,) : apply conv and then dense : (H, W, C) -> (H, C, 1) -> flatten -> (n,)
+            # If embedding (n,), apply conv and then dense : (H, W, C) -> conv -> (H, W, 1) -> reshape -> (H * W,) -> dense -> (n,)
             x = nn.Conv(
                 features=1,
                 kernel_size=(1, 1),

@@ -46,11 +46,17 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 # Iterate over the seeds
 seed_max=10
-benchmark_name='benchmark_vision_range_agent5'
+benchmark_name='benchmark_vision_range_agent6'
 for _ in $(seq 1 $seed_max); do
-    seed = $RANDOM
+    seed=$RANDOM
     for vision_range_agent in 0 1 3 5; do
         mkdir -p "logs/run_$initial_date/vision_range_agent_$vision_range_agent"
-        python run.py --config-name dgx env/metrics=metrics_dgx +benchmark_name=$benchmark_name seed=$seed env.vision_range_agent=$vision_range_agent > "logs/run_$initial_date/vision_range_agent_$vision_range_agent/seed_$seed.log" 2>&1
+        python run.py --config-name dgx \
+            env.vision_range_agent=$vision_range_agent \
+            do_wandb=True \  # Do not change : log on wandb the results
+            env/metrics=metrics_dgx \  # Do not change : use the metrics_dgx metrics
+            +benchmark_name=$benchmark_name \  # Do not change : benchmark name
+            seed=$seed \  # Do not change : seed
+            > "logs/run_$initial_date/vision_range_agent_$vision_range_agent/seed_$seed.log" 2>&1  # Do not change : log in specific file
     done
 done

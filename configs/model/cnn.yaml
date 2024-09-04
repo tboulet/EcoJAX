@@ -8,4 +8,7 @@ dim_cnn_output: 8
 mlp_config:
   hidden_dims: []
   n_output_features: 8
-  
+
+# This does the following:
+# - CNN(s) : (H, W, C) -> ... -> (H, W, last_hidden_dim) -> (H*W*last_hidden_dim,) -> (dim_cnn_output,)
+# - MLP : (dim_cnn_output,) concat with other obs -> MLP -> (n_output_features,)

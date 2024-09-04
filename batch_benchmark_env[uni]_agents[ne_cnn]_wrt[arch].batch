@@ -50,13 +50,10 @@ for _ in $(seq 1 $seed_max); do
     seed=$RANDOM
     for hidden_dims_cnn in "[8, 8, 8]" "[8, 8]" "[8]"; do
         mkdir -p "logs/run_$initial_date/hidden_dims_cnn_$hidden_dims_cnn"
-        python run.py --config-name dgx \
-            model=cnn\
-            model.cnn_config.hidden_dims=$hidden_dims_cnn \
-            do_wandb=True \  # Do not change : log on wandb the results
-            env/metrics=metrics_dgx \  # Do not change : use the metrics_dgx metrics
-            +benchmark_name=$benchmark_name \  # Do not change : benchmark name
-            seed=$seed \  # Do not change : seed
+        python run.py --config-name dgx do_wandb=True env/metrics=metrics_dgx +benchmark_name=$benchmark_name seed=$seed \
+            model=cnn \
+            model.cnn_config.hidden_dims="$hidden_dims_cnn" \
+            env.vision_range_agent=5 \
             > "logs/run_$initial_date/hidden_dims_cnn_$hidden_dims_cnn/seed_$seed.log" 2>&1  # Do not change : log in specific file
     done
 done

@@ -51,13 +51,9 @@ for _ in $(seq 1 $seed_max); do
     seed=$RANDOM
     for gamma in 0.5 0.85 0.99 0.999; do
         mkdir -p "logs/run_rl_$initial_date/gamma_$gamma"
-        python run.py --config-name mdp \
+        python run.py --config-name mdp do_wandb=True env/metrics=metrics_dgx +benchmark_name=$benchmark_name seed=$seed \
             agents=rl \
             agents.hp_initial.gamma=$gamma \
-            do_wandb=True \  # Do not change : log on wandb the results
-            env/metrics=metrics_dgx \  # Do not change : use the metrics_dgx metrics
-            +benchmark_name=$benchmark_name \  # Do not change : benchmark name
-            seed=$seed \  # Do not change : seed
             > "logs/run_rl_$initial_date/gamma_$gamma/seed_$seed.log" 2>&1  # Do not change : log in specific file
     done
 done

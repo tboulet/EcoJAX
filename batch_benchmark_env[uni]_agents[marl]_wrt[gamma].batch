@@ -12,13 +12,13 @@
 ##SBATCH --gres=gpu:1g.10gb:1
 ##SBATCH --cpus-per-task=4
 
-##SBATCH --partition=prod20
-##SBATCH --gres=gpu:2g.20gb:1
-##SBATCH --cpus-per-task=4
-
-#SBATCH --partition=prod40
-#SBATCH --gres=gpu:3g.40gb:1
+#SBATCH --partition=prod20
+#SBATCH --gres=gpu:2g.20gb:1
 #SBATCH --cpus-per-task=4
+
+##SBATCH --partition=prod40
+##SBATCH --gres=gpu:3g.40gb:1
+##SBATCH --cpus-per-task=4
 
 ##SBATCH --partition=prod80
 ##SBATCH --gres=gpu:A100.80gb:1
@@ -46,14 +46,14 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 # Iterate over the seeds
 seed_max=10
-benchmark_name='rl7'
+benchmark_name='marl7'
 for _ in $(seq 1 $seed_max); do
     seed=$RANDOM
     for gamma in 0.5 0.85 0.99 0.999; do
-        mkdir -p "logs/run_rl_$initial_date/gamma_$gamma"
-        python run.py --config-name mdp do_wandb=True env/metrics=metrics_dgx +benchmark_name=$benchmark_name seed=$seed \
+        mkdir -p "logs/run_marl_$initial_date/gamma_$gamma"
+        python run.py --config-name ma_mdp do_wandb=True env/metrics=metrics_dgx +benchmark_name=$benchmark_name seed=$seed \
             agents=rl \
             agents.hp_initial.gamma=$gamma \
-            > "logs/run_rl_$initial_date/gamma_$gamma/seed_$seed.log" 2>&1  # Do not change : log in specific file
+            > "logs/run_marl_$initial_date/gamma_$gamma/seed_$seed.log" 2>&1  # Do not change : log in specific file
     done
 done

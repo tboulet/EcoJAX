@@ -46,7 +46,7 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 # Iterate over the seeds
 seed_max=10
-benchmark_name='benchmark_vision_range_agent6'
+benchmark_name='benchmark_vision_range_agent7'
 for _ in $(seq 1 $seed_max); do
     seed=$RANDOM
     for vision_range_agent in 0 1 3 5; do

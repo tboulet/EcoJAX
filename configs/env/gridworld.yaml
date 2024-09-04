@@ -101,7 +101,7 @@ list_death_events:
 # The initial energy of an agent
 energy_initial : 50
 # The energy amount obtained by eating a food tile
-energy_food : 10
+energy_food : 30
 # The energy threshold under which an agent dies
 energy_thr_death : 0
 

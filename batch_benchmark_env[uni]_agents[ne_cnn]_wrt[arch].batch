@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 
-#SBATCH --job-name=cnn5
+#SBATCH --job-name=cnn_arch
 #SBATCH --output=out.txt
 #SBATCH --error=out.txt
 
@@ -45,7 +45,7 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 # Iterate over the seeds
 seed_max=10
-benchmark_name='benchmark_cnn6'
+benchmark_name='benchmark_cnn7'
 for _ in $(seq 1 $seed_max); do
     seed=$RANDOM
     for hidden_dims_cnn in "[8, 8, 8]" "[8, 8]" "[8]"; do

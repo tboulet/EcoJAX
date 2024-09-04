@@ -94,13 +94,13 @@ class RewardModel(BaseModel):
     Args:
         space_input (spaces.DictSpace): the input space of the model
         space_output (spaces.ContinuousSpace): the output space of the model
-        func_weight_diff (str): the method used to model the reward. Among ["constant", "linear"] (see below)
-        dict_hardcoded_reward (Optional[Dict[str, float]], optional): in case you want to hardcode the reward (Defaults to None, evolved reward). If not None, the dictionnary sets the alpha_k of each component k to a fixed value.
+        func_weight (str): the method used to model the reward. Among ["constant", "linear", "hardcoded"] (see below)
+        dict_hardcoded_reward (Optional[Dict[str, float]], optional): in case you want to hardcode the reward, the dictionnary that maps the observation components to the reward of their unit variation. Defaults to None.
     """
 
     space_input: spaces.DictSpace
     space_output: spaces.ContinuousSpace
-    func_weight_diff: str
+    func_weight: str
     dict_hardcoded_reward: Optional[Dict[str, float]] = None
 
     def obs_to_encoding(
@@ -136,31 +136,47 @@ class RewardModel(BaseModel):
                 obs_component = x["obs"][name_space]
                 obs_component_next = x["obs_next"][name_space]
                 diff_obs = obs_component_next - obs_component
-                if self.dict_hardcoded_reward is None:
+
+                if self.func_weight == "constant":
                     alpha_diff = self.param(
                         name=f"alpha_diff_{name_space}",
                         init_fn=nn.initializers.ones,
                         shape=(),
                         dtype=jnp.float32,
                     )
-                    if self.func_weight_diff == "constant":
-                        # The additional reward due to component k will be proportional to the variation of component k : r_t += alpha_k * (o_{t+1}_k - o_t_k)
-                        reward += alpha_diff * diff_obs
-                    elif self.func_weight_diff == "linear":
-                        # The additional reward due to component k will be proportional to the variation of component k, but the proportionality factor can vary affinely with the component value : r_t += (alpha_k + beta_k * o_t_k) * (o_{t+1}_k - o_t_k)
-                        beta_diff = self.param(
-                            name=f"beta_diff_{name_space}",
-                            init_fn=nn.initializers.ones,
-                            shape=(),
-                            dtype=jnp.float32,
-                        )
-                        reward += (alpha_diff + obs_component * beta_diff) * diff_obs
-                    else:
-                        raise NotImplementedError(
-                            f"Function {self.func_weight_diff} not implemented"
-                        )
-                else:
+                    # The additional reward due to component k will be proportional to the variation of component k : r_t += alpha_k * (o_{t+1}_k - o_t_k)
+                    reward += alpha_diff * diff_obs
+
+                elif self.func_weight == "linear":
+                    # The additional reward due to component k will be proportional to the variation of component k, but the proportionality factor can vary affinely with the component value : r_t += (alpha_k + beta_k * o_t_k) * (o_{t+1}_k - o_t_k)
+                    alpha_diff = self.param(
+                        name=f"alpha_diff_{name_space}",
+                        init_fn=nn.initializers.ones,
+                        shape=(),
+                        dtype=jnp.float32,
+                    )
+                    beta_diff = self.param(
+                        name=f"beta_diff_{name_space}",
+                        init_fn=nn.initializers.ones,
+                        shape=(),
+                        dtype=jnp.float32,
+                    )
+                    reward += (alpha_diff + obs_component * beta_diff) * diff_obs
+
+                elif self.func_weight == "hardcoded":
+                    assert (
+                        self.dict_hardcoded_reward is not None
+                    ), "On hardcoded reward mode, the dict_hardcoded_reward dictionnary must be provided in the reward model config (agents.reward_model.dict_hardcoded_reward)"
                     reward += diff_obs * self.dict_hardcoded_reward[name_space]
+                
+                elif self.func_weight == "one":
+                    reward += 1
+                    
+                else:
+                    raise NotImplementedError(
+                        f"Function {self.func_weight} not implemented"
+                    )
+
         return reward
 
 
@@ -355,7 +371,7 @@ class RL_AgentSpecies(AgentSpecies):
     def init_tr_state(self, agent: AgentRL) -> train_state.TrainState:
         """Initialize the training state of the agent."""
         tx = optax.sgd(
-            learning_rate=1
+            learning_rate=0.001
         )  # set tx's learning rate as 1 and scale loss for pseudo-learning rate
         tr_state = train_state.TrainState.create(
             apply_fn=self.decision_model.apply, params=agent.params_decision, tx=tx
@@ -647,8 +663,20 @@ class RL_AgentSpecies(AgentSpecies):
             key_random, subkey = random.split(key_random)
             batch_subkeys = random.split(key_random, 2 * self.batch_size)
 
+            # Compute the Q-values of the next state : use the params of outside the loss function to detach gradient of next Q-values
+            def get_q_values_target(x_t: jnp.ndarray, key_random: jnp.ndarray):
+                return self.decision_model.apply(
+                    variables={"params": agent.params_decision},
+                    x=x_t,
+                    key_random=key_random,
+                )
+
+            q_values_xt_next = jax.vmap(get_q_values_target, in_axes=(0, 0))(
+                x_next_batch, batch_subkeys[1::2]
+            )  # (B, n_actions)
+
             def loss_fn(params_decision):
-                # Compute the Q-values
+                # Compute current the Q-values : use params_decision as weights and batch along first axis (batch dimension)
                 def get_q_values(x_t: jnp.ndarray, key_random: jnp.ndarray):
                     """Function to compute the Q-values of the decision model.
                     From an agent i decision model parameters theta_i and an internal observation x_t of shape (n_sensations,), compute the agent i Q-values of x_t, as an array of shape (n_actions,).
@@ -670,9 +698,6 @@ class RL_AgentSpecies(AgentSpecies):
                 q_values_xt = jax.vmap(get_q_values, in_axes=(0, 0))(
                     x_batch, batch_subkeys[0::2]
                 )  # (B, n_actions)
-                q_values_xt_next = jax.vmap(get_q_values, in_axes=(0, 0))(
-                    x_next_batch, batch_subkeys[1::2]
-                )  # (B, n_actions)
                 q_xt_at = q_values_xt[jnp.arange(self.batch_size), a_batch]  # (B,)
 
                 # Compute the loss
@@ -680,15 +705,17 @@ class RL_AgentSpecies(AgentSpecies):
                     q_values_xt_next, axis=1
                 )  # (B,)
                 loss_q = jnp.mean((q_xt_at - target) ** 2)
-                loss_q = jnp.sqrt(loss_q)
-                loss_q *= (
-                    agent.hp.lr
-                )  # Scale the loss by the learning rate to simulate learning rate
+                # loss_q = jnp.sqrt(loss_q)
+                # loss_q *= (
+                #     agent.hp.lr
+                # )  # Scale the loss by the learning rate to simulate learning rate
                 loss_q *= agent.age > 0  # Only learn after the first step
                 return loss_q
 
             grad_fn = jax.value_and_grad(loss_fn)
             loss_q, grads = grad_fn(tr_state.params)
+            # Clip gradients
+            grads = jax.tree_map(lambda x: jnp.clip(x, -1, 1), grads)
             tr_state = tr_state.apply_gradients(grads=grads)
 
             # Update the agent's state
@@ -711,6 +738,13 @@ class RL_AgentSpecies(AgentSpecies):
                 "target": reward_last + agent.hp.gamma * jnp.max(q_values),
                 "reward": reward_last,
             }
+            try:
+                measures_rl["gradients weights"] = grads["Dense_0"]["kernel"].mean(
+                    axis=0
+                )
+                measures_rl["gradients bias"] = grads["Dense_0"]["bias"].mean(axis=0)
+            except Exception as e:
+                print(f"Error in gradients measures: {e}")
             for key, values in measures_rl.items():
                 if key in self.names_measures:
                     dict_measures[key] = values

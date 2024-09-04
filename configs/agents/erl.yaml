@@ -21,7 +21,7 @@ mode_weights_transmission: final # initial, final, none
 
 # The configuration of the reward model
 reward_model:
-  func_weight_diff: constant # constant, linear, exponential
+  func_weight: constant # constant, linear, exponential
 # The dimension of the latent space corresponding to the internal representation of the observation
 n_sensations: 16
 # The configuration of the decision model

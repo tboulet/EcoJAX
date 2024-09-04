@@ -14,6 +14,8 @@ measures:
     - q_values_mean
     - q_values_median
     - target
+    - gradients weights
+    - gradients bias
   behavior: []
 
 aggregators_lifespan:
@@ -33,6 +35,6 @@ aggregators_population:
   - class_string : ecojax.metrics.aggregators:AggregatorPopulationMean
     config:
       keys_measures : ${merge:${agents.metrics.measures.immediate}, ${agents.metrics.measures.state}, ${agents.metrics.measures.behavior}}
-      keys_measures_prefix : [weights, params_reward_model, hp]
+      keys_measures_prefix : [life, weights, params_reward_model, hp]
       n_agents : ${n_agents_max}
       prefix_metric : pop_mean

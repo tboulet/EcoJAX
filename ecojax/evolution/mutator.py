@@ -35,7 +35,7 @@ def mutate_scalar(
     value: float,
     range: Tuple[Optional[float], Optional[float]],
     key_random: jnp.ndarray,
-    mutation_strenth: float = 0.001,
+    mutation_strenth: float = 0.05,
 ) -> float:
     """Mutates a scalar value.
 

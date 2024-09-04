@@ -3,16 +3,16 @@ name: RL_Agents
 # ======================== Agent's Hyperparameter ========================
 # The initial hyperparameters of the population
 hp_initial:
-  lr: 0.01
+  lr: 0.001
   gamma: 0.9
   epsilon: 0.05
   strength_mutation: 0.1
 # The name of the exploration strategy, among epsilon_greedy, softmax, and greedy
-name_exploration: epsilon_greedy
+name_exploration: softmax
 # The size of the replay buffer
-size_replay_buffer: 5000
+size_replay_buffer: 100000
 # The batch size
-batch_size: 512
+batch_size: 4096
 
 # ======================== Evolution Hyperparameters ========================
 mode_weights_transmission: final # initial, final, none
@@ -21,9 +21,9 @@ mode_weights_transmission: final # initial, final, none
 
 # The configuration of the reward model
 reward_model:
-  func_weight_diff: constant # constant or linear
+  func_weight: hardcoded # constant, linear, hardcoded, one
   dict_hardcoded_reward:
-    energy: 10
+    energy: ${eval:'${env.energy_max} / (${env.energy_food} - 1)'} # set the reward of eating a plant to 1
     age: 0
     n_childrens: 0
 

@@ -19,7 +19,7 @@ from flax.struct import PyTreeNode, dataclass
 from ecojax.agents.base_agent_species import AgentSpecies
 from ecojax.core.eco_info import EcoInformation
 from ecojax.metrics.aggregators import Aggregator
-from ecojax.models.base_model import BaseModel
+from ecojax.models.base_model import BaseModel, FlattenAndConcatModel
 from ecojax.evolution.mutator import mutate_scalar, mutation_gaussian_noise
 from ecojax.models.mlp import MLP_Model
 from ecojax.types import ActionAgent, ObservationAgent
@@ -192,13 +192,22 @@ class RL_AgentSpecies(AgentSpecies):
         self.n_actions = action_space.n
 
         # Sensor model : this model converts the observation to "sensations", which are some internal neuro-evolved representation of the observation
-        self.n_sensations = config["n_sensations"]
-        self.space_output_sensor = spaces.ContinuousSpace(self.n_sensations)
-        self.sensor_model = model_class(
-            space_input=observation_space,
-            space_output=self.space_output_sensor,
-            **config_model,
-        )
+        self.do_sensor_model: bool = config["do_sensor_model"]
+        if self.do_sensor_model:
+            self.n_sensations: int = config["n_sensations"]
+            self.sensor_model = model_class(
+                space_input=observation_space,
+                space_output=spaces.ContinuousSpace(self.n_sensations),
+                **config_model,
+            )
+        else:
+            # If there is no sensor model, the sensations are the observations
+            self.n_sensations = int(observation_space.get_dimension())
+            self.sensor_model = FlattenAndConcatModel(
+                space_input=observation_space,
+                space_output=spaces.ContinuousSpace(self.n_sensations),
+            )
+
         print(f"Sensor model: {self.sensor_model.get_table_summary()}")
 
         # Decision model : this RL model converts the sensations to the decision (actions)

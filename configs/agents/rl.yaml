@@ -10,9 +10,9 @@ hp_initial:
 # The name of the exploration strategy, among epsilon_greedy, softmax, and greedy
 name_exploration: epsilon_greedy
 # The size of the replay buffer
-size_replay_buffer: 1000
+size_replay_buffer: 5000
 # The batch size
-batch_size: 256
+batch_size: 512
 
 # ======================== Evolution Hyperparameters ========================
 mode_weights_transmission: final # initial, final, none
@@ -21,14 +21,18 @@ mode_weights_transmission: final # initial, final, none
 
 # The configuration of the reward model
 reward_model:
-  func_weight_diff: constant # constant, linear, exponential # TODO : delete this as the reward is hardcoded
+  func_weight_diff: constant # constant or linear
   dict_hardcoded_reward:
     energy: 10
     age: 0
-    n_childrens: 60
-    
+    n_childrens: 0
+
+# Whether to use an sensor model. If True, the agent will use the config's model as the sensor model. If False, the agent will directly use the observation as input for the decision model.
+do_sensor_model: False
+
 # The dimension of the latent space corresponding to the internal representation of the observation
-n_sensations: 10
+n_sensations: 11
+
 # The configuration of the decision model
 decision_model:
   hidden_dims: []

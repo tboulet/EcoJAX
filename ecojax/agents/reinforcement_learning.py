@@ -168,10 +168,10 @@ class RewardModel(BaseModel):
                         self.dict_hardcoded_reward is not None
                     ), "On hardcoded reward mode, the dict_hardcoded_reward dictionnary must be provided in the reward model config (agents.reward_model.dict_hardcoded_reward)"
                     reward += diff_obs * self.dict_hardcoded_reward[name_space]
-                
+
                 elif self.func_weight == "one":
                     reward += 1
-                    
+
                 else:
                     raise NotImplementedError(
                         f"Function {self.func_weight} not implemented"
@@ -739,10 +739,8 @@ class RL_AgentSpecies(AgentSpecies):
                 "reward": reward_last,
             }
             try:
-                measures_rl["gradients weights"] = grads["Dense_0"]["kernel"].mean(
-                    axis=0
-                )
-                measures_rl["gradients bias"] = grads["Dense_0"]["bias"].mean(axis=0)
+                measures_rl["gradients weights"] = grads["Dense_0"]["kernel"].mean()
+                measures_rl["gradients bias"] = grads["Dense_0"]["bias"].mean()
             except Exception as e:
                 print(f"Error in gradients measures: {e}")
             for key, values in measures_rl.items():

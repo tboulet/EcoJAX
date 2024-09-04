@@ -174,3 +174,33 @@ class BaseModel(nn.Module, ABC):
         key_random = jax.random.PRNGKey(0)
         x = self.space_input.sample(key_random)
         return nn.tabulate(self, rngs=key_random)(x, key_random)
+
+
+class FlattenAndConcatModel(BaseModel):
+    """A model that flattens and concatenates the observation components to obtain a single vector encoding."""
+
+    def obs_to_encoding(
+        self, obs: ObservationAgent, key_random: jnp.ndarray
+    ) -> jnp.ndarray:
+        """Converts the observation to a vector encoding that can be processed by the model."""
+        # Flatten and concatenate observation inputs
+        list_spaces_and_values = self.space_input.get_list_spaces_and_values(obs)
+        list_vectors = []
+        for space, x in list_spaces_and_values:
+            if isinstance(space, ContinuousSpace):
+                x = x.reshape((-1,))
+                list_vectors.append(x)
+            elif isinstance(space, DiscreteSpace):
+                one_hot_encoded = jax.nn.one_hot(x, space.n)
+                list_vectors.append(one_hot_encoded)
+            else:
+                raise ValueError(f"Unknown space type for observation: {type(space)}")
+        x = jnp.concatenate(list_vectors, axis=-1)
+        return x
+
+    def process_encoding(self, x: jnp.ndarray, key_random: jnp.ndarray) -> jnp.ndarray:
+        """Processes the encoding to obtain the output of the model."""
+        assert self.space_output.contains(
+            x
+        ), f"Output {x} is not in the output space {self.space_output}"
+        return x

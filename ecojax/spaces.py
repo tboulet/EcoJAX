@@ -35,11 +35,17 @@ class EcojaxSpace(ABC):
         pass
 
     @abstractmethod
-    def get_list_spaces_and_values(self, x : Any) -> List[Tuple["EcojaxSpace", jnp.ndarray]]:
-        """Flatten the input x to a list of spaces and values.
-        """
+    def get_list_spaces_and_values(
+        self, x: Any
+    ) -> List[Tuple["EcojaxSpace", jnp.ndarray]]:
+        """Flatten the input x to a list of spaces and values."""
         pass
-    
+
+    @abstractmethod
+    def get_dimension(self) -> int:
+        """Return the dimension of the space."""
+        pass
+
     @abstractmethod
     def __repr__(self) -> str:
         pass
@@ -79,9 +85,12 @@ class DiscreteSpace(EcojaxSpace):
         """
         return jnp.logical_and(0 <= x < self.n, jnp.equal(x, jnp.floor(x)))
 
-    def get_list_spaces_and_values(self, x : int) -> List[Tuple["EcojaxSpace", int]]:
+    def get_list_spaces_and_values(self, x: int) -> List[Tuple["EcojaxSpace", int]]:
         return [(self, x)]
-    
+
+    def get_dimension(self) -> int:
+        return 1
+
     def __repr__(self) -> str:
         return f"Discrete({self.n})"
 
@@ -102,8 +111,11 @@ class ContinuousSpace(EcojaxSpace):
             high (float): the upper bound of the space
         """
         if isinstance(shape, int):
-            shape = (shape,)
-        self.shape = shape
+            self.shape = (shape,)
+        elif isinstance(shape, tuple):
+            self.shape = shape
+        else:
+            raise ValueError("The shape must be an integer or a tuple of integers.")
         self.low = low
         self.high = high
 
@@ -140,7 +152,7 @@ class ContinuousSpace(EcojaxSpace):
         Returns:
             bool: whether the value is in the space
         """
-        # CHeck shape
+        # Check shape
         if not jnp.shape(x) == self.shape:
             return False
         if self.low != None and jnp.any(x < self.low):
@@ -148,9 +160,12 @@ class ContinuousSpace(EcojaxSpace):
         if self.high != None and jnp.any(x > self.high):
             return False
         return True
-    
-    def get_list_spaces_and_values(self, x : float) -> List[Tuple["EcojaxSpace", float]]:
+
+    def get_list_spaces_and_values(self, x: float) -> List[Tuple["EcojaxSpace", float]]:
         return [(self, x)]
+
+    def get_dimension(self) -> int:
+        return jnp.prod(jnp.array(self.shape))
 
     def __repr__(self) -> str:
         minval = self.low if self.low is not None else "-inf"
@@ -167,18 +182,25 @@ class TupleSpace(EcojaxSpace):
             tuple_spaces (Tuple[EcojaxSpace]): the spaces to combine
         """
         self.tuple_spaces = tuple_space
-    
+
     def sample(self, key_random: jnp.ndarray) -> Tuple[Any]:
         return tuple(space.sample(key_random) for space in self.tuple_spaces)
-    
+
     def contains(self, x: Tuple[Any]) -> bool:
+        if not isinstance(x, tuple):
+            return False
         return all(space.contains(x[i]) for i, space in enumerate(self.tuple_spaces))
-    
-    def get_list_spaces_and_values(self, x : Tuple[Any]) -> List[Tuple["EcojaxSpace", Any]]:
+
+    def get_list_spaces_and_values(
+        self, x: Tuple[Any]
+    ) -> List[Tuple["EcojaxSpace", Any]]:
         list_spaces_and_values = []
         for i, space in enumerate(self.tuple_spaces):
             list_spaces_and_values += space.get_list_spaces_and_values(x[i])
         return list_spaces_and_values
+
+    def get_dimension(self) -> int:
+        return sum([space.get_dimension() for space in self.tuple_spaces])
     
     def __repr__(self) -> str:
         return f"TupleSpace({', '.join([str(space) for space in self.tuple_spaces])})"
@@ -196,38 +218,47 @@ class DictSpace(EcojaxSpace):
 
     def sample(self, key_random: jnp.ndarray) -> Dict[str, Any]:
         return {key: space.sample(key_random) for key, space in self.dict_space.items()}
-    
+
     def contains(self, x: Dict[str, Any]) -> bool:
+        if not isinstance(x, dict):
+            return False
         return all(space.contains(x[key]) for key, space in self.dict_space.items())
-    
-    def get_list_spaces_and_values(self, x : Dict[str, Any]) -> List[Tuple["EcojaxSpace", Any]]:
+
+    def get_list_spaces_and_values(
+        self, x: Dict[str, Any]
+    ) -> List[Tuple["EcojaxSpace", Any]]:
         list_spaces_and_values = []
         for key, space in self.dict_space.items():
             list_spaces_and_values += space.get_list_spaces_and_values(x[key])
         return list_spaces_and_values
+
+    def get_dimension(self) -> int:
+        return sum([space.get_dimension() for space in self.dict_space.values()])
     
     def __repr__(self) -> str:
         return f"DictSpace({', '.join([f'{key}: {str(space)}' for key, space in self.dict_space.items()])})"
 
 
 class ProbabilitySpace(ContinuousSpace):
-    
+
     def __init__(self, shape: Union[int, Tuple[int]]):
         """A probability space, i.e. a continuous space with values in [0, 1] and summing to 1."""
-        assert isinstance(shape, int) or len(shape) == 1, "The shape of the probability space must be an integer or a tuple of length 1."
+        assert (
+            isinstance(shape, int) or len(shape) == 1
+        ), "The shape of the probability space must be an integer or a tuple of length 1."
         super().__init__(shape, 0, 1)
-        
+
     def sample(self, key_random: jnp.ndarray) -> jnp.ndarray:
-        x = super().sample(key_random) 
+        x = super().sample(key_random)
         return jax.nn.softmax(x)
-    
+
     def contains(self, x: jnp.ndarray) -> bool:
         return super().contains(x) and jnp.allclose(jnp.sum(x), 1)
-    
+
     def __repr__(self) -> str:
         return f"ProbabilitySpace({self.shape})"
-    
-    
+
+
 # if __name__ == "__main__":
 #     # Test the spaces
 #     key_random = random.PRNGKey(0)

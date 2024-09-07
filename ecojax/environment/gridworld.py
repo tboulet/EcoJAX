@@ -335,7 +335,7 @@ class GridworldEnv(EcoEnvironment):
         self.energy_transfer_gain: float = config.get("energy_transfer_gain", 0.0)
         # Other
         self.fill_value: int = self.n_agents_max
-        self.novelty_hunger_value_initial = 0
+        self.novelty_hunger_value_initial = self.age_max
 
         # Observations
         self.list_observations: List[str] = config["list_observations"]
@@ -399,7 +399,7 @@ class GridworldEnv(EcoEnvironment):
             )
         if "novelty_hunger" in self.list_observations:
             observation_dict["novelty_hunger"] = ContinuousSpace(
-                shape=(4,), low=0.0, high=1.0
+                shape=(4,), low=0.0, high=2.0
             )
         if "n_childrens" in self.list_observations:
             observation_dict["n_childrens"] = ContinuousSpace(

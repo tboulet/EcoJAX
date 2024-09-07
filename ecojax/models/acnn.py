@@ -65,6 +65,7 @@ class AdaptedCNN_Model(BaseModel):
         visual_field = obs["visual_field"]
         list_values = []
         for key, value in obs.items():
+            assert isinstance(self.space_input.dict_space[key], ContinuousSpace), f"Only continuous spaces are supported for now, but got {self.space_input[key]}"
             if key != "visual_field":
                 shape_value = value.shape
                 if len(shape_value) == 0:

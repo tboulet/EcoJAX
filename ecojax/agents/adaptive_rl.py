@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from copy import deepcopy
 from functools import partial
 import os
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
@@ -29,41 +30,23 @@ from ecojax.utils import instantiate_class, jbreakpoint, jprint
 
 
 @dataclass
-class HyperParametersRL:
-    # The learning rate of the agentnt
-    lr: float
-    # The discount factor of the agent
-    gamma: float
-    # The exploration rate of the agent
-    epsilon: float
+class HyperParametersAdaRL:
     # The mutation strength of the agent
     strength_mutation: float
 
 
 @dataclass
-class TransitionRL:
-    # The internal observation of the agent
-    x: jnp.ndarray
-    # The action of the agent
-    action: int
-    # The reward of the agent
-    reward: float
-    # The next internal observation of the agent
-    x_next: jnp.ndarray
-
-
-@dataclass
-class AgentRL(PyTreeNode):
+class AgentAdaRL(PyTreeNode):
     # The age of the agent, in number of timesteps
     age: int
+    # The parameters of the neural network corresponding to the agent
+    params: Dict[str, jnp.ndarray]
     # The hyperparameters of the agent
-    hp: HyperParametersRL
-    # The initial parameters of the neural network
-    params_sensor: Dict[str, jnp.ndarray]
-    # The parameters of the decision model
-    params_decision: Dict[str, jnp.ndarray]
-    # In case of initial weights transmission, the initial parameters of the decision model
-    params_decision_initial: Optional[Dict[str, jnp.ndarray]]
+    hp: HyperParametersAdaRL
+    # The fruit value table of the agent, of shape (4,)
+    table_value_fruits: jnp.ndarray
+    # The initial fruit value table of the agent, of shape (4,)
+    table_value_fruits_initial: jnp.ndarray
     # The parameters of the reward model (not necessarily a NN, can be a more simple model)
     params_reward: Dict[str, jnp.ndarray]
     # Whether the agent is existing
@@ -72,23 +55,46 @@ class AgentRL(PyTreeNode):
     obs_last: jnp.ndarray
     # The last action of the agent
     action_last: int
-    # The replay buffer of the agent
-    replay_buffer: TransitionRL  # Batched
 
 
 @dataclass
-class StateSpeciesRL:
+class StateSpeciesAdaRL:
     # The agents of the species
-    agents: AgentRL  # Batched
-
-    # The training state of the species
-    tr_state: train_state.TrainState  # Batched
+    agents: AgentAdaRL  # Batched
 
     # The lifespan and population aggregators
     metrics_lifespan: List[PyTreeNode]
     metrics_population: List[PyTreeNode]
 
-class RL_AgentSpecies(AgentSpecies):
+
+class ModelFruitAverager(BaseModel):
+    """The model of the agent, that will average the fruit values to obtain the logits of the actions.
+
+    Args:
+        space_input (spaces.DictSpace): the input space of the model
+        space_output (spaces.ContinuousSpace): the output space of the model
+        agents_species (AdaptiveRL_AgentSpecies): the species of agents
+        model_fruit (BaseModel): the model that will convert the observation of a fruit to an embedding (logits for now)
+    """
+
+    space_input: spaces.DictSpace
+    space_output: spaces.ContinuousSpace
+    agents_species: AgentSpecies
+    model_fruit: BaseModel
+
+    def obs_to_encoding(
+        self,
+        x: Dict[str, jnp.ndarray],
+        key_random: jnp.ndarray,
+    ) -> Tuple[jnp.ndarray]:
+        print(x)
+        raise
+        
+    
+    
+    
+    
+class AdaptiveRL_AgentSpecies(AgentSpecies):
     """A species of agents that learn with reinforcement learning."""
 
     def __init__(
@@ -115,34 +121,75 @@ class RL_AgentSpecies(AgentSpecies):
         ), f"Only DiscreteSpace is supported for now, got {action_space}"
         self.n_actions = action_space.n
 
-        # Sensor model : this model converts the observation to "sensations", which are some internal neuro-evolved representation of the observation
-        self.do_sensor_model: bool = config["do_sensor_model"]
-        if self.do_sensor_model:
-            self.n_sensations: int = config["n_sensations"]
-            self.sensor_model = model_class(
-                space_input=observation_space,
-                space_output=spaces.ContinuousSpace(self.n_sensations),
-                **config_model,
-            )
-        else:
-            # If there is no sensor model, the sensations are the observations
-            self.n_sensations = int(observation_space.get_dimension())
-            self.sensor_model = FlattenAndConcatModel(
-                space_input=observation_space,
-                space_output=spaces.ContinuousSpace(self.n_sensations),
-            )
+        # Hyperparameters
+        self.mode_weights_transmission: str = self.config["mode_weights_transmission"]
+        self.n_latent_fruit: int = self.config["n_latent_fruit"]
 
-        print(f"Sensor model: {self.sensor_model.get_table_summary()}")
+        self.do_include_fruit: bool = self.config["do_include_fruit"]
+        self.do_include_value_global: bool = self.config["do_include_value_global"]
+        self.do_include_value_fruit: bool = self.config["do_include_value_fruit"]
+        self.do_include_novelty_hunger: bool = self.config["do_include_novelty_hunger"]
+        self.list_channels_visual_field: List[str] = self.config[
+            "list_channels_visual_field"
+        ]
+        assert all(
+            [f"fruits_{i}" in self.list_channels_visual_field for i in range(4)]
+        ), "The visual field must contain the fruits channels"
 
-        # Decision model : this RL model converts the sensations to the decision (actions)
-        config_decision_model = config["decision_model"]
-        self.decision_model = MLP_Model(
-            space_input=spaces.ContinuousSpace(self.n_sensations),
-            space_output=spaces.ContinuousSpace(self.n_actions),
-            **config_decision_model,
+        # Fruit model : this model will convert the observations related to a fruit to a value
+        assert isinstance(
+            self.observation_space, spaces.DictSpace
+        ), "The observation space must be a DictSpace"
+        assert (
+            "visual_field" in self.observation_space.dict_space
+        ), "The observation space must contain a 'visual_field' component"
+        S, S_, _ = self.observation_space.dict_space["visual_field"].shape
+        assert S == S_, "The visual field must be square"
+
+        if "novelty_hunger" not in self.observation_space.dict_space:
+            self.do_include_novelty_hunger = False
+        self.C_input_visual_field = len(self.list_channels_visual_field)
+        self.C_input_fruit_model = (
+            self.C_input_visual_field
+            - 4
+            + int(self.do_include_fruit)
+            + int(self.do_include_value_global)
+            + int(self.do_include_value_fruit)
+            + int(self.do_include_novelty_hunger)
+        )  # Get the number of channels of the fruit model : C_input_visual_field - 4 (remove the fruits) + sum_include_x (add the observations)
+
+        self.space_observation_individual_fruit = deepcopy(self.observation_space)
+        if "novelty_hunger" in self.space_observation_individual_fruit.dict_space:
+            self.space_observation_individual_fruit.dict_space[
+                "novelty_hunger"
+            ].shape = ()  # Only fruit i will be included in the novelty_hunger of fruit i
+        self.space_observation_individual_fruit.dict_space["visual_field"].shape = (
+            S,
+            S,
+            self.C_input_fruit_model,
         )
-        print(f"Decision model: {self.decision_model.get_table_summary()}")
 
+        self.model_fruit = model_class(
+            space_input=self.space_observation_individual_fruit,
+            space_output=spaces.ContinuousSpace(shape=(self.n_actions,)),
+            **config_model,
+        )
+        print(f"Fruit Model: {self.model_fruit.get_table_summary()}")
+
+        # Decision model : this neuro-evolved model converts the observation to an action
+        # TODO : implement the decision model
+        
+        # Model : this model average the fruit output to obtain the logits
+        self.model = ModelFruitAverager(
+            space_input=observation_space,
+            space_output=spaces.ContinuousSpace(shape=(self.n_actions,)),
+            agents_species=self,
+            model_fruit=self.model_fruit,
+            # TODO : add decision model and inbetween here
+        )
+        print(f"Model: {self.model.get_table_summary()}")
+            
+        
         # Reward model : this neuro-evolved model converts the observation variation to a reward used by the RL process
         self.reward_model = RewardModel(
             space_input=spaces.DictSpace(
@@ -156,20 +203,12 @@ class RL_AgentSpecies(AgentSpecies):
         )
         print(f"Reward model: {self.reward_model.get_table_summary()}")
 
-        # Hyperparameters
-        self.name_exploration: str = self.config["name_exploration"]
-        self.size_replay_buffer: int = self.config["size_replay_buffer"]
-        self.batch_size: int = self.config["batch_size"]
-        self.n_gradient_steps: int = self.config["n_gradient_steps"]
-        self.value_gradient_clipping: float = self.config["value_gradient_clipping"]
-        self.mode_weights_transmission: str = self.config["mode_weights_transmission"]
-
         # Metrics parameters
         self.names_measures: List[str] = sum(
             [names for type_measure, names in config["metrics"]["measures"].items()], []
         )
 
-    def reset(self, key_random: jnp.ndarray) -> StateSpeciesRL:
+    def reset(self, key_random: jnp.ndarray) -> StateSpeciesAdaRL:
 
         # Initialize the metrics
         self.aggregators_lifespan: List[Aggregator] = []
@@ -194,59 +233,51 @@ class RL_AgentSpecies(AgentSpecies):
             do_exist=jnp.arange(self.n_agents_max)
             < self.n_agents_initial,  # by convention, the first n_agents_initial agents exist
         )
-        batch_tr_states = jax.vmap(self.init_tr_state)(batch_agents)
-        return StateSpeciesRL(
+
+        return StateSpeciesAdaRL(
             agents=batch_agents,
-            tr_state=batch_tr_states,
             metrics_lifespan=list_metrics_lifespan,
             metrics_population=list_metrics_population,
         )
 
-    def init_hp(self) -> HyperParametersRL:
+    def init_hp(self) -> HyperParametersAdaRL:
         """Get the initial hyperparameters of the agent from the config"""
-        return HyperParametersRL(**self.config["hp_initial"])
+        return HyperParametersAdaRL(**self.config["hp_initial"])
 
     def init_agent(
         self,
         key_random: jnp.ndarray,
         do_exist: bool = True,
-        hp: Optional[HyperParametersRL] = None,
-        params_sensor: Optional[Dict[str, jnp.ndarray]] = None,
-        params_decision: Optional[Dict[str, jnp.ndarray]] = None,
-        params_decision_initial: Optional[Dict[str, jnp.ndarray]] = None,
+        params: Optional[Dict[str, jnp.ndarray]] = None,
+        hp: Optional[HyperParametersAdaRL] = None,
+        table_value_fruits: Optional[jnp.ndarray] = None,
+        table_value_fruits_initial: Optional[jnp.ndarray] = None,
         params_reward: Optional[Dict[str, jnp.ndarray]] = None,
-    ) -> AgentRL:
+    ) -> AgentAdaRL:
         """Create a new agent.
 
         Args:
             key_random (jnp.ndarray): the random key
-            do_exist (bool, optional): whether the agent actually exists in the simulation. Defaults to True.
-            hp (HyperParametersRL, optional): the hyperparameters of the agent. Defaults to None (will be initialized from the config).
-            params_sensor (Dict[str, jnp.ndarray], optional): the sensor NN parameters. Defaults to None (will be initialized randomly)
-            params_decision (Dict[str, jnp.ndarray], optional): the decision NN parameters. Defaults to None (will be initialized randomly)
-            params_decision_initial (Dict[str, jnp.ndarray], optional): the initial decision NN parameters. Defaults to None (no initial weights transmission)
-            params_reward (Dict[str, jnp.ndarray], optional): the parameters of the reward model. Defaults to None (will be initialized randomly).
-
-        Returns:
-            AgentRL: the new agent
+            do_exist (bool, optional): whether the agent exists. Defaults to True.
+            params (Optional[Dict[str, jnp.ndarray]], optional): the parameters of the agent. Defaults to None.
+            hp (Optional[HyperParametersAdaRL], optional): the hyperparameters of the agent. Defaults to None.
+            table_value_fruits (Optional[jnp.ndarray], optional): the table of values of the fruits. Defaults to None.
+            table_value_fruits_initial (Optional[jnp.ndarray], optional): the initial table of values of the fruits. Defaults to None.
+            params_reward (Optional[Dict[str, jnp.ndarray]], optional): the parameters of the reward model. Defaults to None.
         """
+        if params is None:
+            key_random, subkey = random.split(key_random)
+            variables = self.model.get_initialized_variables(subkey)
+            params = variables.get("params", {})
         if hp is None:
             hp = self.init_hp()
-        if params_sensor is None:
-            key_random, subkey = random.split(key_random)
-            variables = self.sensor_model.get_initialized_variables(subkey)
-            params_sensor = variables.get("params", {})
-        if params_decision is None:
-            key_random, subkey = random.split(key_random)
-            variables = self.decision_model.get_initialized_variables(subkey)
-            params_decision = variables.get("params", {})
+        if table_value_fruits is None:
+            table_value_fruits = jnp.zeros((4,))
         if (
-            params_decision_initial is None
+            table_value_fruits_initial is None
             and self.mode_weights_transmission == "initial"
         ):
-            key_random, subkey = random.split(key_random)
-            variables = self.decision_model.get_initialized_variables(subkey)
-            params_decision_initial = variables.get("params", {})
+            table_value_fruits_initial = table_value_fruits
         if params_reward is None:
             key_random, subkey = random.split(key_random)
             variables = self.reward_model.get_initialized_variables(subkey)
@@ -254,48 +285,27 @@ class RL_AgentSpecies(AgentSpecies):
         key_random, subkey = random.split(key_random)
         obs_dummy = self.observation_space.sample(subkey)
 
-        # Create an empty replay buffer, ie a replay buffer filled with dummy transitions
-        key_random, subkey1, subkey2 = random.split(key_random, 3)
-        replay_buffer = jax.vmap(
-            lambda _: TransitionRL(
-                x=random.normal(subkey1, shape=(self.n_sensations,)),
-                action=-1,
-                reward=0.42,
-                x_next=random.normal(subkey2, shape=(self.n_sensations,)),
-            )
-        )(jnp.arange(self.size_replay_buffer))
-
-        return AgentRL(
+        return AgentAdaRL(
             age=0,
+            params=params,
             hp=hp,
-            params_sensor=params_sensor,
-            params_decision=params_decision,
-            params_decision_initial=params_decision_initial,
+            table_value_fruits=table_value_fruits,
+            table_value_fruits_initial=table_value_fruits_initial,
             params_reward=params_reward,
             do_exist=do_exist,
             obs_last=obs_dummy,  # dummy observation
             action_last=-1,  # dummy action
-            replay_buffer=replay_buffer,
         )
 
-    def init_tr_state(self, agent: AgentRL) -> train_state.TrainState:
-        """Initialize the training state of the agent."""
-        tx = optax.sgd(
-            learning_rate=0.001
-        )  # set tx's learning rate as 1 and scale loss for pseudo-learning rate
-        tr_state = train_state.TrainState.create(
-            apply_fn=self.decision_model.apply, params=agent.params_decision, tx=tx
-        )
-        return tr_state
 
     def react(
         self,
-        state: StateSpeciesRL,
+        state: StateSpeciesAdaRL,
         batch_observations: ObservationAgent,  # Batched
         eco_information: EcoInformation,
         key_random: jnp.ndarray,
     ) -> Tuple[
-        StateSpeciesRL,
+        StateSpeciesAdaRL,
         ActionAgent,  # Batched
     ]:
 
@@ -343,7 +353,7 @@ class RL_AgentSpecies(AgentSpecies):
             )
             return genes_inherited
 
-        new_agents: AgentRL = tree_map(
+        new_agents: AgentAdaRL = tree_map(
             manage_genetic_component_inheritance,
             state.agents,
             agents_mutated,
@@ -356,7 +366,7 @@ class RL_AgentSpecies(AgentSpecies):
         new_do_exist = new_do_exist | are_newborns_agents  # Add the newborn agents
         new_agents = new_agents.replace(do_exist=new_do_exist)
 
-        new_state: StateSpeciesRL = state.replace(agents=new_agents)
+        new_state: StateSpeciesAdaRL = state.replace(agents=new_agents)
 
         # ================== Agent-wise reaction ==================
         key_random, subkey = random.split(key_random)
@@ -395,29 +405,16 @@ class RL_AgentSpecies(AgentSpecies):
 
     # =============== Mutation methods =================
 
-    def mutate_state_agent(self, agent: AgentRL, key_random: jnp.ndarray) -> AgentRL:
+    def mutate_state_agent(
+        self, agent: AgentAdaRL, key_random: jnp.ndarray
+    ) -> AgentAdaRL:
 
         # Mutate the hyperparameters
         key_random, *subkeys = random.split(key_random, 5)
-        new_hp = HyperParametersRL(
-            lr=mutate_scalar(value=agent.hp.lr, range=(0, None), key_random=subkeys[0]),
-            gamma=mutate_scalar(
-                value=agent.hp.gamma, range=(0, 1), key_random=subkeys[1]
-            ),
-            epsilon=mutate_scalar(
-                value=agent.hp.epsilon, range=(0, 0.5), key_random=subkeys[2]
-            ),
+        new_hp = HyperParametersAdaRL(
             strength_mutation=mutate_scalar(
                 value=agent.hp.strength_mutation, range=(0, None), key_random=subkeys[3]
             ),
-        )
-
-        # Mutate the sensor model
-        key_random, subkey = random.split(key_random)
-        new_params_sensor = mutation_gaussian_noise(
-            arr=agent.params_sensor,
-            strength_mutation=agent.hp.strength_mutation,
-            key_random=subkey,
         )
 
         # Mutate the reward model
@@ -431,20 +428,21 @@ class RL_AgentSpecies(AgentSpecies):
         # Transmit (or not) the weights according to the mode
         if self.mode_weights_transmission == "initial":
             # Mute and transmit the initial weights
-            new_params_decision_initial = mutation_gaussian_noise(
-                arr=agent.params_decision_initial,
+            key_random, subkey = random.split(key_random)
+            new_table_value_fruits_initial = mutation_gaussian_noise(
+                arr=agent.table_value_fruits_initial,
                 strength_mutation=agent.hp.strength_mutation,
-                key_random=key_random,
+                key_random=subkey,
             )
-            new_params_decision = new_params_decision_initial.copy()
+            new_table_value_fruits = new_table_value_fruits_initial
         elif self.mode_weights_transmission == "final":
             # Transmit the final weights
-            new_params_decision = agent.params_decision
-            new_params_decision_initial = None
+            new_table_value_fruits = agent.table_value_fruits
+            new_table_value_fruits_initial = None
         elif self.mode_weights_transmission == "none":
             # Don't transmit any weights
-            new_params_decision = None
-            new_params_decision_initial = None
+            new_table_value_fruits = None
+            new_table_value_fruits_initial = None
         else:
             raise NotImplementedError(
                 f"Mode {self.mode_weights_transmission} not implemented"
@@ -453,9 +451,8 @@ class RL_AgentSpecies(AgentSpecies):
         return self.init_agent(
             key_random=key_random,
             hp=new_hp,
-            params_sensor=new_params_sensor,
-            params_decision=new_params_decision,
-            params_decision_initial=new_params_decision_initial,
+            table_value_fruits=new_table_value_fruits,
+            table_value_fruits_initial=new_table_value_fruits_initial,
             params_reward=new_params_reward,
         )
 
@@ -464,59 +461,30 @@ class RL_AgentSpecies(AgentSpecies):
     def react_agents(
         self,
         key_random: jnp.ndarray,
-        state: StateSpeciesRL,
+        state: StateSpeciesAdaRL,
         batch_observations: ObservationAgent,  # Batched
-    ) -> Tuple[StateSpeciesRL, ActionAgent]:  # Batched
+    ) -> Tuple[StateSpeciesAdaRL, ActionAgent]:  # Batched
 
         def react_single_agent(
             key_random: jnp.ndarray,
-            agent: AgentRL,
-            tr_state: train_state.TrainState,
+            agent: AgentAdaRL,
             obs: jnp.ndarray,
         ) -> Tuple[
-            AgentRL,
+            AgentAdaRL,
             train_state.TrainState,
             int,
             Dict[str, jnp.ndarray],
         ]:
             # =============== Inference part =================
-
-            # Compute internal observation (sensation) : x_t = sensor_model(o_t)
-            x_t = self.sensor_model.apply(
-                variables={"params": agent.params_sensor},
+            key_random, subkey = random.split(key_random)
+            logits = self.model.apply(
+                variables={"params": agent.params},
                 x=obs,
-                key_random=key_random,
+                key_random=subkey,
             )
-
-            # Compute the Q-values : Q(x_t, .) = decision_model(x_t)
-            q_values = self.decision_model.apply(
-                variables={"params": agent.params_decision},
-                x=x_t,
-                key_random=key_random,
-            )
-
-            # Pick an action using the exploration method : a_t = exploration_policy(Q(x_t, .))
-            if self.name_exploration == "epsilon_greedy":
-                key_random, subkey1, subkey2 = random.split(key_random, 3)
-                action = jax.lax.cond(
-                    random.uniform(subkey1) < agent.hp.epsilon,
-                    lambda _: random.randint(
-                        subkey2, shape=(), minval=0, maxval=self.n_actions
-                    ),
-                    lambda _: jnp.argmax(q_values),
-                    operand=None,
-                )
-            elif self.name_exploration == "greedy":
-                action = jnp.argmax(q_values)
-            elif self.name_exploration == "softmax":
-                key_random, subkey = random.split(key_random)
-                temperature = self.config.get("temperature_softmax", 1.0)
-                action = random.categorical(subkey, logits=q_values / temperature)
-            else:
-                raise NotImplementedError(
-                    f"Exploration method {self.name_exploration} not implemented"
-                )
-
+            key_random, subkey = random.split(key_random)
+            action = random.categorical(key_random, logits=logits)
+        
             # ============== Learning part =================
 
             # Compute the reward : r_t = reward_model(o_t, o_{t+1})
@@ -529,7 +497,7 @@ class RL_AgentSpecies(AgentSpecies):
 
             # Add the transition to the replay buffer
             x_t_last = self.sensor_model.apply(
-                variables={"params": agent.params_sensor},
+                variables={"params": agent.table_value_fruits},
                 x=agent.obs_last,
                 key_random=key_random,
             )
@@ -669,25 +637,23 @@ class RL_AgentSpecies(AgentSpecies):
             return agent, tr_state, action, dict_measures
 
         batch_keys = random.split(key_random, self.n_agents_max)
-        new_agents, batch_tr_state, actions, dict_measures = jax.vmap(
+        new_agents, actions, dict_measures = jax.vmap(
             react_single_agent
         )(
             key_random=batch_keys,
             agent=state.agents,
-            tr_state=state.tr_state,
             obs=batch_observations,
         )
         dict_measures.update(**new_agents.params_reward)
 
         new_state = state.replace(
             agents=new_agents,
-            tr_state=batch_tr_state,
         )
         return new_state, actions, dict_measures
 
     # =============== Metrics methods =================
 
-    def render(self, state: StateSpeciesRL, force_render: bool = False) -> None:
+    def render(self, state: StateSpeciesAdaRL, force_render: bool = False) -> None:
         """Do the rendering of the species. This can be a visual rendering or a logging of the state of any kind.
 
         Args:
@@ -743,8 +709,8 @@ class RL_AgentSpecies(AgentSpecies):
 
     def compute_measures(
         self,
-        state: StateSpeciesRL,
-        state_new: StateSpeciesRL,
+        state: StateSpeciesAdaRL,
+        state_new: StateSpeciesAdaRL,
         key_random: jnp.ndarray,
     ) -> Dict[str, jnp.ndarray]:
         """Compute the measures of the agents."""

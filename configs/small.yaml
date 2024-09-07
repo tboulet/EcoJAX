@@ -5,6 +5,7 @@ period_eval : 500
 n_agents_max : 500
 n_agents_initial : 10
 do_jit: True
+n_actions: ${eval:'len(${env.list_actions})'}
 
 
 

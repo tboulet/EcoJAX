@@ -33,14 +33,14 @@ class MLP(nn.Module):
     Args:
         hidden_dims (List[int]): the number of hidden units in each hidden layer. Also defines the number of hidden layers.
         n_output_features (int): the number of output features
-        name_activation_fn (str, optional): the name of the activation function. Defaults to "relu".
+        name_activation_fn (str, optional): the name of the activation function. Defaults to "swish".
         name_activation_output_fn (str, optional): the name of the activation function for the output. Defaults to "linear".
     """
 
     hidden_dims: List[int]
     n_output_features: int
-    name_activation_fn: str = "relu"
-    name_activation_output_fn: str = "linear"
+    name_activation_fn: str = "swish"
+    name_activation_output_fn: str = "swish"
 
     def setup(self) -> None:
         self.activation_fn = names_activations_to_fn[self.name_activation_fn]
@@ -84,8 +84,8 @@ class CNN(nn.Module):
     kernel_size: List[int]
     strides: List[int]
     shape_output: List[int]
-    name_activation_fn: str = "relu"
-    name_activation_output_fn: str = "linear"
+    name_activation_fn: str = "swish"
+    name_activation_output_fn: str = "swish"
 
     def setup(self) -> None:
         self.activation_fn = names_activations_to_fn[self.name_activation_fn]

@@ -6,6 +6,7 @@ period_eval : 500
 n_agents_max : 1000
 n_agents_initial : 200
 do_jit: True
+n_actions: ${eval:'len(${env.list_actions})'}
 
 
 do_wandb : True

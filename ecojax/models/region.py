@@ -77,6 +77,7 @@ class RegionalModel(BaseModel):
             raise NotImplementedError(f"Weighting method {self.weighting_method} is not implemented")
         
         # Apply the MLP for each region
+        assert self.mlp_region_config["n_output_features"] == 1, "The MLP for the regions should have a single output feature"
         x = MLP(**self.mlp_region_config)(regions) # (5, 1)
         x = x[:, 0] # (5,)
         

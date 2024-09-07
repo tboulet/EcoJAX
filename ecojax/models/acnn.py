@@ -33,6 +33,9 @@ class AdaptedCNN_Model(BaseModel):
             - hidden_dims (List[int]): the number of hidden units in each hidden layer, it also define therefore the number of hidden layers
             - kernel_size (int) : the kernel_size of the CNN(s)
             - strides (int) : the stride of the CNN(s)
+        mlp_pixel_config (Dict[str, Any]): the configuration of the MLP that will be applied to each pixel. It should contain the following :
+            - hidden_dims (List[int]): the number of hidden units in each hidden layer, it also define therefore the number of hidden layers
+            - n_output_features (int): the number of output features of the MLP (should be 1)
         mlp_config (Dict[str, Any]): the configuration of the MLP. It should contain the following :
             - hidden_dims (List[int]): the number of hidden units in each hidden layer, it also define therefore the number of hidden layers
             - n_output_features (int): the number of output features of the MLP
@@ -43,6 +46,7 @@ class AdaptedCNN_Model(BaseModel):
 
     cnn_config: Dict[str, Any]
     range_nearby_pixels: int
+    mlp_pixel_config: Dict[str, Any]
     mlp_config: Dict[str, Any]
 
     def obs_to_encoding(
@@ -85,7 +89,7 @@ class AdaptedCNN_Model(BaseModel):
             ) # (S, S, C')
         else:
             C_output_cnn = C_visual_field_with_scalars
-            map_post_convolution = visual_field_with_scalars # (S, S, C+m)
+            map_post_convolution = visual_field_with_scalars # (S, S, C'=C+m)
         
         # Apply global pooling
         side_length = S // 3
@@ -103,7 +107,8 @@ class AdaptedCNN_Model(BaseModel):
         x = jnp.concatenate([x] + list_pixels, axis=0) # (9 + R^2, C')
         
         # Apply dense layers across the flattened tensor
-        x = nn.Dense(features=1)(x) # (9 + R^2, 1)
+        assert self.mlp_pixel_config["n_output_features"] == 1, "The number of output features of the pixel MLP should be 1"
+        x = MLP(**self.mlp_pixel_config)(x) # (9 + R^2, 1)
         x = x[:, 0] # (9 + R^2,)
     
         # Apply the MLP and return the output

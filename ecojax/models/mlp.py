@@ -23,10 +23,11 @@ class MLP_Model(BaseModel):
 
     Args:
         hidden_dims (List[int]): the number of hidden units in each hidden layer. It also defines the number of hidden layers.
+        name_activation_fn (str): the name of the activation function to use. Default is "swish".
     """
 
     hidden_dims: List[int]
-    name_activation_fn: str = "relu"
+    name_activation_fn: str = "swish"
 
     def obs_to_encoding(
         self, obs: ObservationAgent, key_random: jnp.ndarray

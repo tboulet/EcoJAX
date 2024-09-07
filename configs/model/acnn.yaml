@@ -1,13 +1,13 @@
-name: CNN
+name: AdaptedCNN
 cnn_config:
   # hidden_dims: [32, 16, 8]
-  hidden_dims: [8, 8]
-  kernel_size: 5
+  hidden_dims: []
+  kernel_size: 3
   strides: 1
-dim_cnn_output: 8
+range_nearby_pixels: 1
 mlp_config:
   hidden_dims: []
-  n_output_features: 8
+  n_output_features: 5
 
 # This does the following:
 # - CNN(s) : (H, W, C) -> ... -> (H, W, last_hidden_dim) -> (H*W*last_hidden_dim,) -> (dim_cnn_output,)

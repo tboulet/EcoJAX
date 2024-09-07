@@ -239,3 +239,101 @@ def jprint_and_breakpoint(x):
     """Print the value of x using JAX's print function, even inside of a JAX jit function"""
     jax.debug.print("{x}", x=x)
     jax.debug.breakpoint()
+    
+
+def add_scalars_as_channels_single(image: jnp.ndarray, scalars: jnp.ndarray) -> jnp.ndarray:
+    """
+    Concatenates scalar observations as additional channels to a single visual field (image).
+    
+    Args:
+        image (jnp.ndarray): A visual observation tensor of shape (H, W, C).
+        scalars (jnp.ndarray): A scalar observation tensor of shape (num_scalars).
+    
+    Returns:
+        jnp.ndarray: The new image tensor with scalar observations as additional channels.
+    """
+    H, W, C = image.shape
+    num_scalars = scalars.shape[0]
+
+    # Reshape scalars to (1, 1, num_scalars), so they can be broadcasted across height and width
+    scalars_expanded = jnp.reshape(scalars, (1, 1, num_scalars))
+
+    # Broadcast scalars to the image shape (H, W, num_scalars)
+    scalars_broadcasted = jnp.broadcast_to(scalars_expanded, (H, W, num_scalars))
+
+    # Concatenate along the channel axis (axis=-1)
+    image_with_scalars = jnp.concatenate([image, scalars_broadcasted], axis=-1)
+
+    return image_with_scalars
+
+
+def average_pooling(input_array: jnp.ndarray, h: int) -> jnp.ndarray:
+    """
+    Perform average pooling on an array of shape (3h, 3h, C) to reduce it to (3, 3, C).
+    
+    Args:
+        input_array (jnp.ndarray): Input array of shape (3h, 3h, C).
+        h (int): The height and width of each pooling window.
+    
+    Returns:
+        jnp.ndarray: Pooled array of shape (3, 3, C).
+    """
+    # Get the shape of the input array
+    H, W, C = input_array.shape
+    assert H == 3 * h and W == 3 * h, "Input dimensions must be (3h, 3h, C)"
+    
+    # Reshape the array to group (h, h) blocks
+    reshaped = input_array.reshape(3, h, 3, h, C)
+    
+    # Take the mean over the height and width of each (h, h) block
+    pooled = reshaped.mean(axis=(1, 3))
+    
+    return pooled
+
+
+def separate_visual_field(input_array: jnp.ndarray) -> jnp.ndarray:
+    """
+    Separates the visual field into 5 regions (center, front, left, right, and backward),
+    with backward excluding diagonal tiles, but front including them.
+    
+    Args:
+        input_array (jnp.ndarray): Input array of shape (H, H, C), where H is the height/width and C is the number of channels.
+    
+    Returns:
+        jnp.ndarray: Array of shape (5, C) where each row corresponds to the averaged values in each region.
+    """
+    H, W, C = input_array.shape
+    assert H == W, "Input array must have square spatial dimensions (H, H, C)."
+    
+    # Center pixel (middle of the array)
+    center_pixel = input_array[H // 2, W // 2, :]
+
+    # Create a meshgrid of indices to define regions
+    y, x = jnp.meshgrid(jnp.arange(H), jnp.arange(W), indexing='ij')
+    
+    # Define masks for each region
+    center_mask = (y == H // 2) & (x == W // 2)
+
+    # Front: Upper half of the image bounded by two diagonals (includes diagonal)
+    front_mask = (y < H // 2) & (x >= y) & (x < H - y)
+
+    # Left: Left of the center pixel (includes diagonal in lower half)
+    left_mask = (x < H // 2) & ((y > x) | (y > H - x - 1))
+
+    # Right: Right of the center pixel (includes diagonal in lower half)
+    right_mask = (x > H // 2) & ((y >= H - x) | (y > x))
+
+    # Backward: Lower half of the image, excluding diagonals
+    backward_mask = (y > H // 2) & (x > H - y - 1) & (x < y)
+
+    # Average the values in each region
+    center_avg = jnp.sum(input_array * center_mask[..., None] / center_mask.sum(), axis=(0, 1))
+    front_avg = jnp.sum(input_array * front_mask[..., None] / front_mask.sum(), axis=(0, 1))
+    left_avg = jnp.sum(input_array * left_mask[..., None] / left_mask.sum(), axis=(0, 1))
+    right_avg = jnp.sum(input_array * right_mask[..., None] / right_mask.sum(), axis=(0, 1))
+    backward_avg = jnp.sum(input_array * backward_mask[..., None] / backward_mask.sum(), axis=(0, 1))
+    
+    # Stack the results into an array of shape (5, C)
+    regions_avg = jnp.stack([center_avg, front_avg, left_avg, right_avg, backward_avg], axis=0)
+    
+    return regions_avg

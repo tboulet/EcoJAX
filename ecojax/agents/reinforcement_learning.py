@@ -252,6 +252,8 @@ class RL_AgentSpecies(AgentSpecies):
         self.name_exploration: str = self.config["name_exploration"]
         self.size_replay_buffer: int = self.config["size_replay_buffer"]
         self.batch_size: int = self.config["batch_size"]
+        self.n_gradient_steps: int = self.config["n_gradient_steps"]
+        self.value_gradient_clipping: float = self.config["value_gradient_clipping"]
         self.mode_weights_transmission: str = self.config["mode_weights_transmission"]
 
         # Metrics parameters
@@ -659,64 +661,68 @@ class RL_AgentSpecies(AgentSpecies):
             r_batch = batch_transitions.reward
             x_next_batch = batch_transitions.x_next
 
-            # Compute the loss as a Q-value loss on a batch of transitions
-            key_random, subkey = random.split(key_random)
-            batch_subkeys = random.split(key_random, 2 * self.batch_size)
+            for _ in range(self.n_gradient_steps):
+                
+                # Compute the loss as a Q-value loss on a batch of transitions
+                key_random, subkey = random.split(key_random)
+                batch_subkeys = random.split(key_random, 2 * self.batch_size)
 
-            # Compute the Q-values of the next state : use the params of outside the loss function to detach gradient of next Q-values
-            def get_q_values_target(x_t: jnp.ndarray, key_random: jnp.ndarray):
-                return self.decision_model.apply(
-                    variables={"params": agent.params_decision},
-                    x=x_t,
-                    key_random=key_random,
-                )
-
-            q_values_xt_next = jax.vmap(get_q_values_target, in_axes=(0, 0))(
-                x_next_batch, batch_subkeys[1::2]
-            )  # (B, n_actions)
-
-            def loss_fn(params_decision):
-                # Compute current the Q-values : use params_decision as weights and batch along first axis (batch dimension)
-                def get_q_values(x_t: jnp.ndarray, key_random: jnp.ndarray):
-                    """Function to compute the Q-values of the decision model.
-                    From an agent i decision model parameters theta_i and an internal observation x_t of shape (n_sensations,), compute the agent i Q-values of x_t, as an array of shape (n_actions,).
-
-                    Args:
-                        x_t (jnp.ndarray): the internal observation of the agent, of shape (n_sensations,)
-                        key_random (jnp.ndarray): the random key
-
-                    Returns:
-                        jnp.ndarray: the Q-values of the agent, of shape (n_actions,)
-                    """
-                    # return tr_state.apply_fn({"params": params_decision}, x_t, key_random)
+                # Compute the Q-values of the next state : use the params of outside the loss function to detach gradient of next Q-values
+                def get_q_values_target(x_t: jnp.ndarray, key_random: jnp.ndarray):
                     return self.decision_model.apply(
-                        variables={"params": params_decision},
+                        variables={"params": tr_state.params},
                         x=x_t,
                         key_random=key_random,
                     )
 
-                q_values_xt = jax.vmap(get_q_values, in_axes=(0, 0))(
-                    x_batch, batch_subkeys[0::2]
+                q_values_xt_next = jax.vmap(get_q_values_target, in_axes=(0, 0))(
+                    x_next_batch, batch_subkeys[1::2]
                 )  # (B, n_actions)
-                q_xt_at = q_values_xt[jnp.arange(self.batch_size), a_batch]  # (B,)
 
-                # Compute the loss
-                target = r_batch + agent.hp.gamma * jnp.max(
-                    q_values_xt_next, axis=1
-                )  # (B,)
-                loss_q = jnp.mean((q_xt_at - target) ** 2)
-                # loss_q = jnp.sqrt(loss_q)
-                # loss_q *= (
-                #     agent.hp.lr
-                # )  # Scale the loss by the learning rate to simulate learning rate
-                loss_q *= agent.age > 0  # Only learn after the first step
-                return loss_q
+                def loss_fn(params):
+                    # Compute current the Q-values : use params_decision as weights and batch along first axis (batch dimension)
+                    def get_q_values(x_t: jnp.ndarray, key_random: jnp.ndarray):
+                        """Function to compute the Q-values of the decision model.
+                        From an agent i decision model parameters theta_i and an internal observation x_t of shape (n_sensations,), compute the agent i Q-values of x_t, as an array of shape (n_actions,).
 
-            grad_fn = jax.value_and_grad(loss_fn)
-            loss_q, grads = grad_fn(tr_state.params)
-            # Clip gradients
-            grads = jax.tree_map(lambda x: jnp.clip(x, -1, 1), grads)
-            tr_state = tr_state.apply_gradients(grads=grads)
+                        Args:
+                            x_t (jnp.ndarray): the internal observation of the agent, of shape (n_sensations,)
+                            key_random (jnp.ndarray): the random key
+
+                        Returns:
+                            jnp.ndarray: the Q-values of the agent, of shape (n_actions,)
+                        """
+                        # return tr_state.apply_fn({"params": params}, x_t, key_random)
+                        return self.decision_model.apply(
+                            variables={"params": params},
+                            x=x_t,
+                            key_random=key_random,
+                        )
+
+                    q_values_xt = jax.vmap(get_q_values, in_axes=(0, 0))(
+                        x_batch, batch_subkeys[0::2]
+                    )  # (B, n_actions)
+                    q_xt_at = q_values_xt[jnp.arange(self.batch_size), a_batch]  # (B,)
+
+                    # Compute the loss
+                    target = r_batch + agent.hp.gamma * jnp.max(
+                        q_values_xt_next, axis=1
+                    )  # (B,)
+                    loss_q = jnp.mean((q_xt_at - target) ** 2)
+                    # loss_q = jnp.sqrt(loss_q)
+                    # loss_q *= (
+                    #     agent.hp.lr
+                    # )  # Scale the loss by the learning rate to simulate learning rate
+                    loss_q *= agent.age > 0  # Only learn after the first step
+                    return loss_q
+
+                # Compute the loss and the gradients
+                grad_fn = jax.value_and_grad(loss_fn)
+                loss_q, grads = grad_fn(tr_state.params)
+                # Clip gradients
+                grads = jax.tree_map(lambda x: jnp.clip(x, -self.value_gradient_clipping, self.value_gradient_clipping), grads)
+                # Update the parameters in the optimizer
+                tr_state = tr_state.apply_gradients(grads=grads)
 
             # Update the agent's state
             agent = agent.replace(
@@ -846,9 +852,30 @@ class RL_AgentSpecies(AgentSpecies):
                 dict_measures["hp log10_lr"] = jnp.log10(getattr(state.agents.hp, "lr"))
                 dict_measures["hp gamma"] = getattr(state.agents.hp, "gamma")
                 dict_measures["hp epsilon"] = getattr(state.agents.hp, "epsilon")
-            if "params_reward_model" == name_measure:
+            if name_measure == "params_reward_model":
                 for name_param, values_param in state.agents.params_reward.items():
                     dict_measures[f"params_reward_model {name_param}"] = values_param
+            if name_measure == "weights_agents":
+                # Metric for logging the weights between Gridworld env and the first layer of the neural network
+                try:
+                    weights = state.agents.params_decision["Dense_0"]["kernel"]
+                    bias = state.agents.params_decision["Dense_0"]["bias"]
+                    
+                    # _, n_obs, n_actions = weights.shape
+                    # for idx_action in range(n_actions):
+                    #     dict_measures[f"weights b{idx_action}/weights"] = bias[:, idx_action].mean()
+                    #     for idx_obs in range(n_obs):
+                    #         dict_measures[f"weights w{idx_obs}-{idx_action}/weights"] = weights[:, idx_obs, idx_action].mean()
+                        
+                    action_idx_to_meaning = self.env.action_idx_to_meaning()
+                    obs_idx_to_meaning = self.env.obs_idx_to_meaning()
+                    for idx_action, name_action in action_idx_to_meaning.items():
+                        dict_measures[f"weights bias{name_action}/weights"] = bias[:, idx_action]
+                        for idx_obs, name_obs in obs_idx_to_meaning.items():
+                            dict_measures[f"weights {name_obs}-{name_action}/weights"] = weights[:, idx_obs, idx_action]
+
+                except Exception as e:
+                    print(f"Error in measure weights_agents: {e}")
             # Behavior measures
             pass
 

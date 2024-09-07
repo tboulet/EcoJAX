@@ -409,13 +409,15 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
                 for key, value in params_flattened_agent0.items():
                     dict_measures[f"agent0/{key}/params_agents"] = value.reshape(-1)
             # Immediate measures
-            
+            pass
             # State measures
-            elif name_measure == "strength_mutation":
+            if "hp" == name_measure:
                 strength_mutation = getattr(state.agents.hp, "strength_mutation")
-                dict_measures["strength_mutation"] = strength_mutation
-                dict_measures["log10/strength_mutation"] = jnp.log10(strength_mutation)
-            elif name_measure == "weights_agents":
+                dict_measures["hp strength_mutation"] = strength_mutation
+                dict_measures["hp log10_strength_mutation"] = jnp.log10(
+                    strength_mutation
+                )
+            if name_measure == "weights_agents":
                 # Metric for logging the weights between Gridworld env and the first layer of the neural network
                 try:
                     weights = state.agents.params["Dense_0"]["kernel"]

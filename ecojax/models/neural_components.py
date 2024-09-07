@@ -152,12 +152,17 @@ class CNN(nn.Module):
             assert (
                 H_output == H and W_output == W
             ), f"Expected shape_output to be {H, W, '?'} but got {self.shape_output}"
-            # Apply a convolutional layer to get the right shape
-            x = nn.Conv(
-                features=C_output,
-                kernel_size=(1, 1),
-                strides=(1, 1),
-            )(x)
+            H, W, C_last = x.shape
+            if C_last != C_output:
+                # Apply a convolutional layer to get the right shape
+                x = nn.Conv(
+                    features=C_output,
+                    kernel_size=(1, 1),
+                    strides=(1, 1),
+                )(x)
+            else:
+                # Simply return the value
+                x = x
 
         # Apply the output activation function and return the output
         x = self.activation_output_fn(x)

@@ -37,16 +37,24 @@ class HumanModel(BaseModel):
         visual_field_plants = obs["visual_field"][:, :, idx_plant]
         v = visual_field_plants.shape[0] // 2
         
-        # Print the visual field
+        # Print the obs
+        print()
         print(f"Visual field plant: {visual_field_plants}")
-        # print(obs)
+        print(f"Observation: {obs}")
         # jprint(visual_field_plants)
         # jprint(obs)
         
         # Get the greedy action
         idx_action = input()
-        idx_action = int(idx_action)
-        
+        while True:
+            try:
+                idx_action = int(idx_action)
+                assert 0 <= idx_action < n_actions, f"The action must be in [0, {n_actions})."
+                break
+            except Exception as e:
+                print(f"Error: {e}. Please enter a valid action.")
+                idx_action = input()
+                        
         # Return a one-hot encoding of the action
         logits = jnp.full((n_actions,), -np.inf)
         logits = logits.at[idx_action].set(np.inf)

@@ -5,9 +5,10 @@ import os
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 import jax
-from jax import random, tree_map
+from jax import random, tree_map, tree_structure
 import jax.numpy as jnp
-from matplotlib import pyplot as plt
+from jax.numpy import ndarray
+from matplotlib import pyplot as plt, table
 import seaborn as sns
 import numpy as np
 from flax import struct
@@ -67,33 +68,6 @@ class StateSpeciesAdaRL:
     metrics_population: List[PyTreeNode]
 
 
-class ModelFruitAverager(BaseModel):
-    """The model of the agent, that will average the fruit values to obtain the logits of the actions.
-
-    Args:
-        space_input (spaces.DictSpace): the input space of the model
-        space_output (spaces.ContinuousSpace): the output space of the model
-        agents_species (AdaptiveRL_AgentSpecies): the species of agents
-        model_fruit (BaseModel): the model that will convert the observation of a fruit to an embedding (logits for now)
-    """
-
-    space_input: spaces.DictSpace
-    space_output: spaces.ContinuousSpace
-    agents_species: AgentSpecies
-    model_fruit: BaseModel
-
-    def obs_to_encoding(
-        self,
-        x: Dict[str, jnp.ndarray],
-        key_random: jnp.ndarray,
-    ) -> Tuple[jnp.ndarray]:
-        print(x)
-        raise
-        
-    
-    
-    
-    
 class AdaptiveRL_AgentSpecies(AgentSpecies):
     """A species of agents that learn with reinforcement learning."""
 
@@ -155,7 +129,6 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
             + int(self.do_include_fruit)
             + int(self.do_include_value_global)
             + int(self.do_include_value_fruit)
-            + int(self.do_include_novelty_hunger)
         )  # Get the number of channels of the fruit model : C_input_visual_field - 4 (remove the fruits) + sum_include_x (add the observations)
 
         self.space_observation_individual_fruit = deepcopy(self.observation_space)
@@ -169,27 +142,131 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
             self.C_input_fruit_model,
         )
 
-        self.model_fruit = model_class(
-            space_input=self.space_observation_individual_fruit,
-            space_output=spaces.ContinuousSpace(shape=(self.n_actions,)),
-            **config_model,
-        )
-        print(f"Fruit Model: {self.model_fruit.get_table_summary()}")
+        
 
         # Decision model : this neuro-evolved model converts the observation to an action
         # TODO : implement the decision model
-        
+
         # Model : this model average the fruit output to obtain the logits
+        class ModelFruitAverager(BaseModel):
+            """The model of the agent, that will average the fruit values to obtain the logits of the actions.
+
+            Args:
+                space_input (spaces.DictSpace): the input space of the model
+                space_output (spaces.ContinuousSpace): the output space of the model
+            """
+
+            space_input: spaces.DictSpace
+            space_output: spaces.ContinuousSpace
+
+            def obs_to_encoding(
+                self_averager: "ModelFruitAverager",
+                x: Dict[str, jnp.ndarray],
+                key_random: jnp.ndarray,
+            ) -> Tuple[jnp.ndarray]:
+
+                # Create fruit model
+                model_fruit = model_class(
+                    space_input=self.space_observation_individual_fruit,
+                    space_output=spaces.ContinuousSpace(
+                        shape=(self.n_actions,)
+                    ),  # TODO : change this to arbitrary (k,) shape
+                    **config_model,
+                )
+                        
+                # Compute the values of the fruits
+                id_fruit_to_map_fruit_i_value = {}
+                map_global_value = jnp.zeros((S, S))
+                table_value_fruits = x["table_value_fruits"]
+                for id_fruit in range(4):
+                    idx_channel_fruit_i = self.list_channels_visual_field.index(
+                        f"fruits_{id_fruit}"
+                    )
+                    map_fruit_i_value = (
+                        table_value_fruits[id_fruit]
+                        * x["visual_field"][:, :, idx_channel_fruit_i]
+                    )
+                    id_fruit_to_map_fruit_i_value[id_fruit] = map_fruit_i_value
+                    map_global_value += map_fruit_i_value
+
+                # Create the list of fruit-obs
+                list_x_fruit = []
+                for id_fruit in range(4):
+
+                    # Compute fruit-obs for each fruit
+                    x_fruit: Dict[str, jnp.ndarray] = {}
+                    # Compute fruit-visual_field for each fruit
+                    visual_field = x["visual_field"]
+                    visual_field_fruit_i = jnp.zeros((S, S, self.C_input_fruit_model))
+                    j = 0
+                    for i, name_channel in enumerate(self.list_channels_visual_field):
+                        # Add the non-fruit related channels
+                        if not name_channel.startswith("fruits_"):
+                            visual_field_fruit_i.at[:, :, j].set(visual_field[:, :, i])
+                            j += 1
+                        # Add the fruit presence channel
+                        if name_channel == f"fruits_{id_fruit}":
+                            if self.do_include_fruit:
+                                visual_field_fruit_i.at[:, :, j].set(
+                                    visual_field[:, :, i]
+                                )
+                                j += 1
+                    # Add global value channel
+                    if self.do_include_value_global:
+                        visual_field_fruit_i.at[:, :, j].set(map_global_value)
+                        j += 1
+                    # Add fruit value channel
+                    if self.do_include_value_fruit:
+                        visual_field_fruit_i.at[:, :, j].set(
+                            id_fruit_to_map_fruit_i_value[id_fruit]
+                        )
+                        j += 1
+                    x_fruit["visual_field"] = visual_field_fruit_i
+
+                    # Add novelty hunger scalar
+                    if self.do_include_novelty_hunger:
+                        x_fruit["novelty_hunger"] = x["novelty_hunger"][id_fruit]
+
+                    # Add other scalars
+                    for name_obs, component_obs in x.items():
+                        if not name_obs in [
+                            "visual_field",
+                            "novelty_hunger",
+                            "table_value_fruits",
+                        ]:
+                            x_fruit[name_obs] = component_obs
+
+                    # Add the fruit to the list
+                    list_x_fruit.append(x_fruit)
+
+                # Apply the fruit model to each fruit
+                list_encoding_fruit = []
+                for x_fruit in list_x_fruit:
+                    encoding_fruit = model_fruit(
+                        x=x_fruit, key_random=key_random
+                    )
+                    list_encoding_fruit.append(encoding_fruit)
+                
+                # Average the fruit encodings
+                encoding = (
+                    list_encoding_fruit[0]
+                    + list_encoding_fruit[1]
+                    + list_encoding_fruit[2]
+                    + list_encoding_fruit[3]
+                ) / 4
+                return encoding
+
+        self.space_observation_fruit_averager = deepcopy(self.observation_space)
+        self.space_observation_fruit_averager.dict_space["table_value_fruits"] = (
+            spaces.ContinuousSpace(shape=(4,))
+        )
         self.model = ModelFruitAverager(
-            space_input=observation_space,
+            space_input=self.space_observation_fruit_averager,
             space_output=spaces.ContinuousSpace(shape=(self.n_actions,)),
-            agents_species=self,
-            model_fruit=self.model_fruit,
             # TODO : add decision model and inbetween here
         )
         print(f"Model: {self.model.get_table_summary()}")
-            
-        
+
         # Reward model : this neuro-evolved model converts the observation variation to a reward used by the RL process
         self.reward_model = RewardModel(
             space_input=spaces.DictSpace(
@@ -283,7 +360,7 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
             variables = self.reward_model.get_initialized_variables(subkey)
             params_reward = variables.get("params", {})
         key_random, subkey = random.split(key_random)
-        obs_dummy = self.observation_space.sample(subkey)
+        obs_dummy = self.space_observation_fruit_averager.sample(subkey)
 
         return AgentAdaRL(
             age=0,
@@ -296,7 +373,6 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
             obs_last=obs_dummy,  # dummy observation
             action_last=-1,  # dummy action
         )
-
 
     def react(
         self,
@@ -417,6 +493,14 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
             ),
         )
 
+        # Mutate the weights, slightly mutated
+        key_random, subkey = random.split(key_random)
+        new_params = mutation_gaussian_noise(
+            arr=agent.params,
+            strength_mutation=agent.hp.strength_mutation,
+            key_random=subkey,
+        )
+        
         # Mutate the reward model
         key_random, subkey = random.split(key_random)
         new_params_reward = mutation_gaussian_noise(
@@ -425,9 +509,9 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
             key_random=subkey,
         )
 
-        # Transmit (or not) the weights according to the mode
+        # Transmit (or not) the table_value_fruits according to the mode
         if self.mode_weights_transmission == "initial":
-            # Mute and transmit the initial weights
+            # Mute and transmit the initial table_value_fruits
             key_random, subkey = random.split(key_random)
             new_table_value_fruits_initial = mutation_gaussian_noise(
                 arr=agent.table_value_fruits_initial,
@@ -436,11 +520,11 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
             )
             new_table_value_fruits = new_table_value_fruits_initial
         elif self.mode_weights_transmission == "final":
-            # Transmit the final weights
+            # Transmit the final table_value_fruits
             new_table_value_fruits = agent.table_value_fruits
             new_table_value_fruits_initial = None
         elif self.mode_weights_transmission == "none":
-            # Don't transmit any weights
+            # Don't transmit any table_value_fruits
             new_table_value_fruits = None
             new_table_value_fruits_initial = None
         else:
@@ -450,6 +534,7 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
 
         return self.init_agent(
             key_random=key_random,
+            params=new_params,
             hp=new_hp,
             table_value_fruits=new_table_value_fruits,
             table_value_fruits_initial=new_table_value_fruits_initial,
@@ -471,12 +556,12 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
             obs: jnp.ndarray,
         ) -> Tuple[
             AgentAdaRL,
-            train_state.TrainState,
             int,
             Dict[str, jnp.ndarray],
         ]:
             # =============== Inference part =================
             key_random, subkey = random.split(key_random)
+            obs["table_value_fruits"] = agent.table_value_fruits
             logits = self.model.apply(
                 variables={"params": agent.params},
                 x=obs,
@@ -484,7 +569,7 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
             )
             key_random, subkey = random.split(key_random)
             action = random.categorical(key_random, logits=logits)
-        
+
             # ============== Learning part =================
 
             # Compute the reward : r_t = reward_model(o_t, o_{t+1})
@@ -494,152 +579,61 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
                 x={"obs": agent.obs_last, "obs_next": obs},
                 key_random=subkey,
             )
+            reward_last *= (
+                agent.age > 0
+            )  # If agent is just born, don't learn (reward set at 0)
 
-            # Add the transition to the replay buffer
-            x_t_last = self.sensor_model.apply(
-                variables={"params": agent.table_value_fruits},
-                x=agent.obs_last,
-                key_random=key_random,
-            )
-            transition = TransitionRL(
-                x=x_t_last,
-                action=agent.action_last,
-                reward=reward_last,
-                x_next=x_t,
-            )
-            idx_transition_in_replay_buffer = (agent.age - 1) % self.size_replay_buffer
-            agent = agent.replace(
-                replay_buffer=jax.tree_map(
-                    lambda x_replay_buffer, x_transition: x_replay_buffer.at[
-                        idx_transition_in_replay_buffer
-                    ].set(x_transition),
-                    agent.replay_buffer,
-                    transition,
+            # Update the table of values of the fruits
+            idx_eat_action = {
+                name_action: idx_action
+                for idx_action, name_action in self.env.action_idx_to_meaning().items()
+            }["eat"]
+            idx_center = obs["visual_field"].shape[0] // 2
+            condlist = []
+            choicelist = []
+            for id_fruit in range(4):
+                idx_channel_fruit = self.list_channels_visual_field.index(
+                    f"fruits_{id_fruit}"
                 )
-            )
-
-            # Sample B transitions from the replay buffer
-            key_random, subkey = random.split(key_random)
-            indices = random.randint(
-                subkey,
-                shape=(self.batch_size,),
-                minval=0,
-                maxval=self.size_replay_buffer,
-            )
-            indices = indices % jnp.minimum(
-                agent.age, self.size_replay_buffer
-            )  # Make sure to sample only the transitions that have been lived
-            batch_transitions = jax.tree_map(
-                lambda x: x[indices], agent.replay_buffer
-            )  # Transitions B-batched
-            x_batch = batch_transitions.x
-            a_batch = batch_transitions.action
-            r_batch = batch_transitions.reward
-            x_next_batch = batch_transitions.x_next
-
-            for _ in range(self.n_gradient_steps):
-
-                # Compute the loss as a Q-value loss on a batch of transitions
-                key_random, subkey = random.split(key_random)
-                batch_subkeys = random.split(key_random, 2 * self.batch_size)
-
-                # Compute the Q-values of the next state : use the params of outside the loss function to detach gradient of next Q-values
-                def get_q_values_target(x_t: jnp.ndarray, key_random: jnp.ndarray):
-                    return self.decision_model.apply(
-                        variables={"params": tr_state.params},
-                        x=x_t,
-                        key_random=key_random,
+                condlist.append(
+                    (
+                        agent.obs_last["visual_field"][
+                            idx_center, idx_center, idx_channel_fruit
+                        ]
+                        == 1.0
                     )
-
-                q_values_xt_next = jax.vmap(get_q_values_target, in_axes=(0, 0))(
-                    x_next_batch, batch_subkeys[1::2]
-                )  # (B, n_actions)
-
-                def loss_fn(params):
-                    # Compute current the Q-values : use params_decision as weights and batch along first axis (batch dimension)
-                    def get_q_values(x_t: jnp.ndarray, key_random: jnp.ndarray):
-                        """Function to compute the Q-values of the decision model.
-                        From an agent i decision model parameters theta_i and an internal observation x_t of shape (n_sensations,), compute the agent i Q-values of x_t, as an array of shape (n_actions,).
-
-                        Args:
-                            x_t (jnp.ndarray): the internal observation of the agent, of shape (n_sensations,)
-                            key_random (jnp.ndarray): the random key
-
-                        Returns:
-                            jnp.ndarray: the Q-values of the agent, of shape (n_actions,)
-                        """
-                        # return tr_state.apply_fn({"params": params}, x_t, key_random)
-                        return self.decision_model.apply(
-                            variables={"params": params},
-                            x=x_t,
-                            key_random=key_random,
-                        )
-
-                    q_values_xt = jax.vmap(get_q_values, in_axes=(0, 0))(
-                        x_batch, batch_subkeys[0::2]
-                    )  # (B, n_actions)
-                    q_xt_at = q_values_xt[jnp.arange(self.batch_size), a_batch]  # (B,)
-
-                    # Compute the loss
-                    target = r_batch + agent.hp.gamma * jnp.max(
-                        q_values_xt_next, axis=1
-                    )  # (B,)
-                    loss_q = jnp.mean((q_xt_at - target) ** 2)
-                    # loss_q = jnp.sqrt(loss_q)
-                    # loss_q *= (
-                    #     agent.hp.lr
-                    # )  # Scale the loss by the learning rate to simulate learning rate
-                    loss_q *= agent.age > 0  # Only learn after the first step
-                    return loss_q
-
-                # Compute the loss and the gradients
-                grad_fn = jax.value_and_grad(loss_fn)
-                loss_q, grads = grad_fn(tr_state.params)
-                # Clip gradients
-                grads = jax.tree_map(
-                    lambda x: jnp.clip(
-                        x, -self.value_gradient_clipping, self.value_gradient_clipping
-                    ),
-                    grads,
+                    & (agent.action_last == idx_eat_action)
                 )
-                # Update the parameters in the optimizer
-                tr_state = tr_state.apply_gradients(grads=grads)
+                choicelist = agent.table_value_fruits.at[id_fruit].set(reward_last)
+            table_value_fruits_new = jnp.select(
+                condlist=condlist,
+                choicelist=choicelist,
+                default=agent.table_value_fruits,
+            )
 
             # Update the agent's state
             agent = agent.replace(
-                params_decision=tr_state.params,
                 age=agent.age + 1,
+                table_value_fruits=table_value_fruits_new,
                 obs_last=obs,
                 action_last=action,
-                # TODO : we could also transmit x_last here
             )
 
             # ============== Measures ==============
             dict_measures = {}
-            measures_rl = {
-                "loss_q": loss_q,
-                "q_values_max": jnp.max(q_values),
-                "q_values_mean": jnp.mean(q_values),
-                "q_values_median": jnp.median(q_values),
-                "q_values_min": jnp.min(q_values),
-                "target": reward_last + agent.hp.gamma * jnp.max(q_values),
-                "reward": reward_last,
-            }
-            try:
-                measures_rl["gradients weights"] = grads["Dense_0"]["kernel"].mean()
-                measures_rl["gradients bias"] = grads["Dense_0"]["bias"].mean()
-            except Exception as e:
-                print(f"Error in gradients measures: {e}")
-            for key, values in measures_rl.items():
-                if key in self.names_measures:
-                    dict_measures[key] = values
+            if "reward" in self.names_measures:
+                dict_measures["reward"] = reward_last
+            if "table_value_fruits" in self.names_measures:
+                for id_fruit in range(4):
+                    dict_measures[f"table_value_fruits_{id_fruit}"] = (
+                        agent.table_value_fruits[id_fruit]
+                    )
+
             # Update the agent's state and act
-            return agent, tr_state, action, dict_measures
+            return agent, action, dict_measures
 
         batch_keys = random.split(key_random, self.n_agents_max)
-        new_agents, actions, dict_measures = jax.vmap(
-            react_single_agent
-        )(
+        new_agents, actions, dict_measures = jax.vmap(react_single_agent)(
             key_random=batch_keys,
             agent=state.agents,
             obs=batch_observations,
@@ -660,6 +654,7 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
             state (StateSpecies): the state of the species to render
             force_render (bool): whether to force the rendering even if the species is not in a state where it should be rendered
         """
+        return
         # Log heatmaps of the weights
         try:
             weights = state.agents.params_decision["Dense_0"]["kernel"].mean(axis=0)
@@ -727,14 +722,11 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
                 dict_measures["hp log10_strength_mutation"] = jnp.log10(
                     strength_mutation
                 )
-                dict_measures["hp lr"] = getattr(state.agents.hp, "lr")
-                dict_measures["hp log10_lr"] = jnp.log10(getattr(state.agents.hp, "lr"))
-                dict_measures["hp gamma"] = getattr(state.agents.hp, "gamma")
-                dict_measures["hp epsilon"] = getattr(state.agents.hp, "epsilon")
             if name_measure == "params_reward_model":
                 for name_param, values_param in state.agents.params_reward.items():
                     dict_measures[f"params_reward_model {name_param}"] = values_param
             if name_measure == "weights_agents":
+                continue
                 # Metric for logging the weights between Gridworld env and the first layer of the neural network
                 try:
                     weights = state.agents.params_decision["Dense_0"]["kernel"]

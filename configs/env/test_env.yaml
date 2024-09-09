@@ -1,8 +1,8 @@
 name : Gridworld
 
 # The dimensions of the gridworld
-height : 10
-width : 10
+height : 20
+width : 20
 
 # Whether the env is terminal, i.e. the simulation stops when all agents are dead
 is_terminal : True

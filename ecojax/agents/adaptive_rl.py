@@ -202,22 +202,22 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
                     for i, name_channel in enumerate(self.list_channels_visual_field):
                         # Add the non-fruit related channels
                         if not name_channel.startswith("fruits_"):
-                            visual_field_fruit_i.at[:, :, j].set(visual_field[:, :, i])
+                            visual_field_fruit_i = visual_field_fruit_i.at[:, :, j].set(visual_field[:, :, i])
                             j += 1
                         # Add the fruit presence channel
                         if name_channel == f"fruits_{id_fruit}":
                             if self.do_include_fruit:
-                                visual_field_fruit_i.at[:, :, j].set(
+                                visual_field_fruit_i = visual_field_fruit_i.at[:, :, j].set(
                                     visual_field[:, :, i]
                                 )
                                 j += 1
                     # Add global value channel
                     if self.do_include_value_global:
-                        visual_field_fruit_i.at[:, :, j].set(map_global_value)
+                        visual_field_fruit_i = visual_field_fruit_i.at[:, :, j].set(map_global_value)
                         j += 1
                     # Add fruit value channel
                     if self.do_include_value_fruit:
-                        visual_field_fruit_i.at[:, :, j].set(
+                        visual_field_fruit_i = visual_field_fruit_i.at[:, :, j].set(
                             id_fruit_to_map_fruit_i_value[id_fruit]
                         )
                         j += 1
@@ -559,19 +559,9 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
             int,
             Dict[str, jnp.ndarray],
         ]:
-            # =============== Inference part =================
-            key_random, subkey = random.split(key_random)
-            obs["table_value_fruits"] = agent.table_value_fruits
-            logits = self.model.apply(
-                variables={"params": agent.params},
-                x=obs,
-                key_random=subkey,
-            )
-            key_random, subkey = random.split(key_random)
-            action = random.categorical(key_random, logits=logits)
-
+            
             # ============== Learning part =================
-
+            
             # Compute the reward : r_t = reward_model(o_t, o_{t+1})
             key_random, subkey = random.split(key_random)
             reward_last = self.reward_model.apply(
@@ -604,17 +594,41 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
                     )
                     & (agent.action_last == idx_eat_action)
                 )
-                choicelist = agent.table_value_fruits.at[id_fruit].set(reward_last)
+                choicelist.append(agent.table_value_fruits.at[id_fruit].set(reward_last))
             table_value_fruits_new = jnp.select(
                 condlist=condlist,
                 choicelist=choicelist,
                 default=agent.table_value_fruits,
             )
+            agent = agent.replace(table_value_fruits=table_value_fruits_new)
+            obs["table_value_fruits"] = agent.table_value_fruits # re-set the table of values of the fruits for learning immediately
+            
+            # =============== Inference part =================
+            key_random, subkey = random.split(key_random)
+            logits = self.model.apply(
+                variables={"params": agent.params},
+                x=obs,
+                key_random=subkey,
+            )
+            key_random, subkey = random.split(key_random)
+            action = random.categorical(key_random, logits=logits)
+
+            # # Debug code
+            # idx_action = input()
+            # while True:
+            #     try:
+            #         idx_action = int(idx_action)
+            #         assert 0 <= idx_action < self.n_actions, f"The action must be in [0, {self.n_actions})."
+            #         break
+            #     except Exception as e:
+            #         print(f"Error: {e}. Please enter a valid action.")
+            #         idx_action = input()
+            # action = idx_action
+            
 
             # Update the agent's state
             agent = agent.replace(
                 age=agent.age + 1,
-                table_value_fruits=table_value_fruits_new,
                 obs_last=obs,
                 action_last=action,
             )

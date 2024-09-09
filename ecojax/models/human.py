@@ -35,7 +35,6 @@ class HumanModel(BaseModel):
         n_actions = len(self.list_actions)
         idx_plant = self.list_channels_visual_field.index("plants")
         visual_field_plants = obs["visual_field"][:, :, idx_plant]
-        v = visual_field_plants.shape[0] // 2
         
         # Print the obs
         print()
@@ -44,7 +43,7 @@ class HumanModel(BaseModel):
         # jprint(visual_field_plants)
         # jprint(obs)
         
-        # Get the greedy action
+        # Get the action
         idx_action = input()
         while True:
             try:

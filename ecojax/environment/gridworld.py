@@ -234,6 +234,7 @@ class GridworldEnv(EcoEnvironment):
         self.radius_sun_perception: int = config["radius_sun_perception"]
         # Plants Dynamics
         self.proportion_plant_initial: float = config["proportion_plant_initial"]
+        self.do_plant_grow_in_fruit_clusters: bool = config["do_plant_grow_in_fruit_clusters"]
         self.logit_p_base_plant_growth: float = logit(config["p_base_plant_growth"])
         self.logit_p_base_plant_death: float = logit(config["p_base_plant_death"])
         self.factor_sun_effect: float = config["factor_sun_effect"]
@@ -263,7 +264,8 @@ class GridworldEnv(EcoEnvironment):
             assert (
                 self.side_cluster_fruits % 2 == 1
             ), "The side of the cluster of fruits must be odd"
-            self.range_cluster_fruits: int = self.side_cluster_fruits // 2
+            self.range_cluster_fruits: int = config["range_cluster_fruits"]
+            assert self.range_cluster_fruits <= self.side_cluster_fruits // 2, f"The range of the cluster of fruits must be less than half the side of the cluster, but got {self.range_cluster_fruits} > {self.side_cluster_fruits}//2"
             self.variability_fruits: List[float] = config["variability_fruits"]
             self.mode_variability_fruits: str = config["mode_variability_fruits"]
             self.coords_clusters_to_fruit_id: Dict[
@@ -279,8 +281,8 @@ class GridworldEnv(EcoEnvironment):
                 for y in range(self.n_clusters_y):
                     # Get the coordinates of the center of the cluster
                     coords_center = (
-                        x * self.side_cluster_fruits + self.range_cluster_fruits,
-                        y * self.side_cluster_fruits + self.range_cluster_fruits,
+                        x * self.side_cluster_fruits + self.side_cluster_fruits // 2,
+                        y * self.side_cluster_fruits + self.side_cluster_fruits // 2,
                     )
                     # Determine the fruit identifier depending on the cluster
                     if x % 2 == 0 and y % 2 == 0:
@@ -459,6 +461,19 @@ class GridworldEnv(EcoEnvironment):
                 shape=(H, W),
             )
         )
+        if not self.do_plant_grow_in_fruit_clusters:
+            for coords_center, id_fruit in self.coords_clusters_to_fruit_id.items():
+                map = map.at[
+                    coords_center[0]
+                    - self.range_cluster_fruits : coords_center[0]
+                    + self.range_cluster_fruits
+                    + 1,
+                    coords_center[1]
+                    - self.range_cluster_fruits : coords_center[1]
+                    + self.range_cluster_fruits
+                    + 1,
+                    idx_plants,
+                ].set(0)
 
         # Initialize the fruits
         if self.do_fruits:
@@ -478,7 +493,7 @@ class GridworldEnv(EcoEnvironment):
                     jax.random.bernoulli(
                         key=subkey,
                         p=self.proportion_fruit_initial,
-                        shape=(self.side_cluster_fruits, self.side_cluster_fruits),
+                        shape=(2*self.range_cluster_fruits+1, 2*self.range_cluster_fruits+1),
                     )
                 )
 
@@ -948,6 +963,18 @@ class GridworldEnv(EcoEnvironment):
             p=map_plants_probs,
             shape=map_plants.shape,
         )
+        if not self.do_plant_grow_in_fruit_clusters:
+            for coords_center, id_fruit in self.coords_clusters_to_fruit_id.items():
+                map_plants = map_plants.at[
+                    coords_center[0]
+                    - self.range_cluster_fruits : coords_center[0]
+                    + self.range_cluster_fruits
+                    + 1,
+                    coords_center[1]
+                    - self.range_cluster_fruits : coords_center[1]
+                    + self.range_cluster_fruits
+                    + 1,
+                ].set(0)
         return state.replace(map=state.map.at[:, :, idx_plants].set(map_plants))
 
     def step_grow_fruits(
@@ -972,7 +999,7 @@ class GridworldEnv(EcoEnvironment):
                 jax.random.bernoulli(
                     key=subkey,
                     p=self.p_base_fruit_growth,
-                    shape=(self.side_cluster_fruits, self.side_cluster_fruits),
+                    shape=(2 * self.range_cluster_fruits + 1, 2 * self.range_cluster_fruits + 1),
                 )
             )
             map = map.at[:, :, idx_fruit_i].set(jnp.clip(map[:, :, idx_fruit_i], 0, 1))
@@ -1603,9 +1630,9 @@ class GridworldEnv(EcoEnvironment):
                             # Get the coordinates of the center of the cluster
                             coords_center = (
                                 x * self.side_cluster_fruits
-                                + self.range_cluster_fruits,
+                                + self.side_cluster_fruits // 2,
                                 y * self.side_cluster_fruits
-                                + self.range_cluster_fruits,
+                                + self.side_cluster_fruits // 2,
                             )
                             # Determine the fruit identifier depending on the cluster
                             if x % 2 == 0 and y % 2 == 0:
@@ -1780,73 +1807,78 @@ class GridworldEnv(EcoEnvironment):
         Returns:
             Dict[str, jnp.ndarray]: a dictionary of the behavior measures
         """
+        measures : Dict[str, jnp.ndarray] = {}
+        
         if name_measure == "appetite":
-            idx_plant = self.dict_name_channel_to_idx_visual_field["plants"]
-            n = self.n_agents_max
-            v = self.vision_range_agent
-            names_action_to_xy = {
-                "forward": (jnp.full(n, v - 1), jnp.full(n, v)),
-                "left": (jnp.full(n, v), jnp.full(n, v - 1)),
-                "right": (jnp.full(n, v), jnp.full(n, v + 1)),
-                "backward": (jnp.full(n, v + 1), jnp.full(n, v)),
-            }
-            names_action_to_xy = {
-                key: xy
-                for key, xy in names_action_to_xy.items()
-                if key in self.list_actions
-            }
-            eco_information = EcoInformation(
-                are_newborns_agents=jnp.full(n, False),
-                indexes_parents=jnp.full((n, 1), self.fill_value),
-                are_just_dead_agents=jnp.full(n, False),
-            )
+            if "plants" in self.dict_name_channel_to_idx_visual_field:
+                idx_plant = self.dict_name_channel_to_idx_visual_field["plants"]
+                n = self.n_agents_max
+                v = self.vision_range_agent
+                names_action_to_xy = {
+                    "forward": (jnp.full(n, v - 1), jnp.full(n, v)),
+                    "left": (jnp.full(n, v), jnp.full(n, v - 1)),
+                    "right": (jnp.full(n, v), jnp.full(n, v + 1)),
+                    "backward": (jnp.full(n, v + 1), jnp.full(n, v)),
+                }
+                names_action_to_xy = {
+                    key: xy
+                    for key, xy in names_action_to_xy.items()
+                    if key in self.list_actions
+                }
+                eco_information = EcoInformation(
+                    are_newborns_agents=jnp.full(n, False),
+                    indexes_parents=jnp.full((n, 1), self.fill_value),
+                    are_just_dead_agents=jnp.full(n, False),
+                )
 
-            appetites = jnp.full(n, 0.0, dtype=jnp.float32)
-            for name_action, (x, y) in names_action_to_xy.items():
-                actions_appetite = jnp.full(n, self.action_to_idx[name_action])
-                visual_field = (
-                    jnp.zeros(
-                        (
-                            n,
-                            2 * v + 1,
-                            2 * v + 1,
-                            len(self.list_indexes_channels_visual_field),
+                appetites = jnp.full(n, 0.0, dtype=jnp.float32)
+                for name_action, (x, y) in names_action_to_xy.items():
+                    actions_appetite = jnp.full(n, self.action_to_idx[name_action])
+                    visual_field = (
+                        jnp.zeros(
+                            (
+                                n,
+                                2 * v + 1,
+                                2 * v + 1,
+                                len(self.list_indexes_channels_visual_field),
+                            )
                         )
+                        .at[
+                            jnp.arange(n),
+                            x,
+                            y,
+                            idx_plant,
+                        ]
+                        .set(1)
                     )
-                    .at[
-                        jnp.arange(n),
-                        x,
-                        y,
-                        idx_plant,
-                    ]
-                    .set(1)
-                )
-                assert (
-                    "visual_field" in self.list_observations
-                ), "Visual field is required to compute appetite"
-                obs = {"visual_field": visual_field}
-                if "age" in self.list_observations:
-                    obs["age"] = jnp.full(n, 50) / self.age_max
-                if "energy" in self.list_observations:
-                    obs["energy"] = jnp.full(n, 5) / self.energy_max  # very low energy
-                if "n_childrens" in self.list_observations:
-                    obs["n_childrens"] = jnp.zeros(n)
-                if "novelty_hunger" in self.list_observations:
-                    obs["novelty_hunger"] = jnp.zeros((n, 4))
-                key_random, subkey = jax.random.split(key_random)
-                _, actions, _ = self.agent_species.react(
-                    state_species,
-                    obs,
-                    eco_information,
-                    subkey,
-                )
-                appetites += (actions == actions_appetite).astype(jnp.float32)
-            appetites = appetites / len(names_action_to_xy)
-            return {"appetite": appetites}
+                    assert (
+                        "visual_field" in self.list_observations
+                    ), "Visual field is required to compute appetite"
+                    obs = {"visual_field": visual_field}
+                    if "age" in self.list_observations:
+                        obs["age"] = jnp.full(n, 50) / self.age_max
+                    if "energy" in self.list_observations:
+                        obs["energy"] = jnp.full(n, 5) / self.energy_max  # very low energy
+                    if "n_childrens" in self.list_observations:
+                        obs["n_childrens"] = jnp.zeros(n)
+                    if "novelty_hunger" in self.list_observations:
+                        obs["novelty_hunger"] = jnp.zeros((n, 4))
+                    key_random, subkey = jax.random.split(key_random)
+                    _, actions, _ = self.agent_species.react(
+                        state_species,
+                        obs,
+                        eco_information,
+                        subkey,
+                    )
+                    appetites += (actions == actions_appetite).astype(jnp.float32)
+                appetites = appetites / len(names_action_to_xy)
+                measures["appetite"] = appetites
 
         else:
             raise ValueError(f"Unknown behavior measure: {name_measure}")
-
+        
+        return measures
+    
     def compute_on_render_behavior_measures(
         self,
         state_species: StateSpecies,

@@ -4,20 +4,25 @@ name: AdaptiveAgents
 # The initial hyperparameters of the population
 hp_initial:
   strength_mutation: 0.1
+
+# Which informations to include in the input of the fruit model
 do_include_fruit: True
 do_include_value_global: True
 do_include_value_fruit: True
 do_include_novelty_hunger: True
-# do_include_other_values: False
+do_include_values_other_fruits: True
+do_include_id_fruit: True
 list_channels_visual_field: ${env.list_channels_visual_field}
+
+# Whether we use the same model instance for all fruits
+do_share_model_fruit: False
 
 # ======================== Evolution Hyperparameters ========================
 mode_weights_transmission: none # initial, final, none
 
-# The dimension of the latent space corresponding to the internal representation of each fruit map
-n_latent_fruit: 11
-
 # The configuration of the decision model
+do_use_decision_model: True
+n_output_decision_model: 11
 decision_model:
   hidden_dims: []
 

@@ -30,10 +30,13 @@ radius_sun_perception : 40
 
 
 
-# ======================== Food Dynamics ========================
+# ======================== Plants Dynamics ========================
 
 # The initial proportion of food tiles at the beginning of the simulation
 proportion_plant_initial : 0.2
+
+# Whether plant can grow inside of fruit clusters
+do_plant_grow_in_fruit_clusters : False
 
 # The rule for a tile to be a food-tile is the following :
 # P(food spawn) = sigmoid(
@@ -79,6 +82,9 @@ energy_fruit_max_abs : 10
 
 # The number of tiles of the side of a fruit cluster. Must be a divider of H and W.
 side_cluster_fruits: 11
+
+# The range of each fruit cluster, which is the number of tiles around the center tile where fruits will be generated
+range_cluster_fruits: 3
 
 # The list of variabilities of the energy of the fruits, of length 4
 variability_fruits:

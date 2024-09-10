@@ -40,7 +40,7 @@ do_global_log : True
 defaults:
   - _self_
   - env : fruits
-  - agents : ada
+  - agents : ne
   - model : region
   - override hydra/hydra_logging: disabled  
   - override hydra/job_logging: disabled 

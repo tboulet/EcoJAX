@@ -103,6 +103,9 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
         self.do_include_value_global: bool = self.config["do_include_value_global"]
         self.do_include_value_fruit: bool = self.config["do_include_value_fruit"]
         self.do_include_novelty_hunger: bool = self.config["do_include_novelty_hunger"]
+        self.do_include_values_other_fruits: bool = self.config["do_include_values_other_fruits"]
+        self.do_include_id_fruit: bool = self.config["do_include_id_fruit"]
+        assert not self.do_include_id_fruit or True, "" # TODO : implement incomp with decision model
         self.list_channels_visual_field: List[str] = self.config[
             "list_channels_visual_field"
         ]
@@ -136,6 +139,16 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
             self.space_observation_individual_fruit.dict_space[
                 "novelty_hunger"
             ].shape = ()  # Only fruit i will be included in the novelty_hunger of fruit i
+        if self.do_include_values_other_fruits:
+            for id_fruit in range(4):
+                self.space_observation_individual_fruit.dict_space[
+                    f"value_fruit_{id_fruit}"
+                ] = spaces.ContinuousSpace(shape=())
+        if self.do_include_id_fruit:
+            for id_fruit in range(4):
+                self.space_observation_individual_fruit.dict_space[
+                    f"is_fruit_{id_fruit}"
+                ] = spaces.ContinuousSpace(shape=())
         self.space_observation_individual_fruit.dict_space["visual_field"].shape = (
             S,
             S,
@@ -227,6 +240,16 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
                     if self.do_include_novelty_hunger:
                         x_fruit["novelty_hunger"] = x["novelty_hunger"][id_fruit]
 
+                    # Add values of other fruits
+                    if self.do_include_values_other_fruits:
+                        for id_fruit_other in range(4):
+                            x_fruit[f"value_fruit_{id_fruit_other}"] = table_value_fruits[id_fruit_other]
+                    
+                    # Add id_fruit
+                    if self.do_include_id_fruit:
+                        for id_fruit_other in range(4):
+                            x_fruit[f"is_fruit_{id_fruit_other}"] = jnp.array(int(id_fruit_other == id_fruit))
+                            
                     # Add other scalars
                     for name_obs, component_obs in x.items():
                         if not name_obs in [
@@ -246,7 +269,7 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
                         x=x_fruit, key_random=key_random
                     )
                     list_encoding_fruit.append(encoding_fruit)
-                
+
                 # Average the fruit encodings
                 encoding = (
                     list_encoding_fruit[0]

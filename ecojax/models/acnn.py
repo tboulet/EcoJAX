@@ -102,7 +102,7 @@ class AdaptedCNN_Model(BaseModel):
         R = side_length // 2
         R = min(R, self.range_nearby_pixels)
         if S == 3:
-            R = 0 # No nearby pixels cause they are already in the external regions
+            R = -1 # No nearby pixels cause they are already in the external regions
         list_pixels = []
         for i in range(idx_center - R, idx_center + R + 1):
             for j in range(idx_center - R, idx_center + R + 1):

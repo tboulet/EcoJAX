@@ -25,6 +25,7 @@ from ecojax.models.base_model import BaseModel, FlattenAndConcatModel
 from ecojax.evolution.mutator import mutate_scalar, mutation_gaussian_noise
 from ecojax.models.mlp import MLP_Model
 from ecojax.agents.model_reward import RewardModel
+from ecojax.models.neural_components import MLP
 from ecojax.types import ActionAgent, ObservationAgent
 import ecojax.spaces as spaces
 from ecojax.utils import instantiate_class, jbreakpoint, jprint
@@ -96,16 +97,29 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
         self.n_actions = action_space.n
 
         # Hyperparameters
-        self.mode_weights_transmission: str = self.config["mode_weights_transmission"]
-        self.n_latent_fruit: int = self.config["n_latent_fruit"]
 
         self.do_include_fruit: bool = self.config["do_include_fruit"]
         self.do_include_value_global: bool = self.config["do_include_value_global"]
         self.do_include_value_fruit: bool = self.config["do_include_value_fruit"]
         self.do_include_novelty_hunger: bool = self.config["do_include_novelty_hunger"]
-        self.do_include_values_other_fruits: bool = self.config["do_include_values_other_fruits"]
+        self.do_include_values_other_fruits: bool = self.config[
+            "do_include_values_other_fruits"
+        ]
         self.do_include_id_fruit: bool = self.config["do_include_id_fruit"]
-        assert not self.do_include_id_fruit or True, "" # TODO : implement incomp with decision model
+
+        self.mode_weights_transmission: str = self.config["mode_weights_transmission"]
+        self.do_use_different_model_fruit: bool = self.config[
+            "do_use_different_model_fruit"
+        ]  # if False, just average the fruit embeddings. If True, concatenate them and apply the decision model that should output (n_actions,) logits
+        self.do_use_decision_model: bool = self.config["do_use_decision_model"]
+
+        assert (
+            int(self.do_include_id_fruit)
+            + int(self.do_use_different_model_fruit)
+            + int(self.do_use_decision_model)
+            <= 1
+        ), "Only one of do_include_id_fruit, do_use_different_model_fruit and do_use_decision_model can be True"
+
         self.list_channels_visual_field: List[str] = self.config[
             "list_channels_visual_field"
         ]
@@ -155,8 +169,6 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
             self.C_input_fruit_model,
         )
 
-        
-
         # Decision model : this neuro-evolved model converts the observation to an action
         # TODO : implement the decision model
 
@@ -178,16 +190,7 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
                 key_random: jnp.ndarray,
             ) -> Tuple[jnp.ndarray]:
 
-                # Create fruit model
-                model_fruit = model_class(
-                    space_input=self.space_observation_individual_fruit,
-                    space_output=spaces.ContinuousSpace(
-                        shape=(self.n_actions,)
-                    ),  # TODO : change this to arbitrary (k,) shape
-                    **config_model,
-                )
-                        
-                # Compute the values of the fruits
+                # 1) Compute the values of the fruits and the global value (sum of the values of the fruits)
                 id_fruit_to_map_fruit_i_value = {}
                 map_global_value = jnp.zeros((S, S))
                 table_value_fruits = x["table_value_fruits"]
@@ -202,7 +205,7 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
                     id_fruit_to_map_fruit_i_value[id_fruit] = map_fruit_i_value
                     map_global_value += map_fruit_i_value
 
-                # Create the list of fruit-obs
+                # 2) Create each fruit-obs for each fruit
                 list_x_fruit = []
                 for id_fruit in range(4):
 
@@ -215,18 +218,22 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
                     for i, name_channel in enumerate(self.list_channels_visual_field):
                         # Add the non-fruit related channels
                         if not name_channel.startswith("fruits_"):
-                            visual_field_fruit_i = visual_field_fruit_i.at[:, :, j].set(visual_field[:, :, i])
+                            visual_field_fruit_i = visual_field_fruit_i.at[:, :, j].set(
+                                visual_field[:, :, i]
+                            )
                             j += 1
                         # Add the fruit presence channel
                         if name_channel == f"fruits_{id_fruit}":
                             if self.do_include_fruit:
-                                visual_field_fruit_i = visual_field_fruit_i.at[:, :, j].set(
-                                    visual_field[:, :, i]
-                                )
+                                visual_field_fruit_i = visual_field_fruit_i.at[
+                                    :, :, j
+                                ].set(visual_field[:, :, i])
                                 j += 1
                     # Add global value channel
                     if self.do_include_value_global:
-                        visual_field_fruit_i = visual_field_fruit_i.at[:, :, j].set(map_global_value)
+                        visual_field_fruit_i = visual_field_fruit_i.at[:, :, j].set(
+                            map_global_value
+                        )
                         j += 1
                     # Add fruit value channel
                     if self.do_include_value_fruit:
@@ -243,13 +250,17 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
                     # Add values of other fruits
                     if self.do_include_values_other_fruits:
                         for id_fruit_other in range(4):
-                            x_fruit[f"value_fruit_{id_fruit_other}"] = table_value_fruits[id_fruit_other]
-                    
+                            x_fruit[f"value_fruit_{id_fruit_other}"] = (
+                                table_value_fruits[id_fruit_other]
+                            )
+
                     # Add id_fruit
                     if self.do_include_id_fruit:
                         for id_fruit_other in range(4):
-                            x_fruit[f"is_fruit_{id_fruit_other}"] = jnp.array(int(id_fruit_other == id_fruit))
-                            
+                            x_fruit[f"is_fruit_{id_fruit_other}"] = jnp.array(
+                                int(id_fruit_other == id_fruit)
+                            )
+
                     # Add other scalars
                     for name_obs, component_obs in x.items():
                         if not name_obs in [
@@ -262,22 +273,54 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
                     # Add the fruit to the list
                     list_x_fruit.append(x_fruit)
 
-                # Apply the fruit model to each fruit
+                # 3) Apply the fruit model to each fruit-obs
                 list_encoding_fruit = []
-                for x_fruit in list_x_fruit:
-                    encoding_fruit = model_fruit(
-                        x=x_fruit, key_random=key_random
+                if self.do_use_different_model_fruit:
+                    # Create one fruit model for each fruit
+                    for id_fruit, x_fruit in enumerate(list_x_fruit):
+                        key_random, subkey = random.split(key_random)
+                        config_model_fruit_i = deepcopy(config_model)
+                        config_model_fruit_i["name"] = f"{config_model['name']}_fruit_{id_fruit}"
+                        encoding_fruit = model_class(
+                            space_input=self.space_observation_individual_fruit,
+                            space_output=spaces.ContinuousSpace(
+                                shape=(self.n_actions,)
+                            ),  # TODO : change this to arbitrary (k,) shape
+                            **config_model_fruit_i,
+                        )(x=x_fruit, key_random=subkey)
+                        list_encoding_fruit.append(encoding_fruit)
+                else:
+                    # Create one fruit model for all fruits
+                    model_fruit = model_class(
+                        space_input=self.space_observation_individual_fruit,
+                        space_output=spaces.ContinuousSpace(
+                            shape=(self.n_actions,)
+                        ),  # TODO : change this to arbitrary (k,) shape
+                        **config_model,
                     )
-                    list_encoding_fruit.append(encoding_fruit)
+                    for x_fruit in list_x_fruit:
+                        key_random, subkey = random.split(key_random)
+                        encoding_fruit = model_fruit(x=x_fruit, key_random=subkey)
+                        list_encoding_fruit.append(encoding_fruit)
 
-                # Average the fruit encodings
-                encoding = (
-                    list_encoding_fruit[0]
-                    + list_encoding_fruit[1]
-                    + list_encoding_fruit[2]
-                    + list_encoding_fruit[3]
-                ) / 4
-                return encoding
+                # 4) Apply the decision model, or average the fruit encodings
+                if self.do_use_decision_model:
+                    # Concatenate the fruit encodings and apply the decision model
+                    encoding = jnp.concatenate(list_encoding_fruit, axis=-1)
+                    encoding = MLP(
+                        **self.config["decision_model_config"],
+                        n_output_features=self.n_actions,
+                    )(encoding)
+                    return encoding
+                else:
+                    # Average the fruit encodings
+                    encoding = (
+                        list_encoding_fruit[0]
+                        + list_encoding_fruit[1]
+                        + list_encoding_fruit[2]
+                        + list_encoding_fruit[3]
+                    ) / 4
+                    return encoding
 
         self.space_observation_fruit_averager = deepcopy(self.observation_space)
         self.space_observation_fruit_averager.dict_space["table_value_fruits"] = (
@@ -523,7 +566,7 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
             strength_mutation=agent.hp.strength_mutation,
             key_random=subkey,
         )
-        
+
         # Mutate the reward model
         key_random, subkey = random.split(key_random)
         new_params_reward = mutation_gaussian_noise(
@@ -582,9 +625,9 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
             int,
             Dict[str, jnp.ndarray],
         ]:
-            
+
             # ============== Learning part =================
-            
+
             # Compute the reward : r_t = reward_model(o_t, o_{t+1})
             key_random, subkey = random.split(key_random)
             reward_last = self.reward_model.apply(
@@ -617,15 +660,19 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
                     )
                     & (agent.action_last == idx_eat_action)
                 )
-                choicelist.append(agent.table_value_fruits.at[id_fruit].set(reward_last))
+                choicelist.append(
+                    agent.table_value_fruits.at[id_fruit].set(reward_last)
+                )
             table_value_fruits_new = jnp.select(
                 condlist=condlist,
                 choicelist=choicelist,
                 default=agent.table_value_fruits,
             )
             agent = agent.replace(table_value_fruits=table_value_fruits_new)
-            obs["table_value_fruits"] = agent.table_value_fruits # re-set the table of values of the fruits for learning immediately
-            
+            obs["table_value_fruits"] = (
+                agent.table_value_fruits
+            )  # re-set the table of values of the fruits for learning immediately
+
             # =============== Inference part =================
             key_random, subkey = random.split(key_random)
             logits = self.model.apply(
@@ -647,7 +694,6 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
             #         print(f"Error: {e}. Please enter a valid action.")
             #         idx_action = input()
             # action = idx_action
-            
 
             # Update the agent's state
             agent = agent.replace(

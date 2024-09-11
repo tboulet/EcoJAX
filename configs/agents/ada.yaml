@@ -11,20 +11,19 @@ do_include_value_global: True
 do_include_value_fruit: True
 do_include_novelty_hunger: True
 do_include_values_other_fruits: True
-do_include_id_fruit: True
+do_include_id_fruit: False
 list_channels_visual_field: ${env.list_channels_visual_field}
 
 # Whether we use the same model instance for all fruits
-do_share_model_fruit: False
+do_use_different_model_fruit: True
+
+# The configuration of the decision model . TODO : maybe prevent do_include_values_other_fruits if use of decision model ?
+do_use_decision_model: False
+decision_model_config:
+  hidden_dims: []
 
 # ======================== Evolution Hyperparameters ========================
 mode_weights_transmission: none # initial, final, none
-
-# The configuration of the decision model
-do_use_decision_model: True
-n_output_decision_model: 11
-decision_model:
-  hidden_dims: []
 
 # ======================== Models Config ========================
 

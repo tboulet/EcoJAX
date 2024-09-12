@@ -49,13 +49,13 @@ seed_max=20
 benchmark_name='benchmark_ep6'
 for _ in $(seq 1 $seed_max); do
     seed=$RANDOM
-    for energy_food in 5 10 20 40; do
+    for energy_plant in 5 10 20 40; do
         for p_base_plant_growth in 0.0001 0.0005 0.001 0.003 0.008 0.015; do
-            mkdir -p "logs/run_$initial_date/energy_food_$energy_food/p_base_plant_growth_$p_base_plant_growth"
+            mkdir -p "logs/run_$initial_date/energy_plant_$energy_plant/p_base_plant_growth_$p_base_plant_growth"
             python run.py --config-name dgx do_wandb=True env/metrics=metrics_dgx +benchmark_name=$benchmark_name seed=$seed \
-                env.energy_food=$energy_food \
+                env.energy_plant=$energy_plant \
                 env.p_base_plant_growth=$p_base_plant_growth \
-                > "logs/run_$initial_date/energy_food_$energy_food/p_base_plant_growth_$p_base_plant_growth/seed_$seed.log" 2>&1  # Do not change : log in specific file
+                > "logs/run_$initial_date/energy_plant_$energy_plant/p_base_plant_growth_$p_base_plant_growth/seed_$seed.log" 2>&1  # Do not change : log in specific file
         done
     done
 done

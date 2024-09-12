@@ -27,7 +27,7 @@ mode_weights_transmission: final # initial, final, none
 reward_model:
   func_weight: hardcoded # constant, linear, hardcoded, one
   dict_reward:
-    energy: ${eval:'${env.energy_max} / (${env.energy_food} - 1)'} # set the reward of eating a plant to 1
+    energy: ${eval:'${env.energy_max} / (${env.energy_plant} - 1)'} # set the reward of eating a plant to 1
     age: 0
     n_childrens: 0
 

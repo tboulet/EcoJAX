@@ -78,7 +78,7 @@ proportion_fruit_initial : 0.5
 p_base_fruit_growth : 0.05
 
 # The maximum absolute value of the energy of a fruit. The value of a fruit will vary between -max_abs and max_abs
-energy_fruit_max_abs : 10
+energy_fruit_max_abs : 15
 
 # The number of tiles of the side of a fruit cluster. Must be a divider of H and W.
 side_cluster_fruits: 11
@@ -143,7 +143,7 @@ list_death_events:
 # The initial energy of an agent
 energy_initial : 50
 # The energy amount obtained by eating a food tile
-energy_food : 30
+energy_plant : 10
 # The energy threshold under which an agent dies
 energy_thr_death : 0
 # The maximal amount of energy an agent can have

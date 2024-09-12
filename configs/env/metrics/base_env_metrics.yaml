@@ -4,7 +4,6 @@ measures:
     - n_agents
     - n_plants
     - net_energy_transfer_per_capita
-    # - group_size # commented for now cause it's only implemented through a non jittable function
     - values_fruits
   immediate:
     - do_action_eat
@@ -12,7 +11,6 @@ measures:
     - do_action_reproduce
     - do_action_forward
     - do_action_nothing
-    - do_eat_fruit
     - amount_food_eaten
     - amount_children
     - died
@@ -23,9 +21,7 @@ measures:
     - n_childrens
     - x
     - appearance
-    - do_eat_iff_ressource
-    - do_eat_if_ressource
-    - dont_eat_if_no_ressource
+    - eating
   behavior:
     # []
     - appetite
@@ -55,7 +51,7 @@ aggregators_population:
   - class_string : ecojax.metrics.aggregators:AggregatorPopulationMean
     config:
       keys_measures : ${merge:${env.metrics.measures.immediate}, ${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
-      keys_measures_prefix : [life, last_final]
+      keys_measures_prefix : [life, last_final, novelty_hunger, eating]
       n_agents : ${n_agents_max}
       prefix_metric : pop_mean
   - class_string : ecojax.metrics.aggregators:AggregatorPopulationStd

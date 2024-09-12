@@ -12,7 +12,6 @@ measures:
     - do_action_reproduce
     - do_action_forward
     - do_action_nothing
-    - do_eat_fruit
     - amount_food_eaten
     - amount_children
     - died
@@ -23,12 +22,10 @@ measures:
     - n_childrens
     - x
     - appearance
-    - do_eat_iff_ressource
-    - do_eat_if_ressource
-    - dont_eat_if_no_ressource
+    - eating
   behavior:
-    []
-    # - appetite
+    # []
+    - appetite
 
 behavior_measures_on_render: 
   []
@@ -55,13 +52,13 @@ aggregators_population:
   - class_string : ecojax.metrics.aggregators:AggregatorPopulationMean
     config:
       keys_measures : ${merge:${env.metrics.measures.immediate}, ${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
-      keys_measures_prefix : [life, last_final, novelty_hunger, do_eat_fruit]
+      keys_measures_prefix : [life, last_final, novelty_hunger, eating]
       n_agents : ${n_agents_max}
       prefix_metric : pop_mean
   - class_string : ecojax.metrics.aggregators:AggregatorPopulationStd
     config:
       keys_measures : ${merge:${env.metrics.measures.behavior}, ${env.metrics.measures.state}}
-      keys_measures_prefix : [life, last_final, novelty_hunger, do_eat_fruit]
+      keys_measures_prefix : [life, last_final]
       n_agents : ${n_agents_max}
       prefix_metric : pop_std
 

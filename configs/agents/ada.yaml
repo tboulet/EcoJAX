@@ -7,7 +7,7 @@ hp_initial:
 
 # Which informations to include in the input of the fruit model
 do_include_fruit: True
-do_include_value_global: True
+do_include_value_global: False
 do_include_value_fruit: True
 do_include_novelty_hunger: True
 do_include_values_other_fruits: False
@@ -18,7 +18,7 @@ list_channels_visual_field: ${env.list_channels_visual_field}
 do_use_different_model_fruit: False
 
 # The configuration of the decision model . TODO : maybe prevent do_include_values_other_fruits if use of decision model ?
-do_use_decision_model: False
+do_use_decision_model: True
 decision_model_config:
   hidden_dims: []
 

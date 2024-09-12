@@ -26,7 +26,7 @@ do_global_log : True
 # Defaults sub-configs and other Hydra config.
 defaults:
   - _self_
-  - env : grid_uniform
+  - env : fruits
   - agents : ne
   - model : perc
   - override hydra/hydra_logging: disabled  

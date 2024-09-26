@@ -553,10 +553,12 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
 
         # Mutate the hyperparameters
         key_random, *subkeys = random.split(key_random, 5)
+        new_mutation = mutate_scalar(
+            value=agent.hp.strength_mutation, range=(0, None), key_random=subkeys[0]
+        )
+        new_mutation = agent.hp.strength_mutation # fix mutation strength TODO : remove this line
         new_hp = HyperParametersAdaRL(
-            strength_mutation=mutate_scalar(
-                value=agent.hp.strength_mutation, range=(0, None), key_random=subkeys[3]
-            ),
+            strength_mutation=new_mutation,
         )
 
         # Mutate the weights, slightly mutated

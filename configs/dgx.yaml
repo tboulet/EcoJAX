@@ -27,8 +27,8 @@ do_global_log : True
 defaults:
   - _self_
   - env : fruits
-  - agents : ne
-  - model : perc
+  - agents : ada
+  - model : region
   - override hydra/hydra_logging: disabled  
   - override hydra/job_logging: disabled 
 

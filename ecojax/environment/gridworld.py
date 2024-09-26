@@ -291,6 +291,8 @@ class GridworldEnv(EcoEnvironment):
             ] = {}
             self.n_clusters_x = self.height // self.side_cluster_fruits
             self.n_clusters_y = self.width // self.side_cluster_fruits
+            self.n_clusters_x_fruit_i = self.n_clusters_x // 2
+            self.n_clusters_y_fruit_i = self.n_clusters_y // 2
             self.id_ressource_to_map_value: Dict[int, jnp.ndarray] = {
                 id_fruit: jnp.zeros(shape=(self.height, self.width))
                 for id_fruit in range(4)
@@ -312,18 +314,21 @@ class GridworldEnv(EcoEnvironment):
                         id_fruit = 2
                     else:
                         id_fruit = 3
+                    x_i, y_i = x // 2, y // 2
                     # Assign initial value depending on the variability mode
                     w = self.variability_fruits[id_fruit]
                     if self.mode_variability_fruits == "space":
+                        assert 0 <= w <= 1, f"Space variability must be in [0, 1], but got {w}"
                         value_cluster = (
                             self.energy_fruit_max_abs
-                            * (jnp.cos(w * jnp.pi * x))
-                            * (jnp.cos(w * jnp.pi * y))
+                            * (jnp.cos(2 * jnp.pi * x_i * w / 2))
+                            * (jnp.cos(2 * jnp.pi * y_i * w / 2))
                         )
                     elif self.mode_variability_fruits == "time":
+                        assert 0 <= w, f"Time variability must be positive, but got {w}."
                         value_cluster = (
                             self.energy_fruit_max_abs
-                            * (jnp.cos(w * jnp.pi * 0))
+                            * (jnp.cos(2 * jnp.pi * w * 0 / 2 * self.age_max))
                         )
                     else:
                         raise ValueError(f"Unknown mode_variability_fruits: {self.mode_variability_fruits}")
@@ -1104,7 +1109,7 @@ class GridworldEnv(EcoEnvironment):
             w = self.variability_fruits[id_ressource]
             t = state.timestep
             value_fruit = self.energy_fruit_max_abs * jnp.cos(
-                2 * jnp.pi * w * t / self.age_max
+                2 * jnp.pi * t * w / (2*self.age_max)
             )
             return map_fruits * value_fruit
         else:
@@ -1648,7 +1653,7 @@ class GridworldEnv(EcoEnvironment):
                         w = self.variability_fruits[id_fruit]
                         t = state.timestep
                         value_fruit = self.energy_fruit_max_abs * jnp.cos(
-                            2 * jnp.pi * w * t / self.age_max
+                            2 * jnp.pi * w * t / (2*self.age_max)
                         )
                         dict_measures[f"value_fruits {id_fruit}/value_fruits"] = (
                             value_fruit
@@ -1725,7 +1730,7 @@ class GridworldEnv(EcoEnvironment):
         for name_measure, measures in dict_measures.items():
             if name_measure not in self.config["metrics"]["measures"]["environmental"]:
                 # Skip the measures that are not of shape (n_max_agents, ...)
-                if measures.shape[0] != self.n_agents_max:
+                if len(measures.shape) == 0 or measures.shape[0] != self.n_agents_max:
                     continue
                 # Expand the mask to the shape of the measures
                 mask = state.agents.are_existing_agents

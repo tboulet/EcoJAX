@@ -3,7 +3,7 @@ name: AdaptiveAgents
 # ======================== Agent's Hyperparameter ========================
 # The initial hyperparameters of the population
 hp_initial:
-  strength_mutation: 0.1
+  strength_mutation: 0.05
 
 # Which informations to include in the input of the fruit model
 do_include_fruit: True

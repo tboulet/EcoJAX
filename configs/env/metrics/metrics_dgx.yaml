@@ -65,7 +65,7 @@ aggregators_population:
 
 # ======================== Video parameters ========================
 config_video:
-  do_video : False
+  do_video : True
   do_agent_video : False
   n_steps_per_video : 500
   n_steps_min_between_videos : 5000

@@ -5,8 +5,8 @@ cnn_config:
   strides: 1
 range_nearby_pixels: 1
 mlp_pixel_config:
-  hidden_dims: []
+  hidden_dims: [10]
   n_output_features: 1 # must be 1
 mlp_config:
-  hidden_dims: [8]
+  hidden_dims: [10]
   n_output_features: ${n_actions} # if same numbeer as n_actions, no dense layer will be added by BaseModel

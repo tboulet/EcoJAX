@@ -1,0 +1,66 @@
+#!/bin/bash
+#
+
+#SBATCH --job-name=fp_region
+#SBATCH --output=out.txt
+#SBATCH --error=out.txt
+
+## For partition: either prod10, prod 20, prod 40 or prod80
+## For gres: either 1g.10gb:[1:10] for prod10, 2g.20gb:[1:4] for prod20, 3g.40gb:1 for prod40 or A100.80gb for prod80.
+
+##SBATCH --partition=prod10
+##SBATCH --gres=gpu:1g.10gb:1
+##SBATCH --cpus-per-task=4
+
+#SBATCH --partition=prod20
+#SBATCH --gres=gpu:2g.20gb:1
+#SBATCH --cpus-per-task=4
+
+##SBATCH --partition=prod40
+##SBATCH --gres=gpu:3g.40gb:1
+##SBATCH --cpus-per-task=4
+
+##SBATCH --partition=prod80
+##SBATCH --gres=gpu:A100.80gb:1
+##SBATCH --ntasks-per-node=1
+##SBATCH --cpus-per-task=8
+##SBATCH --mem-per-cpu=10G
+##SBATCH --nodes=1
+
+## For ntasks and cpus: total requested cpus (ntasks * cpus-per-task) must be in [1: 4 * nMIG] with nMIG = nb_1g.10gb | 2 * nb_2g.20gb | 4 * nb_3g.40gb | 8 * nb_A100.80gb
+
+
+## N tasks
+#SBATCH --ntasks=1
+
+## Walltime limit
+#SBATCH --time=24:00:00
+
+## Setup
+source ~/projects/EcoJAX/venv_linux/bin/activate
+cd ~/projects/EcoJAX
+
+## Create a directory to store the logs
+initial_date=$(date +"%Y%m%d_%H%M%S")
+
+## Iterate over the seeds
+seed_max=100
+benchmark_name='fp_region'
+for _ in $(seq 1 $seed_max); do
+    seed=$RANDOM
+    for p_base_fruit_growth in 0.1 0.01 0.001 0.0001; do
+        for variability_fruits in "[0, 0, 0, 0]" "[1, 1, 1, 1]" "[0, 0.1, 0.5, 1]"; do
+            log_dir="logs/run_$initial_date/p_base_fruit_growth_$p_base_fruit_growth/variability_fruits_$variability_fruits"
+            mkdir -p "$log_dir"
+            python run.py --config-name dgx do_wandb=True env/metrics=metrics_dgx +benchmark_name=$benchmark_name seed=$seed \
+                agents=ada \
+                model=region \
+                env=fruits_plants \
+                env.p_base_fruit_growth=$p_base_fruit_growth \
+                env.variability_fruits="$variability_fruits" \
+                model.mlp_region_config.hidden_dims=[] \
+                model.mlp_config.hidden_dims=[10] \
+                > "$log_dir"/seed_"$seed".log 2>&1  
+        done
+    done
+done

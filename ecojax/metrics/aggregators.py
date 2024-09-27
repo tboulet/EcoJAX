@@ -304,7 +304,11 @@ class AggregatorLifespanVariation(Aggregator):
                 ]
             ):
                 value_measure = dict_measures[name_measure]
-                first_value = dict_first_values[f"{self.prefix_metric}/{name_measure}"]
+                if name_measure not in dict_first_values:
+                    first_value = value_measure
+                else:
+                    first_value = dict_first_values[f"{self.prefix_metric}/{name_measure}"]
+                
                 # Update the first value (in case ages==1)
                 dict_first_values[f"{self.prefix_metric}/{name_measure}"] = jnp.select(
                     condlist=[

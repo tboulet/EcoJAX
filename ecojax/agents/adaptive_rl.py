@@ -57,6 +57,8 @@ class AgentAdaRL(PyTreeNode):
     obs_last: jnp.ndarray
     # The last action of the agent
     action_last: int
+    # The last logits of the agent
+    logits_last: jnp.ndarray
 
 
 @dataclass
@@ -438,6 +440,7 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
             do_exist=do_exist,
             obs_last=obs_dummy,  # dummy observation
             action_last=-1,  # dummy action
+            logits_last=jnp.zeros((self.n_actions,)),  # dummy logits
         )
 
     def react(
@@ -702,6 +705,7 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
                 age=agent.age + 1,
                 obs_last=obs,
                 action_last=action,
+                logits_last=logits,
             )
 
             # ============== Measures ==============
@@ -716,7 +720,6 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
 
             # Update the agent's state and act
             return agent, action, dict_measures
-
         batch_keys = random.split(key_random, self.n_agents_max)
         new_agents, actions, dict_measures = jax.vmap(react_single_agent)(
             key_random=batch_keys,

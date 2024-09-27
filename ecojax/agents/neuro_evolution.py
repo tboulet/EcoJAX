@@ -40,6 +40,8 @@ class AgentNE:
     hp: HyperParametersNE
     # Whether the agent is existing
     do_exist: bool
+    # The last logits
+    logits_last: jnp.ndarray
 
 
 @dataclass
@@ -151,6 +153,7 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
             params=params,
             hp=hp,
             do_exist=True,
+            logits_last=jnp.zeros(self.n_actions), # dummy value
         )
 
     def react(
@@ -307,7 +310,7 @@ class NeuroEvolutionAgentSpecies(AgentSpecies):
         key_random, subkey = random.split(key_random)
         action = random.categorical(key_random, logits=logits)
         # ============== Learning part (no learning in NE) =================
-        agent.replace(age=agent.age + 1)
+        agent.replace(age=agent.age + 1, logits_last=logits)
         # ============== Measures ==============
         probs = jax.nn.softmax(logits)
         dict_measures = {

@@ -22,10 +22,12 @@ measures:
     - n_childrens
     - x
     - appearance
-    - eating
+    # - eating
+    # - eating prob fruit 0/eating
   behavior:
     # []
-    - appetite
+    - eating_prob
+    # - appetite
 
 behavior_measures_on_render: 
   []
@@ -45,6 +47,7 @@ aggregators_lifespan:
   - class_string : ecojax.metrics.aggregators:AggregatorLifespanVariation
     config:
       keys_measures : ${merge:${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
+      keys_measures_prefix : [eating]
       n_agents : ${n_agents_max}
       prefix_metric : life_var
 

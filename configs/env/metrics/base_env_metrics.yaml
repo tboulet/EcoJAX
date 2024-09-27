@@ -24,7 +24,8 @@ measures:
     - eating
   behavior:
     # []
-    - appetite
+    # - appetite
+    - eating_prob
 
 behavior_measures_on_render: 
   []

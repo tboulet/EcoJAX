@@ -768,7 +768,7 @@ class GridworldEnv(EcoEnvironment):
             state=state_old, state_new=state, dict_measures=dict_measures_all
         )
         info = {"metrics": dict_metrics}
-
+            
         # ============ (7) Manage the video ============
         # Reset the video to empty if t = 0 mod n_steps_per_video
         video = jax.lax.cond(
@@ -1818,7 +1818,60 @@ class GridworldEnv(EcoEnvironment):
         """
         measures: Dict[str, jnp.ndarray] = {}
 
-        if name_measure == "appetite":
+        if name_measure == "eating_prob":
+            n = self.n_agents_max
+            v = self.vision_range_agent
+            eco_information = EcoInformation(
+                are_newborns_agents=jnp.full(n, False),
+                indexes_parents=jnp.full((n, 1), self.fill_value),
+                are_just_dead_agents=jnp.full(n, False),
+            )
+            for id_fruit in range(4):
+                idx_fruit = self.dict_name_channel_to_idx_visual_field[f"fruits_{id_fruit}"]
+                visual_field = (
+                    jnp.zeros(
+                        (
+                            n,
+                            2 * v + 1,
+                            2 * v + 1,
+                            len(self.list_indexes_channels_visual_field),
+                        )
+                    )
+                    .at[
+                        jnp.arange(n),
+                        v,
+                        v,
+                        idx_fruit,
+                    ]
+                    .set(1)
+                )
+                if "agents" in self.dict_name_channel_to_idx_visual_field:
+                    idx_agent = self.dict_name_channel_to_idx_visual_field["agents"]
+                    visual_field = visual_field.at[jnp.arange(n), v, v, idx_agent].set(1)
+                obs = {"visual_field": visual_field}
+                if "age" in self.list_observations:
+                    obs["age"] = jnp.full(n, 50) / self.age_max
+                if "energy" in self.list_observations:
+                    obs["energy"] = (
+                        jnp.full(n, 50) / self.energy_max
+                    )  # base energy
+                if "n_childrens" in self.list_observations:
+                    obs["n_childrens"] = jnp.zeros(n)
+                if "novelty_hunger" in self.list_observations:
+                    obs["novelty_hunger"] = jnp.full((n, 4), 0.30)
+                key_random, subkey = jax.random.split(key_random)
+                new_state_species, actions, _ = self.agent_species.react(
+                    state_species,
+                    obs,
+                    eco_information,
+                    subkey,
+                )
+                logits = new_state_species.agents.logits_last
+                probs = jax.nn.softmax(logits, axis=-1)
+                prob_eating = probs[:, self.action_to_idx["eat"]]
+                measures[f"eating prob fruit {id_fruit}/eating"] = prob_eating
+                    
+        elif name_measure == "appetite":
             if "plants" in self.dict_name_channel_to_idx_visual_field:
                 idx_plant = self.dict_name_channel_to_idx_visual_field["plants"]
                 n = self.n_agents_max
@@ -1953,7 +2006,7 @@ class GridworldEnv(EcoEnvironment):
         
     def obs_idx_to_meaning(self) -> Dict[str, str]:
         # Assume MLP model with visual field in first position
-        idx_plant = self.dict_name_channel_to_idx["plants"]
+        idx_plant = self.dict_name_channel_to_idx_visual_field["plants"]
         v = self.vision_range_agent
         side = 2 * v + 1
         res = {}

@@ -72,7 +72,7 @@ radius_plant_asphyxia : 20
 do_fruits : True
 
 # The initial proportion of fruit tiles at the beginning of the simulation
-proportion_fruit_initial : 0.5
+proportion_fruit_initial : 1.0
 
 # The base probability of a non-fruit tile to grow spontaneously a fruit
 p_base_fruit_growth : 0.05
@@ -84,17 +84,17 @@ energy_fruit_max_abs : 15
 side_cluster_fruits: 11
 
 # The range of each fruit cluster, which is the number of tiles around the center tile where fruits will be generated
-range_cluster_fruits: 3
+range_cluster_fruits: 5
 
 # The list of variabilities of the energy of the fruits, of length 4
 variability_fruits:
   - 0
   - 0.1
-  - 0.3
-  - 0.9
+  - 0.5
+  - 1
 
 # The variability mode, either "time" (cluster's energy value changes over time) or "space" (cluster's energy value changes over space)
-mode_variability_fruits: "space"
+mode_variability_fruits: "time"
 
 
 # ======================== Agent Parameters ========================

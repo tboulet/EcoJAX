@@ -171,9 +171,6 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
             self.C_input_fruit_model,
         )
 
-        # Decision model : this neuro-evolved model converts the observation to an action
-        # TODO : implement the decision model
-
         # Model : this model average the fruit output to obtain the logits
         class ModelFruitAverager(BaseModel):
             """The model of the agent, that will average the fruit values to obtain the logits of the actions.
@@ -304,7 +301,7 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
                         key_random, subkey = random.split(key_random)
                         encoding_fruit = model_fruit(x=x_fruit, key_random=subkey)
                         list_encoding_fruit.append(encoding_fruit)
-
+                    
                 # 4) Apply the decision model, or average the fruit encodings
                 if self.do_use_decision_model:
                     # Concatenate the fruit encodings and apply the decision model
@@ -687,7 +684,7 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
             )
             key_random, subkey = random.split(key_random)
             action = random.categorical(key_random, logits=logits)
-
+            
             # # Debug code
             # idx_action = input()
             # while True:

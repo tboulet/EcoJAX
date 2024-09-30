@@ -48,7 +48,7 @@ seed_max=100
 benchmark_name='bench3_f_acnn'
 for _ in $(seq 1 $seed_max); do
     seed=$RANDOM
-    for p_base_fruit_growth in 0.008 0.009 0.01; do
+    for p_base_fruit_growth in 0.005 0.0065 0.008; do
         for variability_fruits in "[0, 0, 0, 0]" "[1, 1, 1, 1]" "[0, 0.1, 0.5, 1]"; do
             log_dir="logs/run_$initial_date/p_base_fruit_growth_$p_base_fruit_growth/variability_fruits_$variability_fruits"
             mkdir -p "$log_dir"

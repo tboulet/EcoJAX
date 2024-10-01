@@ -282,7 +282,9 @@ class AggregatorLifespanVariation(Aggregator):
     def get_initial_metrics(self) -> Metric:
         return {
             "first_values": self.get_dict_of_full_arrays(fill_value=jnp.nan),
+            "last_values": self.get_dict_of_full_arrays(fill_value=jnp.nan),
             "variations": self.get_dict_of_full_arrays(fill_value=jnp.nan),
+            "cum_abs_variations": self.get_dict_of_full_arrays(fill_value=jnp.nan),
         }
 
     def update_metrics(
@@ -295,7 +297,11 @@ class AggregatorLifespanVariation(Aggregator):
     ) -> Metric:
 
         dict_first_values = metrics["first_values"]
+        dict_last_values = metrics["last_values"]
+        dict_cum_abs_variations = metrics["cum_abs_variations"]
+        new_dict_last_values = {}
         new_dict_variations = {}
+        new_dict_cum_abs_variations = {}
         for name_measure in dict_measures.keys():
             if (name_measure in self.keys_measures) or any(
                 [
@@ -304,10 +310,7 @@ class AggregatorLifespanVariation(Aggregator):
                 ]
             ):
                 value_measure = dict_measures[name_measure]
-                if f"{self.prefix_metric}/{name_measure}" not in dict_first_values:
-                    first_value = value_measure
-                else:
-                    first_value = dict_first_values[f"{self.prefix_metric}/{name_measure}"]
+                first_value = dict_first_values.get(f"{self.prefix_metric}/{name_measure}", value_measure)
                 
                 # Update the first value (in case ages==1)
                 dict_first_values[f"{self.prefix_metric}/{name_measure}"] = jnp.select(
@@ -339,14 +342,40 @@ class AggregatorLifespanVariation(Aggregator):
                         default=value_measure - first_value,
                     )
                 )
-
-        return {
+                # Update the last value
+                new_dict_last_values[f"{self.prefix_metric}/{name_measure}"] = value_measure
+                # Compute the cumulative variation
+                last_value_measure = dict_last_values.get(f"{self.prefix_metric}/{name_measure}", value_measure)
+                cum_abs_variation = dict_cum_abs_variations.get(f"{self.prefix_metric}/{name_measure}", 0)
+                new_dict_cum_abs_variations[f"{self.prefix_metric}/{name_measure}"] = (
+                    jnp.select(
+                        condlist=[
+                            ~are_alive,
+                            ages == 1,
+                            value_measure == jnp.nan,
+                        ],
+                        choicelist=[
+                            jnp.nan,
+                            0,
+                            jnp.nan,
+                        ],
+                        default=cum_abs_variation + jnp.abs(value_measure - last_value_measure),
+                    )
+                )
+        res = {
             "first_values": dict_first_values,
+            "last_values": new_dict_last_values,
             "variations": new_dict_variations,
+            "cum_abs_variations": new_dict_cum_abs_variations,
         }
+        return res
 
     def get_dict_metrics(self, metrics: Metric) -> Dict[str, jnp.ndarray]:
-        return metrics["variations"]
+        dict_metrics = metrics["variations"] # 'life_var/energy' : [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        for key, value in metrics["cum_abs_variations"].items():
+            key = key.replace("life_var", "life_var/cum_abs")
+            dict_metrics[key] = value
+        return dict_metrics
 
 
 if __name__ == "__main__":

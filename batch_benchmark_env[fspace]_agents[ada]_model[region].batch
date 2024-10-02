@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 
-#SBATCH --job-name=fp_region
+#SBATCH --job-name=f_space
 #SBATCH --output=out.txt
 #SBATCH --error=out.txt
 
@@ -45,17 +45,19 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 ## Iterate over the seeds
 seed_max=100
-benchmark_name='bench3_fp_region'
+benchmark_name='bench4_f_space'
 for _ in $(seq 1 $seed_max); do
     seed=$RANDOM
-    for p_base_fruit_growth in 0.005 0.0065 0.008; do
-        for variability_fruits in "[0.1, 0.1, 0.1, 0.1]" "[0.5, 0.5, 0.5, 0.5]" "[1, 1, 1, 1]" "[0, 0.1, 0.5, 1]" "[0, 1, 1, 1]"; do
-            log_dir="logs/run_$initial_date/p_base_fruit_growth_$p_base_fruit_growth/variability_fruits_$variability_fruits"
+    for p_base_fruit_growth in 0.0065 0.008 0.01; do
+        for variability_fruits in "[0.1, 0.1, 0.1, 0.1]" "[0.5, 0.5, 0.5, 0.5]" "[1, 1, 1, 1]" "[0, 0.1, 0.5, 1]" "[0, 1, 1, 1]" "[0, 0, 0, 1]"; do
+            log_dir="logs/run_$benchmark_name-$initial_date/p_base_fruit_growth_$p_base_fruit_growth/variability_fruits_$variability_fruits"
             mkdir -p "$log_dir"
             python run.py --config-name dgx do_wandb=True env/metrics=metrics_dgx +benchmark_name=$benchmark_name seed=$seed \
                 agents=ada \
                 model=region \
-                env=fruits_plants \
+                env=fruits \
+                agents.do_include_id_fruit=True \
+                env.mode_variability_fruits=space \
                 env.p_base_fruit_growth=$p_base_fruit_growth \
                 env.variability_fruits="$variability_fruits" \
                 model.mlp_region_config.hidden_dims=[] \

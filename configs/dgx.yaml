@@ -19,7 +19,7 @@ do_tqdm : True
 do_snakeviz : True
 do_jax_prof : False
 do_render : True
-do_global_log : True
+do_global_log : False
 
 
 

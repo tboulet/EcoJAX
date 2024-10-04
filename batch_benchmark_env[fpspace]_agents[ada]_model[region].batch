@@ -52,7 +52,7 @@ for _ in $(seq 1 $seed_max); do
         for variability_fruits in "[0.1, 0.1, 0.1, 0.1]" "[0.5, 0.5, 0.5, 0.5]" "[1, 1, 1, 1]" "[0, 0.1, 0.5, 1]" "[0, 1, 1, 1]" "[0, 0, 0, 1]"; do
             log_dir="logs/run_$benchmark_name-$initial_date/p_base_fruit_growth_$p_base_fruit_growth/variability_fruits_$variability_fruits/seed_$seed"
             mkdir -p "$log_dir"
-                python run.py --config-name dgx do_wandb=True env/metrics=metrics_dgx +benchmark_name=$benchmark_name seed=$seed +run_name=$log_dir
+            python run.py --config-name dgx do_wandb=True env/metrics=metrics_dgx +benchmark_name=$benchmark_name seed=$seed +run_name=$log_dir
                 agents=ada \
                 model=region \
                 env=fruits_plants \
@@ -62,7 +62,7 @@ for _ in $(seq 1 $seed_max); do
                 env.variability_fruits="$variability_fruits" \
                 model.mlp_region_config.hidden_dims=[] \
                 model.mlp_config.hidden_dims=[10] \
-                > "$log_dir"/.log 2>&1
+                > "$log_dir"/log.log 2>&1
         done
     done
 done

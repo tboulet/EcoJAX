@@ -22,15 +22,14 @@ measures:
     - n_childrens
     - x
     - appearance
-    # - eating
-    # - eating prob fruit 0/eating
+    - eating_prob
+    - eating
   behavior:
     # []
-    - eating_prob
-    # - appetite
+    - appetite
 
 behavior_measures_on_render: 
-  []
+  - eating_behavior
 
 aggregators_lifespan:
   - class_string : ecojax.metrics.aggregators:AggregatorLifespanCumulative

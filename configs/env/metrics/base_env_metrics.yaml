@@ -27,6 +27,7 @@ measures:
 
 behavior_measures_on_render: 
   - appetite
+  - eating_behavior
 
 aggregators_lifespan:
   - class_string : ecojax.metrics.aggregators:AggregatorLifespanCumulative

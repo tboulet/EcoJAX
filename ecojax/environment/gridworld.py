@@ -297,7 +297,9 @@ class GridworldEnv(EcoEnvironment):
                 id_fruit: jnp.zeros(shape=(self.height, self.width))
                 for id_fruit in range(4)
             }
-            self.id_ressource_to_map_value["plants"] = jnp.ones((self.height, self.width)) * self.energy_plant
+            self.id_ressource_to_map_value["plants"] = (
+                jnp.ones((self.height, self.width)) * self.energy_plant
+            )
             for x in range(self.n_clusters_x):
                 for y in range(self.n_clusters_y):
                     # Get the coordinates of the center of the cluster
@@ -318,20 +320,25 @@ class GridworldEnv(EcoEnvironment):
                     # Assign initial value depending on the variability mode
                     w = self.variability_fruits[id_fruit]
                     if self.mode_variability_fruits == "space":
-                        assert 0 <= w <= 1, f"Space variability must be in [0, 1], but got {w}"
+                        assert (
+                            0 <= w <= 1
+                        ), f"Space variability must be in [0, 1], but got {w}"
                         value_cluster = (
                             self.energy_fruit_max_abs
                             * (jnp.cos(2 * jnp.pi * x_i * w / 2))
                             * (jnp.cos(2 * jnp.pi * y_i * w / 2))
                         )
                     elif self.mode_variability_fruits == "time":
-                        assert 0 <= w, f"Time variability must be positive, but got {w}."
-                        value_cluster = (
-                            self.energy_fruit_max_abs
-                            * (jnp.cos(2 * jnp.pi * w * 0 / 2 * self.age_max))
+                        assert (
+                            0 <= w
+                        ), f"Time variability must be positive, but got {w}."
+                        value_cluster = self.energy_fruit_max_abs * (
+                            jnp.cos(2 * jnp.pi * w * 0 / 2 * self.age_max)
                         )
                     else:
-                        raise ValueError(f"Unknown mode_variability_fruits: {self.mode_variability_fruits}")
+                        raise ValueError(
+                            f"Unknown mode_variability_fruits: {self.mode_variability_fruits}"
+                        )
                     self.id_ressource_to_map_value[id_fruit] = (
                         self.id_ressource_to_map_value[id_fruit]
                         .at[
@@ -358,7 +365,9 @@ class GridworldEnv(EcoEnvironment):
                             + self.range_cluster_fruits
                             + 1,
                         ]
-                        .add(-self.energy_plant) # Remove the plant energy (no plants grow in fruit clusters)
+                        .add(
+                            -self.energy_plant
+                        )  # Remove the plant energy (no plants grow in fruit clusters)
                     )
                     self.coords_clusters_to_fruit_id[coords_center] = id_fruit
         # ======================== Agent Parameters ========================
@@ -768,7 +777,7 @@ class GridworldEnv(EcoEnvironment):
             state=state_old, state_new=state, dict_measures=dict_measures_all
         )
         info = {"metrics": dict_metrics}
-            
+
         # ============ (7) Manage the video ============
         # Reset the video to empty if t = 0 mod n_steps_per_video
         video = jax.lax.cond(
@@ -1109,7 +1118,7 @@ class GridworldEnv(EcoEnvironment):
             w = self.variability_fruits[id_ressource]
             t = state.timestep
             value_fruit = self.energy_fruit_max_abs * jnp.cos(
-                2 * jnp.pi * t * w / (2*self.age_max)
+                2 * jnp.pi * t * w / (2 * self.age_max)
             )
             return map_fruits * value_fruit
         else:
@@ -1235,7 +1244,7 @@ class GridworldEnv(EcoEnvironment):
         )
         food_energy_bonus = food_energy_bonus_available_per_agent * are_agents_eating
         energy_agents_new = state.agents.energy_agents + food_energy_bonus
-        
+
         # ===== Update novelty hunger (and compute some eating measures) =====
         novelty_hunger_new = state.agents.novelty_hunger  # (n, 4)
         if self.do_fruits:
@@ -1246,11 +1255,13 @@ class GridworldEnv(EcoEnvironment):
                     map_fruit[positions_agents[:, 0], positions_agents[:, 1]] == 1.0
                 )
                 if f"eating" in self.names_measures:
-                    dict_measures.update(self.compute_do_eat_measures(
-                        are_agent_eating_ressource=are_agents_eating_fruit_i,
-                        food_energy_bonus_available_per_agent=food_energy_bonus_available_per_agent,
-                        ressource_name=f"fruits_{id_fruit}",
-                    ))
+                    dict_measures.update(
+                        self.compute_do_eat_measures(
+                            are_agent_eating_ressource=are_agents_eating_fruit_i,
+                            food_energy_bonus_available_per_agent=food_energy_bonus_available_per_agent,
+                            ressource_name=f"fruits_{id_fruit}",
+                        )
+                    )
                 # Update the novelty hunger of fruit i
                 novelty_hunger_new = novelty_hunger_new.at[:, id_fruit].set(
                     jnp.where(
@@ -1260,20 +1271,24 @@ class GridworldEnv(EcoEnvironment):
                         + 1,  # else, the novelty hunger of fruit i is incremented
                     )
                 )
-                
+
         if "eating" in self.names_measures:
             are_agent_eating_plants = are_agents_eating & (
                 map_plants[positions_agents[:, 0], positions_agents[:, 1]] == 1.0
             )
-            dict_measures.update(self.compute_do_eat_measures(
-                are_agent_eating_ressource=are_agent_eating_plants,
-                food_energy_bonus_available_per_agent=food_energy_bonus_available_per_agent,
-                ressource_name="plants",
-            ))
-            dict_measures["minimap_eat"] = jnp.zeros((self.height, self.width)).at[
-                positions_agents[:, 0], positions_agents[:, 1]
-            ].set(-1 + 2*are_agents_eating) # 0 if no agents, -1 if agents not eating, 1 if agents eating
-            
+            dict_measures.update(
+                self.compute_do_eat_measures(
+                    are_agent_eating_ressource=are_agent_eating_plants,
+                    food_energy_bonus_available_per_agent=food_energy_bonus_available_per_agent,
+                    ressource_name="plants",
+                )
+            )
+            dict_measures["minimap_eat"] = (
+                jnp.zeros((self.height, self.width))
+                .at[positions_agents[:, 0], positions_agents[:, 1]]
+                .set(-1 + 2 * are_agents_eating)
+            )  # 0 if no agents, -1 if agents not eating, 1 if agents eating
+
         if "amount_food_eaten" in self.names_measures:
             dict_measures["amount_food_eaten"] = food_energy_bonus
 
@@ -1653,17 +1668,22 @@ class GridworldEnv(EcoEnvironment):
                         w = self.variability_fruits[id_fruit]
                         t = state.timestep
                         value_fruit = self.energy_fruit_max_abs * jnp.cos(
-                            2 * jnp.pi * w * t / (2*self.age_max)
+                            2 * jnp.pi * w * t / (2 * self.age_max)
                         )
                         dict_measures[f"value_fruits {id_fruit}/value_fruits"] = (
                             value_fruit
                         )
                 elif self.mode_variability_fruits == "space":
-                    minimap_value_ressource = jnp.zeros((self.height, self.width))  # set the value as energy_plant (plant values in cluster will be removed below)
-                    for key_ressource, map_value in self.id_ressource_to_map_value.items():
+                    minimap_value_ressource = jnp.zeros(
+                        (self.height, self.width)
+                    )  # set the value as energy_plant (plant values in cluster will be removed below)
+                    for (
+                        key_ressource,
+                        map_value,
+                    ) in self.id_ressource_to_map_value.items():
                         minimap_value_ressource += map_value
                     dict_measures[f"minimap_value_ressource"] = minimap_value_ressource
-                        
+
                 else:
                     raise ValueError(
                         f"Unknown mode_variability_fruits: {self.mode_variability_fruits}"
@@ -1827,7 +1847,9 @@ class GridworldEnv(EcoEnvironment):
                 are_just_dead_agents=jnp.full(n, False),
             )
             for id_fruit in range(4):
-                idx_fruit = self.dict_name_channel_to_idx_visual_field[f"fruits_{id_fruit}"]
+                idx_fruit = self.dict_name_channel_to_idx_visual_field[
+                    f"fruits_{id_fruit}"
+                ]
                 visual_field = (
                     jnp.zeros(
                         (
@@ -1847,14 +1869,14 @@ class GridworldEnv(EcoEnvironment):
                 )
                 if "agents" in self.dict_name_channel_to_idx_visual_field:
                     idx_agent = self.dict_name_channel_to_idx_visual_field["agents"]
-                    visual_field = visual_field.at[jnp.arange(n), v, v, idx_agent].set(1)
+                    visual_field = visual_field.at[jnp.arange(n), v, v, idx_agent].set(
+                        1
+                    )
                 obs = {"visual_field": visual_field}
                 if "age" in self.list_observations:
                     obs["age"] = jnp.full(n, 50) / self.age_max
                 if "energy" in self.list_observations:
-                    obs["energy"] = (
-                        jnp.full(n, 50) / self.energy_max
-                    )  # base energy
+                    obs["energy"] = jnp.full(n, 50) / self.energy_max  # base energy
                 if "n_childrens" in self.list_observations:
                     obs["n_childrens"] = jnp.zeros(n)
                 if "novelty_hunger" in self.list_observations:
@@ -1869,12 +1891,12 @@ class GridworldEnv(EcoEnvironment):
                 logits = new_state_species.agents.logits_last
                 probs = jax.nn.softmax(logits, axis=-1)
                 prob_eating = probs[:, self.action_to_idx["eat"]]
-                measures[f"eating prob fruit {id_fruit}/eating"] = prob_eating  
-                
+                measures[f"eating prob fruit {id_fruit}/eating"] = prob_eating
+
                 # Now measure the same metric but with full fruits in the visual field
-                obs["visual_field"] = obs["visual_field"].at[
-                    jnp.arange(n), :, :, idx_fruit
-                ].set(1)
+                obs["visual_field"] = (
+                    obs["visual_field"].at[jnp.arange(n), :, :, idx_fruit].set(1)
+                )
                 key_random, subkey = jax.random.split(key_random)
                 new_state_species, actions, _ = self.agent_species.react(
                     state_species,
@@ -1885,10 +1907,10 @@ class GridworldEnv(EcoEnvironment):
                 logits = new_state_species.agents.logits_last
                 probs = jax.nn.softmax(logits, axis=-1)
                 prob_eating = probs[:, self.action_to_idx["eat"]]
-                measures[f"eating prob fruit {id_fruit} if full fruits/eating"] = prob_eating
-                
-                #
-                
+                measures[f"eating prob fruit {id_fruit} if full fruits/eating"] = (
+                    prob_eating
+                )
+
         elif name_measure == "appetite":
             if "plants" in self.dict_name_channel_to_idx_visual_field:
                 idx_plant = self.dict_name_channel_to_idx_visual_field["plants"]
@@ -1956,6 +1978,112 @@ class GridworldEnv(EcoEnvironment):
                 appetites = appetites / len(names_action_to_xy)
                 measures["appetite"] = appetites
 
+        elif name_measure == "eating_behavior":
+            n = self.n_agents_max
+            v = self.vision_range_agent
+            eco_information = EcoInformation(
+                are_newborns_agents=jnp.full(n, False),
+                indexes_parents=jnp.full((n, 1), self.fill_value),
+                are_just_dead_agents=jnp.full(n, False),
+            )
+            for id_fruit in range(4):
+                for nh in [0.0, 1.0]:
+                    for value_fruit in [
+                        -self.energy_fruit_max_abs,
+                        0.0,
+                        self.energy_fruit_max_abs,
+                    ]:
+                        for density_fruit in [0, 1]:
+                            for density_agents in [0, 1]:
+                                idx_fruit = self.dict_name_channel_to_idx_visual_field[
+                                    f"fruits_{id_fruit}"
+                                ]
+                                # Create empty observation
+                                visual_field = jnp.zeros(
+                                    (
+                                        n,
+                                        2 * v + 1,
+                                        2 * v + 1,
+                                        len(self.list_indexes_channels_visual_field),
+                                    )
+                                )
+
+                                # Add a fruit at the center of the visual field
+                                visual_field = visual_field.at[
+                                    :,
+                                    v,
+                                    v,
+                                    idx_fruit,
+                                ].set(1)
+
+                                # Set the density of agents
+                                if (
+                                    "agents"
+                                    in self.dict_name_channel_to_idx_visual_field
+                                ):
+                                    idx_agent = (
+                                        self.dict_name_channel_to_idx_visual_field[
+                                            "agents"
+                                        ]
+                                    )
+                                    if density_agents == 1:
+                                        visual_field = visual_field.at[
+                                            :, :, :, idx_agent
+                                        ].set(1)
+                                    else:
+                                        visual_field = visual_field.at[
+                                            :, v, v, idx_agent
+                                        ].set(
+                                            1
+                                        )  # Add an agent at the center of the visual field
+
+                                # Set the density of fruits
+                                if density_fruit == 1:
+                                    visual_field = visual_field.at[
+                                        :, :, :, idx_fruit
+                                    ].set(1)
+
+                                # Create the observation
+                                obs = {"visual_field": visual_field}
+                                if "age" in self.list_observations:
+                                    obs["age"] = jnp.full(n, 50) / self.age_max
+                                if "energy" in self.list_observations:
+                                    obs["energy"] = (
+                                        jnp.full(n, 50) / self.energy_max
+                                    )  # base energy
+                                if "n_childrens" in self.list_observations:
+                                    obs["n_childrens"] = jnp.zeros(n)
+
+                                # Set the novelty hunger
+                                if "novelty_hunger" in self.list_observations:
+                                    obs["novelty_hunger"] = (
+                                        jnp.full((n, 4), 0.30).at[:, id_fruit].set(nh)
+                                    )
+
+                                # Set the value of the fruit
+                                state_species = state_species.replace(
+                                    agents=state_species.agents.replace(
+                                        table_value_fruits=jnp.zeros((n, 4))
+                                        .at[:,id_fruit]
+                                        .set(value_fruit)
+                                    )
+                                )
+
+                                # Compute the eating probability
+                                key_random, subkey = jax.random.split(key_random)
+                                new_state_species, actions, _ = (
+                                    self.agent_species.react(
+                                        state_species,
+                                        obs,
+                                        eco_information,
+                                        subkey,
+                                    )
+                                )
+                                logits = new_state_species.agents.logits_last
+                                probs = jax.nn.softmax(logits, axis=-1)
+                                prob_eating = probs[:, self.action_to_idx["eat"]]
+                                measures[f"eating P(eat fruit {id_fruit} | nh={nh}, value={value_fruit}, density_fruit={density_fruit}, density_agents={density_agents})/eating"] = prob_eating
+                                
         else:
             raise ValueError(f"Unknown behavior measure: {name_measure}")
 
@@ -1982,22 +2110,22 @@ class GridworldEnv(EcoEnvironment):
 
     def compute_do_eat_measures(
         self,
-        are_agent_eating_ressource : jnp.ndarray,
-        food_energy_bonus_available_per_agent : jnp.ndarray,
-        ressource_name: str
-        ) -> Dict[str, jnp.ndarray]:
+        are_agent_eating_ressource: jnp.ndarray,
+        food_energy_bonus_available_per_agent: jnp.ndarray,
+        ressource_name: str,
+    ) -> Dict[str, jnp.ndarray]:
         """Compute, for each ressource, the measures related to eating behavior.
         It computes the following :
             eating {ressource name}/eating : P(agent eat ressource)
             eating {ressource name} if positive/eating : P(agent eat ressource | ressource is positive)
             eating no {ressource name} if negative/eating : P(agent dont eat ressource | ressource is negative)
             eating {ressource name} iff ressource/eating : P(agent eat ressource iff ressource is positive)
-            
+
         Args:
             are_agent_eating_ressource (jnp.ndarray): whether the agent is eating the ressource
             food_energy_bonus_available_per_agent (jnp.ndarray): the energy bonus obtainable by each agent
             ressource_name (str): the name of the ressource
-            
+
         Returns:
             Dict[str, jnp.ndarray]: the measures related to eating behavior
         """
@@ -2016,12 +2144,13 @@ class GridworldEnv(EcoEnvironment):
             ],
             choicelist=[jnp.nan, ~are_agent_eating_ressource],
         )
-        measures[f"eating {ressource_name} iff ressource/eating"] = are_agent_eating_ressource * (
-            food_energy_bonus_available_per_agent > 0
-        ) + (~are_agent_eating_ressource) * (food_energy_bonus_available_per_agent <= 0)
+        measures[f"eating {ressource_name} iff ressource/eating"] = (
+            are_agent_eating_ressource * (food_energy_bonus_available_per_agent > 0)
+            + (~are_agent_eating_ressource)
+            * (food_energy_bonus_available_per_agent <= 0)
+        )
         return measures
-        
-        
+
     def obs_idx_to_meaning(self) -> Dict[str, str]:
         # Assume MLP model with visual field in first position
         idx_plant = self.dict_name_channel_to_idx_visual_field["plants"]

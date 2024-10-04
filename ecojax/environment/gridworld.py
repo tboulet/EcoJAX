@@ -2083,7 +2083,7 @@ class GridworldEnv(EcoEnvironment):
                                 probs = jax.nn.softmax(logits, axis=-1)
                                 prob_eating = probs[:, self.action_to_idx["eat"]]
                                 measures[f"eating P(eat fruit {id_fruit} | nh={nh}, value={value_fruit}, density_fruit={density_fruit}, density_agents={density_agents})/eating"] = prob_eating
-                                
+        
         else:
             raise ValueError(f"Unknown behavior measure: {name_measure}")
 

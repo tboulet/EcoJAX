@@ -123,13 +123,14 @@ def eco_loop(
             key_random=global_state.key_random,
         )
         for key, value in metrics_behavior.items():
+            value = np.array(value)
             if is_array(value):
                 value = value[global_state.state_env.agents.are_existing_agents]
                 if len(value) > 0:
                     metrics_global[key] = value
                     metrics_global[f"{key}/pop_mean"] = jnp.mean(value)
                     metrics_global[f"{key}/pop_std"] = jnp.std(value)
-
+      
         # Log the metrics
         metrics_global.update(get_runtime_metrics())
         metrics_scalar, metrics_histogram, metrics_map = get_dict_metrics_by_type(metrics_global)

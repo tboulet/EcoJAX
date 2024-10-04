@@ -1867,11 +1867,28 @@ class GridworldEnv(EcoEnvironment):
                     subkey,
                 )
                 logits = new_state_species.agents.logits_last
-                
                 probs = jax.nn.softmax(logits, axis=-1)
                 prob_eating = probs[:, self.action_to_idx["eat"]]
-                measures[f"eating prob fruit {id_fruit}/eating"] = prob_eating                
-            
+                measures[f"eating prob fruit {id_fruit}/eating"] = prob_eating  
+                
+                # Now measure the same metric but with full fruits in the visual field
+                obs["visual_field"] = obs["visual_field"].at[
+                    jnp.arange(n), :, :, idx_fruit
+                ].set(1)
+                key_random, subkey = jax.random.split(key_random)
+                new_state_species, actions, _ = self.agent_species.react(
+                    state_species,
+                    obs,
+                    eco_information,
+                    subkey,
+                )
+                logits = new_state_species.agents.logits_last
+                probs = jax.nn.softmax(logits, axis=-1)
+                prob_eating = probs[:, self.action_to_idx["eat"]]
+                measures[f"eating prob fruit {id_fruit} if full fruits/eating"] = prob_eating
+                
+                #
+                
         elif name_measure == "appetite":
             if "plants" in self.dict_name_channel_to_idx_visual_field:
                 idx_plant = self.dict_name_channel_to_idx_visual_field["plants"]

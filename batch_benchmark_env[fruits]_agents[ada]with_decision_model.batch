@@ -53,9 +53,9 @@ for _ in $(seq 1 $seed_max); do
             for hidden_dims_mlp_region in "[]" "[10]" "[10, 10]"; do
                 for hidden_dims_mlp in "[]" "[10]" "[10, 10]"; do
                     for hidden_dims_decision_mlp in "[]" "[10]" "[10, 10]"; do
-                        log_dir="logs/run_$initial_date/energy_fruit_max_abs_$energy_fruit_max_abs/mode_variability_fruits_$mode_variability_fruits/hidden_dims_mlp_region_$hidden_dims_mlp_region/hidden_dims_mlp_$hidden_dims_mlp/hidden_dims_decision_mlp_$hidden_dims_decision_mlp"
+                        log_dir="logs/run_$initial_date/energy_fruit_max_abs_$energy_fruit_max_abs/mode_variability_fruits_$mode_variability_fruits/hidden_dims_mlp_region_$hidden_dims_mlp_region/hidden_dims_mlp_$hidden_dims_mlp/hidden_dims_decision_mlp_$hidden_dims_decision_mlp/seed_$seed"
                         mkdir -p "$log_dir"
-                        python run.py --config-name dgx do_wandb=True env/metrics=metrics_dgx +benchmark_name=$benchmark_name seed=$seed \
+                        python run.py --config-name dgx do_wandb=True env/metrics=metrics_dgx +benchmark_name=$benchmark_name seed=$seed +run_name=$log_dir \
                             agents=ada \
                             model=region \
                             env=fruits \
@@ -65,7 +65,7 @@ for _ in $(seq 1 $seed_max); do
                             model.mlp_region_config.hidden_dims="$hidden_dims_mlp_region" \
                             model.mlp_config.hidden_dims="$hidden_dims_mlp" \
                             agents.decision_model_config.hidden_dims="$hidden_dims_decision_mlp" \
-                            > "$log_dir"/seed_"$seed".log 2>&1
+                            > "$log_dir"/.log 2>&1
                     done
                 done
             done

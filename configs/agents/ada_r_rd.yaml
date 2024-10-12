@@ -1,0 +1,40 @@
+name: AdaptiveAgents
+
+# ======================== Agent's Hyperparameter ========================
+# The initial hyperparameters of the population
+hp_initial:
+  strength_mutation: 0.05
+
+# Which informations to include in the input of the fruit model
+do_include_fruit: True
+do_include_value_global: False
+do_include_value_fruit: True
+do_include_novelty_hunger: True
+do_include_values_other_fruits: False
+do_include_id_fruit: False
+list_channels_visual_field: ${env.list_channels_visual_field}
+
+# Whether we use the same model instance for all fruits
+do_use_different_model_fruit: False
+
+# The configuration of the decision model . TODO : maybe prevent do_include_values_other_fruits if use of decision model ?
+do_use_decision_model: False
+decision_model_config:
+  hidden_dims: []
+
+# ======================== Evolution Hyperparameters ========================
+mode_weights_transmission: none # initial, final, none
+
+# ======================== Models Config ========================
+
+# The configuration of the reward model
+reward_model: # Constant (initialiazed randomly)
+  func_weight: constant
+
+
+
+
+# ======================== Defaults sub-configs and other Hydra config ========================
+defaults:
+  - _self_
+  - metrics : base_agents_metrics

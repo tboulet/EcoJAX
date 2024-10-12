@@ -84,10 +84,19 @@ class RewardModel(BaseModel):
                 diff_obs = obs_component_next - obs_component
 
                 if self.func_weight == "constant":
-                    alpha_diff = self.param(
-                        name=f"alpha_diff_{name_space}",
-                        init_fn=init_fn_param,
-                    )
+                    if self.dict_reward is not None:
+                        # If dict_reward is specified, the alpha parameter will be initialized with the value of the dict_reward
+                        alpha_diff = self.param(
+                            name=f"alpha_diff_{name_space}",
+                            init_fn=lambda key: jnp.array(self.dict_reward[name_space]),
+                        )
+                    else:
+                        # Else, it will be initialized randomly
+                        alpha_diff = self.param(
+                            name=f"alpha_diff_{name_space}",
+                            init_fn=init_fn_param,
+                        )
+                        
                     # The additional reward due to component k will be proportional to the variation of component k : r_t += alpha_k * (o_{t+1}_k - o_t_k)
                     reward += alpha_diff * diff_obs
 

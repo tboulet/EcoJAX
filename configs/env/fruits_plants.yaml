@@ -103,9 +103,9 @@ mode_variability_fruits: "space"
 list_observations:
   - visual_field
   - energy
-  # - age
+  - age
   - novelty_hunger
-  # - n_childrens
+  - n_childrens
 
 # A list indicating which channels the agent can observe in its visual field
 list_channels_visual_field:

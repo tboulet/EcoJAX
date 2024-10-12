@@ -27,7 +27,6 @@ import ecojax.spaces as spaces
 from ecojax.utils import instantiate_class, jbreakpoint, jprint
 
 
-
 class RewardModel(BaseModel):
     """The reward model of the agent. It maps the observation to the reward.
 
@@ -85,28 +84,22 @@ class RewardModel(BaseModel):
                 diff_obs = obs_component_next - obs_component
 
                 if self.func_weight == "constant":
-                    key_random, subkey = random.split(key_random)
                     alpha_diff = self.param(
                         name=f"alpha_diff_{name_space}",
                         init_fn=init_fn_param,
-                        key=subkey,
                     )
                     # The additional reward due to component k will be proportional to the variation of component k : r_t += alpha_k * (o_{t+1}_k - o_t_k)
                     reward += alpha_diff * diff_obs
 
                 elif self.func_weight == "linear":
                     # The additional reward due to component k will be proportional to the variation of component k, but the proportionality factor can vary affinely with the component value : r_t += (alpha_k + beta_k * o_t_k) * (o_{t+1}_k - o_t_k)
-                    key_random, subkey = random.split(key_random)
                     alpha_diff = self.param(
                         name=f"alpha_diff_{name_space}",
                         init_fn=init_fn_param,
-                        key=subkey,
                     )
-                    key_random, subkey = random.split(key_random)
                     beta_diff = self.param(
                         name=f"beta_diff_{name_space}",
                         init_fn=init_fn_param,
-                        key=subkey,
                     )
                     reward += (alpha_diff + obs_component * beta_diff) * diff_obs
 

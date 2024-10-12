@@ -810,6 +810,8 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
             if name_measure == "params_reward_model":
                 for name_param, values_param in state.agents.params_reward.items():
                     dict_measures[f"params_reward_model {name_param}"] = values_param
+                    print(f"params_reward_model {name_param} : {values_param}")
+
             if name_measure == "weights_agents":
                 continue
                 # Metric for logging the weights between Gridworld env and the first layer of the neural network

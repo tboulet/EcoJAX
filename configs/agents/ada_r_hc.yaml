@@ -34,18 +34,18 @@ reward_model: # Hardcoded optimal reward model
     energy: ${eval:'${env.energy_max} / (${env.energy_plant} - 1)'} # set the reward of eating a plant to 1
     age: 0
     n_childrens: ${eval:'1.0 * ${env.energy_cost_reprod} * ${env.energy_max} / (${env.energy_plant} - 1)'} 
-reward_model: # Constant (initialiazed easily)
-  func_weight: constant
-  dict_reward:
-    energy: ${eval:'${env.energy_max} / (${env.energy_plant} - 1)'} # set the reward of eating a plant to 1
-    age: 0
-    n_childrens: ${eval:'1.0 * ${env.energy_cost_reprod} * ${env.energy_max} / (${env.energy_plant} - 1)'} 
-reward_model: # Constant (initialiazed 0)
-  func_weight: hardcoded # constant, linear, hardcoded, one
-  dict_reward:
-    energy: 0
-    age: 0
-    n_childrens: 0
+# reward_model: # Constant (initialiazed easily)
+#   func_weight: constant
+#   dict_reward:
+#     energy: ${eval:'${env.energy_max} / (${env.energy_plant} - 1)'} # set the reward of eating a plant to 1
+#     age: 0
+#     n_childrens: ${eval:'1.0 * ${env.energy_cost_reprod} * ${env.energy_max} / (${env.energy_plant} - 1)'} 
+# reward_model: # Constant (initialiazed 0)
+#   func_weight: hardcoded # constant, linear, hardcoded, one
+#   dict_reward:
+#     energy: 0
+#     age: 0
+#     n_childrens: 0
 
 
 

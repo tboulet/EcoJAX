@@ -41,7 +41,7 @@ mode_weights_transmission: none # initial, final, none
 #     age: 0
 #     n_childrens: ${eval:'1.0 * ${env.energy_cost_reprod} * ${env.energy_max} / (${env.energy_plant} - 1)'} 
 reward_model: # Constant (initialiazed 0)
-  func_weight: hardcoded # constant, linear, hardcoded, one
+  func_weight: constant # constant, linear, hardcoded, one
   dict_reward:
     energy: 0
     age: 0

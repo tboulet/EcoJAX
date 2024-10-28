@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 
-#SBATCH --job-name=f_hc
+#SBATCH --job-name=fp_nor
 #SBATCH --output=out.txt
 #SBATCH --error=out.txt
 
@@ -45,7 +45,7 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 ## Iterate over the seeds
 seed_max=100
-benchmark_name='bench6_f_hc'
+benchmark_name='bench6_fp_nor'
 for _ in $(seq 1 $seed_max); do
     seed=$RANDOM
     for p_base_fruit_growth in 0.0065 0.008 0.01; do
@@ -56,9 +56,9 @@ for _ in $(seq 1 $seed_max); do
             echo "Running $log_dir"
             mkdir -p "$log_dir"
             python run.py --config-name dgx do_wandb=True env/metrics=metrics_dgx +benchmark_name=$benchmark_name seed=$seed +run_name=\'$run_name\' \
-                agents=ada_r_hc \
+                agents=ada_nor \
                 model=region \
-                env=fruits \
+                env=fruits_plants \
                 agents.do_include_id_fruit=True \
                 env.mode_variability_fruits=space \
                 env.p_base_fruit_growth=$p_base_fruit_growth \

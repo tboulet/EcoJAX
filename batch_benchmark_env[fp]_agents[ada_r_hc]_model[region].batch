@@ -8,13 +8,13 @@
 ## For partition: either prod10, prod 20, prod 40 or prod80
 ## For gres: either 1g.10gb:[1:10] for prod10, 2g.20gb:[1:4] for prod20, 3g.40gb:1 for prod40 or A100.80gb for prod80.
 
-##SBATCH --partition=prod10
-##SBATCH --gres=gpu:1g.10gb:1
-##SBATCH --cpus-per-task=4
-
-#SBATCH --partition=prod20
-#SBATCH --gres=gpu:2g.20gb:1
+#SBATCH --partition=prod10
+#SBATCH --gres=gpu:1g.10gb:1
 #SBATCH --cpus-per-task=4
+
+##SBATCH --partition=prod20
+##SBATCH --gres=gpu:2g.20gb:1
+##SBATCH --cpus-per-task=4
 
 ##SBATCH --partition=prod40
 ##SBATCH --gres=gpu:3g.40gb:1
@@ -45,7 +45,7 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 ## Iterate over the seeds
 seed_max=100
-benchmark_name='bench5_fp_hc'
+benchmark_name='bench6_fp_hc'
 for _ in $(seq 1 $seed_max); do
     seed=$RANDOM
     for p_base_fruit_growth in 0.0065 0.008 0.01; do

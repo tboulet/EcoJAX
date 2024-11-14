@@ -87,6 +87,8 @@ class Runner:
         self.config["log_dir_path"] = log_dir
         os.makedirs(log_dir, exist_ok=True)
 
+        print(f"LOG DIR (run.py): {log_dir}")
+
         self.config["env"]["metrics"]["config_video"]["dir_videos"] = os.path.join(self.config["log_dir_path"], "videos")
 
         # Create the env

@@ -4,6 +4,7 @@ import os
 import cProfile
 
 import jax.experimental
+from ecojax.agents.neuro_evolution import AgentNE, NeuroEvolutionAgentSpecies
 from ecojax.loggers import BaseLogger
 from ecojax.loggers.cli import LoggerCLI
 from ecojax.loggers.csv import LoggerCSV
@@ -57,9 +58,11 @@ def eco_loop(
     """
     # Hyperparameters
     n_timesteps: int = config["n_timesteps"]
-    period_eval: int = int(max(1, config["period_eval"]))
+    n_agents_max = config["n_agents_max"]
     period_video: int = int(max(1, config["period_video"]))
     t_last_video: int = -period_video
+
+    print("period_video:", period_video)
 
     # Logging
     do_wandb: bool = config["do_wandb"]
@@ -74,8 +77,12 @@ def eco_loop(
     dir_metrics: str = config["log_dir_path"]
     run_name: str = config["run_name"]
 
+    do_advanced_logging = False
     enhanced_logging_start = n_timesteps - 50000
+    do_eval = False
+    eval_start = n_timesteps - 5000
     log_metrics_interval = 500
+    eval_interval = 100
     flush_interval = 10000
 
     print(f"\nStarting run {run_name}")
@@ -123,8 +130,7 @@ def eco_loop(
 
     #     return t_last_video
 
-    def step_eco_loop(x: Tuple[StateGlobal, Dict[str, Any]]) -> jnp.ndarray:
-        # print("Running step_eco_loop...")
+    def step_eco_loop(x: Tuple[StateGlobal, Dict[str, Any]]) -> Tuple[StateGlobal, Dict[str, Any]]:
         global_state, info = x
         key_random = global_state.key_random
 
@@ -164,15 +170,48 @@ def eco_loop(
                 done=new_done,
                 key_random=subkey,
             ),
-            info,
+            info
         )
 
-    # def do_continue_eco_loop(x: Tuple[StateGlobal, Dict[str, Any]]) -> jnp.ndarray:
-    #     global_state, info = x
-    #     return jax.numpy.logical_and(
-    #         ~global_state.done,
-    #         global_state.timestep_run < n_timesteps,
-    #     )
+    def run_feed_selectivity_eval(key_random, agents_state, curr_obss) -> jnp.ndarray:
+        def get_feed_prob(agent: AgentNE, obs) -> jnp.ndarray:
+            logits = agent_species.model.apply(
+                variables={"params": agent.params},
+                x=obs,
+                key_random=key_random,
+            )
+            return jax.nn.softmax(logits)[5]
+
+        def get_probs(vis_field):
+            return jax.vmap(
+                get_feed_prob, in_axes=(0, None))(agents_state.agents, {"visual_field": vis_field}
+            ).reshape((1, n_agents_max))
+
+        # sample 10 random agents' visual fields
+        vis_fields = random.choice(key_random, curr_obss["visual_field"], shape=(10,), replace=False)
+
+        # retain the 'plants' channel of the visual field, set the rest to 0 except for the agent's own position
+        vis_fields = jnp.concatenate([vis_fields[:, :1], jnp.zeros_like(vis_fields[:, 1:])], axis=1)
+        c = (vis_fields.shape[1] - 1) // 2
+        vis_fields = vis_fields.at[:, 1, c, c].set(1)
+
+        # for each of the sampled visual fields, generate 5 variants:
+        #     - baseline: no other agent present
+        #     - facing other agent who is neither infant nor offspring
+        #     - facing other agent who is infant but not offspring
+        #     - facing other agent who is offspring but not infant
+        #     - facing other agent who is both infant and offspring
+        def process_visual_field(vis_field: jnp.ndarray) -> jnp.ndarray:
+            results = [
+                get_probs(vis_field),
+                get_probs(vis_field.at[c - 1, c, 1].set(1)),
+                get_probs(vis_field.at[c - 1, c, 1].set(1).at[c- 1, c, 2].set(1)),
+                get_probs(vis_field.at[c - 1, c, 1].set(1).at[c - 1, c, 3].set(1)),
+                get_probs(vis_field.at[c - 1, c, 1].set(1).at[c - 1, c, 2].set(1).at[c - 1, c, 3].set(1))
+            ]
+            return jnp.concatenate(results)
+
+        return jnp.mean(jax.vmap(process_visual_field)(vis_fields), axis=0)
 
     # Initialize the environment
     print("Initializing environment...")
@@ -213,20 +252,15 @@ def eco_loop(
         key_random=subkey,
     )
 
-    def create_data_dict(keys):
-        return {key: [] for key in keys}
-
     def save_data(data_dict, filename, concat=True):
         if concat:
-            data_dict = {
-                k: jnp.concatenate(v) for k, v in data_dict.items()
-            }
+            data_dict = {k: jnp.concatenate(v) for k, v in data_dict.items()}
         fp = os.path.join(dir_metrics, filename)
         pd.DataFrame(data_dict).to_csv(fp, index=False)
 
     def flush_data(data_dict, filename):
         save_data(data_dict, filename)
-        return create_data_dict(data_dict.keys())
+        return defaultdict(list)
 
     # data dicts
     feeding_data = defaultdict(list)
@@ -235,7 +269,7 @@ def eco_loop(
     metrics_data = defaultdict(list)
 
     def process_step_data_basic(t, info):
-        if t % log_metrics_interval:
+        if t % log_metrics_interval == 0:
             num_feed = jnp.sum(info["metrics"]["feeders"] > 0)
             prop_feed_offspring = jnp.sum(
                 info["metrics"]["to_offspring"] > 0
@@ -243,33 +277,48 @@ def eco_loop(
             prop_face_offspring = info["metrics"]["num_facing_offspring"] / jnp.maximum(
                 1, info["metrics"]["num_facing_agent"]
             )
-            life_exp = jnp.nanmean(info["metrics"]["life_expectancy"])
+            death_ages = info["metrics"]["life_expectancy"]
+            avg_death_age = jnp.nanmean(death_ages)
+            prop_dead_adults = (
+                1
+                + jnp.nanmean(jnp.sign(death_ages - config["env"]["infancy_duration"]))
+            ) / 2
+
             metrics_data["timestep"].append(t)
             metrics_data["n_agents"].append(info["metrics"]["n_agents"])
             metrics_data["n_plants"].append(info["metrics"]["n_plants"])
-            metrics_data["life_expectancy"].append(life_exp)
+            metrics_data["life_expectancy"].append(avg_death_age)
+            metrics_data["survival_to_adulthood"].append(prop_dead_adults)
             metrics_data["num_feedings"].append(num_feed)
             metrics_data["prop_feed_offspring"].append(prop_feed_offspring)
             metrics_data["prop_face_offspring"].append(prop_face_offspring)
 
-
     def process_step_data_enhanced(t, global_state, info):
         # process feeding data
         feeders = jnp.where(info["metrics"]["feeders"] == 1)[0].astype(jnp.int32)
-        # feeders = jnp.where(info["metrics"]["to_offspring"] == 1)[0].astype(jnp.int32)
         feedees = info["metrics"]["feedees"][feeders].astype(jnp.int32)
         feeding_data["feeder"].append(feeders)
         feeding_data["feedee"].append(feedees)
-        feeding_data["feeder_age"].append(info["metrics"]["age"][feeders].astype(jnp.int32))
-        feeding_data["feedee_age"].append(info["metrics"]["age"][feedees].astype(jnp.int32))
-        feeding_data["to_offspring"].append(info["metrics"]["to_offspring"][feeders].astype(jnp.int32))
+        feeding_data["feeder_age"].append(
+            info["metrics"]["age"][feeders].astype(jnp.int32)
+        )
+        feeding_data["feedee_age"].append(
+            info["metrics"]["age"][feedees].astype(jnp.int32)
+        )
+        feeding_data["to_offspring"].append(
+            info["metrics"]["to_offspring"][feeders].astype(jnp.int32)
+        )
         feeding_data["timestep"].append(jnp.full_like(feeders, t))
 
         # process birth data
         newborns = jnp.where(global_state.eco_information.are_newborns_agents == 1)[
             0
         ].astype(jnp.int32)
+        parents = global_state.eco_information.indexes_parents.reshape(
+            (n_agents_max,)
+        )[newborns]
         birth_data["agent"].append(newborns)
+        birth_data["parent"].append(parents)
         birth_data["timestep"].append(jnp.full_like(newborns, t))
 
         # process death data
@@ -281,31 +330,43 @@ def eco_loop(
 
     # Do (some?) first step(s) to get global_state and info at the right structure
     for t in range(1):
-        with RuntimeMeter("warmup steps"):
-            # if do_continue_eco_loop((global_state, info)):
-            global_state, info = step_eco_loop((global_state, info))
-            process_step_data_basic(t, info)
+        global_state, info = step_eco_loop((global_state, info))
+        process_step_data_basic(t, info)
 
     # JIT after first steps
-    step_eco_loop = jax.jit(step_eco_loop)
-    # do_continue_eco_loop = jax.jit(do_continue_eco_loop)
-    #
+    # step_eco_loop = jax.jit(step_eco_loop)
+    run_feed_selectivity_eval = jax.jit(run_feed_selectivity_eval)
 
     t = int(global_state.timestep_run)
     pbar = tqdm(total=n_timesteps, desc="Running simulation", initial=t)
     while global_state.timestep_run < n_timesteps:
+        t = global_state.timestep_run.item()
+        if do_render and t - t_last_video >= period_video:
+            env.render(state=global_state.state_env)
+            t_last_video = t
+
         global_state, info = step_eco_loop((global_state, info))
 
+        # record some metrics and event data
         process_step_data_basic(t, info)
-        if t >= enhanced_logging_start:
+        if do_advanced_logging and t >= enhanced_logging_start:
             process_step_data_enhanced(t, global_state, info)
+
+        if do_eval and t >= eval_start and t % eval_interval == 0:
+            eval_results = run_feed_selectivity_eval(
+                random.PRNGKey(t),
+                global_state.state_species,
+                global_state.observations
+            )
+            jnp.save(
+                os.path.join(dir_metrics, f"eval_results_{t}.npy"),
+                eval_results
+            )
 
         if t % flush_interval == 0 and t >= flush_interval:
             tqdm.write(f"Saving data at timestep {t}...")
-            if t >= enhanced_logging_start:
-                feeding_data = flush_data(
-                    feeding_data, f"feeding_data_{t}.csv"
-                )
+            if do_advanced_logging and t >= enhanced_logging_start:
+                feeding_data = flush_data(feeding_data, f"feeding_data_{t}.csv")
                 birth_data = flush_data(birth_data, f"birth_data_{t}.csv")
                 death_data = flush_data(death_data, f"death_data_{t}.csv")
             save_data(metrics_data, "metrics_data.csv", concat=False)
@@ -314,48 +375,7 @@ def eco_loop(
         pbar.update(t_new - t)
         t = t_new
 
-    # @jax.jit # only works with while_loop, scan, and fori_loop
-    # def do_n_steps(global_state, info):
-    #     # Method : native for loop (apparently the fastest method for this case)
-    #     for _ in range(period_eval):
-    #         global_state, info = step_eco_loop((global_state, info))
-    #     return global_state, info
-
-    # # Method : native while loop
-    # t = 0
-    # while do_continue_eco_loop((global_state, info)) and t < period_eval:
-    #     global_state, info = step_eco_loop((global_state, info))
-    #     t += 1
-    # return global_state, info
-
-    # # Method : JAX's fori_loop
-    # return jax.lax.fori_loop(
-    #     0, period_eval, lambda i, x: step_eco_loop(x), (global_state, info)
-    # )
-
-    # # Method : JAX's scan
-    # (global_state, info), elems = jax.lax.scan(f=lambda x, el: (step_eco_loop(x), None), init=(global_state, info), xs=None, length=period_eval)
-    # return global_state, info
-
-    # while do_continue_eco_loop((global_state, info)):
-    #     # Render every period_eval steps
-    #     with RuntimeMeter("render"):
-    #         t_last_video = log_and_render_eco_loop((global_state, info, t_last_video))
-    #     # Run period_eval steps
-    #     with RuntimeMeter("step", n_calls=period_eval):
-    #         global_state, info = do_n_steps(global_state, info)
-
-    # # Final render
-    # with RuntimeMeter("render"):
-    #     t_last_video = log_and_render_eco_loop((global_state, info, t_last_video))
-    #     # jax.debug.callback(log_and_render_eco_loop, (global_state, info))
-
     print("End of simulation")
-    print(f"Total runtime: {RuntimeMeter.get_total_runtime()}s")
-    print("Stage runtimes:")
-    pprint(RuntimeMeter.get_runtimes())
-    print("Average stage runtimes:")
-    pprint(RuntimeMeter.get_average_runtimes())
 
     # # Close the loggers
     # for logger in list_loggers:

@@ -14,6 +14,7 @@ from jax.scipy.signal import convolve2d
 from flax.struct import PyTreeNode, dataclass
 from jax.debug import breakpoint as jbreakpoint
 from tqdm import tqdm
+from PIL import Image
 
 from ecojax.core.eco_info import EcoInformation
 from ecojax.environment import EcoEnvironment
@@ -59,8 +60,6 @@ class AgentGridworld:
 class VideoMemory:
     # The current frame of the video
     idx_end_of_video: int
-
-    # The last
 
 
 @dataclass
@@ -299,11 +298,13 @@ class GridworldEnv(EcoEnvironment):
         self.energy_thr_death: float = config["energy_thr_death"]
         self.energy_req_reprod: float = config["energy_req_reprod"]
         self.energy_cost_reprod: float = config["energy_cost_reprod"]
-        self.min_age_reprod: int = config["min_age_reprod"]
-        self.energy_transfer_loss: float = config.get("energy_transfer_loss", 0.0)
-        self.energy_transfer_gain: float = config.get("energy_transfer_gain", 0.0)
-        self.move_prob_initial: float = config.get("move_prob_initial", 1.0)
-        self.move_prob_gradient: float = config.get("move_prob_gradient", 0.0)
+        self.energy_transfer_loss: float = config.get("energy_transfer_loss", self.energy_food)
+        self.energy_transfer_gain: float = config.get("energy_transfer_gain", self.energy_food)
+        self.infancy_duration: int = config["infancy_duration"]
+        self.infant_move_prob: float = config.get("infant_move_prob", 1.0)
+        self.infant_eat_prob: float = config.get("infant_eat_prob", 1.0)
+        self.infant_food_energy_mult: float = config.get("infant_food_energy_mult", 1.0)
+
         # Other
         self.fill_value: int = self.n_agents_max
 
@@ -321,8 +322,10 @@ class GridworldEnv(EcoEnvironment):
         idx_plants = self.dict_name_channel_to_idx["plants"]
         idx_agents = self.dict_name_channel_to_idx["agents"]
         H, W = self.height, self.width
+
         # Initialize the map
         map = jnp.zeros(shape=(H, W, self.n_channels_map))
+
         # Initialize the sun
         if self.method_sun != "none":
             latitude_sun = H // 2
@@ -336,6 +339,7 @@ class GridworldEnv(EcoEnvironment):
             map = map.at[:, :, idx_sun].set(effect_map)
         else:
             latitude_sun = None
+
         # Initialize the plants
         key_random, subkey = jax.random.split(key_random)
         map = map.at[:, :, idx_plants].set(
@@ -438,6 +442,9 @@ class GridworldEnv(EcoEnvironment):
 
         # Return the information required by the agents
         observations_agents, _ = self.get_observations_agents(state=state)
+
+        print(f"observations shape: {observations_agents['visual_field'].shape}")
+
         return (
             state,
             observations_agents,
@@ -613,6 +620,12 @@ class GridworldEnv(EcoEnvironment):
         )
         # Add the new frame to the video
         rgb_map = self.get_RGB_map(images=state_new.map)
+
+        # # save rgb_map as an image
+        # rgb_map = np.array(rgb_map)
+        # img = Image.fromarray((rgb_map * 255).astype(np.uint8))
+        # img.save(f"{self.dir_videos}/{t}.png")
+
         video = state_new.video.at[t % self.n_steps_per_video].set(rgb_map)
         # Update the state
         state_new = state_new.replace(video=video)
@@ -677,6 +690,11 @@ class GridworldEnv(EcoEnvironment):
             images.shape[:2] + (3,), dtype=jnp.float32
         )
 
+        # sum over all channels
+        print("images.shape", images.shape)
+        channel_sum = (images[:, :, 1] + images[:, :, 2]).reshape(images.shape[:2] + (1,))
+        print("channel_sum.shape", channel_sum.shape)
+
         # Iterate over each channel and apply the corresponding color.
         # For each channel, we set the color at each tile to the channel colour
         # with an intensity proportional to the number of entities (of that channel)
@@ -686,13 +704,17 @@ class GridworldEnv(EcoEnvironment):
             if channel_name not in self.dict_name_channel_to_color_tag:
                 continue
 
-            delta = jnp.array(
-                DICT_COLOR_TAG_TO_RGB[color_tag], dtype=jnp.float32
-            ) - jnp.array([1, 1, 1], dtype=jnp.float32)
+            # delta = jnp.array(
+            #     DICT_COLOR_TAG_TO_RGB[color_tag], dtype=jnp.float32
+            # ) - jnp.array(background, dtype=jnp.float32)
+
+            delta = jnp.array(DICT_COLOR_TAG_TO_RGB[color_tag], dtype=jnp.float32) - blended_image
+
             img = images[:, :, channel_idx][:, :, None]
-            intensity = jnp.where(img > 0, img / jnp.maximum(1, jnp.max(img)), 0)
-            intensity = jnp.where(intensity > 0, (intensity * 0.7) + 0.3, 0)
-            blended_image += delta * intensity
+            intensity = jnp.where(img > 0, 1, 0)
+            # intensity = jnp.where(intensity > 0, (intensity * 0.7) + 0.3, 0)
+            blended_image += delta * (intensity / jnp.maximum(channel_sum, 1))
+            # blended_image += delta * intensity
 
         # Clip all rgb values to be between 0 and 1
         return jnp.clip(blended_image, 0, 1)
@@ -724,23 +746,10 @@ class GridworldEnv(EcoEnvironment):
         idx_sun = self.dict_name_channel_to_idx["sun"]
         idx_plants = self.dict_name_channel_to_idx["plants"]
         map_plants = state.map[:, :, self.dict_name_channel_to_idx["plants"]]
-        # map_n_plant_in_radius_plant_reproduction = convolve2d(
-        #     map_plants,
-        #     self.kernel_plant_reproduction,
-        #     mode="same",
-        # )
-        # map_n_plant_in_radius_plant_asphyxia = convolve2d(
-        #     map_plants,
-        #     self.kernel_plant_asphyxia,
-        #     mode="same",
-        # )
         map_sun = state.map[:, :, idx_sun]
         logits_plants = (
             self.logit_p_base_plant_growth * (1 - map_plants)
             + (1 - self.logit_p_base_plant_death) * map_plants
-            # + self.factor_sun_effect * map_sun
-            # + self.factor_plant_reproduction * map_n_plant_in_radius_plant_reproduction
-            # - self.factor_plant_asphyxia * map_n_plant_in_radius_plant_asphyxia
         )
         logits_plants = jnp.clip(logits_plants, -10, 10)
         map_plants_probs = sigmoid(x=logits_plants)
@@ -808,9 +817,11 @@ class GridworldEnv(EcoEnvironment):
     def compute_new_positions(
         self, key_random, curr_positions, facing_positions, is_moving, ages
     ):
-        success_probs = jnp.minimum(
-            self.move_prob_initial + (self.move_prob_gradient * ages),
-            1,
+        is_infant = (ages < self.infancy_duration).astype(jnp.int32)
+        success_probs = jnp.where(
+            is_infant,
+            self.infant_move_prob,
+            1.0
         )
         is_moving &= jax.random.bernoulli(key_random, p=success_probs).astype(int)
 
@@ -919,7 +930,6 @@ class GridworldEnv(EcoEnvironment):
             ).astype(int)
             is_offspring = (state.agents.parent_agents == idx).astype(int)
             return jnp.sum(same_pos), jnp.sum(same_pos * is_offspring)
-
         facing_agents, facing_offsprings = jax.vmap(facing_offspring)(jnp.arange(self.n_agents_max))
         dict_measures["num_facing_agent"] = jnp.sum(facing_agents)
         dict_measures["num_facing_offspring"] = jnp.sum(facing_offsprings)
@@ -929,6 +939,14 @@ class GridworldEnv(EcoEnvironment):
             are_agents_eating = state.agents.are_existing_agents & (
                 actions == self.action_to_idx["eat"]
             )
+            is_infant = (state.agents.age_agents < self.infancy_duration).astype(jnp.int32)
+            success_probs = jnp.where(
+                is_infant,
+                self.infant_eat_prob,
+                1.0
+            )
+            are_agents_eating &= jax.random.bernoulli(key_random, p=success_probs).astype(int)
+
             map_agents_try_eating = (
                 jnp.zeros_like(map_agents)
                 .at[positions_agents_new[:, 0], positions_agents_new[:, 1]]
@@ -943,6 +961,11 @@ class GridworldEnv(EcoEnvironment):
                     positions_agents_new[:, 0], positions_agents_new[:, 1]
                 ]
                 * are_agents_eating
+            )
+            food_energy_bonus *= jnp.where(
+                is_infant,
+                self.infant_food_energy_mult,
+                1.0
             )
 
             if "amount_food_eaten" in self.names_measures:
@@ -986,13 +1009,6 @@ class GridworldEnv(EcoEnvironment):
                     -loss
                 ) + (gain * are_receiving).astype(jnp.float32)
 
-                # # compute age difference
-                # num_recv = jnp.sum(are_receiving)
-                # avg_recv_age = jnp.sum(
-                #     state.agents.age_agents * are_receiving
-                # ) / jnp.maximum(1, num_recv)
-                # age_diff = state.agents.age_agents[i] - avg_recv_age
-
                 # determine if transfer is to offspring
                 # NOTE - assumes transfer is to only one agent
                 recv_agent = jnp.argmax(are_receiving)
@@ -1013,28 +1029,17 @@ class GridworldEnv(EcoEnvironment):
             dict_measures["feeders"] = is_transfer
             dict_measures["feedees"] = recv_agents
             dict_measures["to_offspring"] = to_offspring
-            # if "transfer_success_rate" in self.names_measures:
-            #     dict_measures["transfer_success_rate"] = jnp.sum(is_transfer) / jnp.sum(
-            #         are_agents_transferring
-            #     )
-            # if "transfer_age_diff" in self.names_measures:
-            #     dict_measures["transfer_age_diff"] = jnp.sum(
-            #         age_diffs * is_transfer
-            #     ) / jnp.maximum(1, jnp.sum(is_transfer))
             if "num_transfers" in self.names_measures:
                 dict_measures["num_transfers"] = jnp.sum(is_transfer)
-            # if "transfer_proportion_to_offspring" in self.names_measures:
-            #     dict_measures["transfer_proportion_to_offspring"] = jnp.sum(
-            #         to_offspring
-            #     ) / jnp.maximum(1, jnp.sum(is_transfer))
 
         # ====== Update the physical status of the agents ======
         idle_agents = state.agents.are_existing_agents & (
             actions == self.action_to_idx["idle"]
         )
-        not_idle_agents = (
-            state.agents.are_existing_agents & ~idle_agents & ~are_agents_transferring
-        )
+        not_idle_agents = state.agents.are_existing_agents & ~idle_agents
+        if "transfer" in self.list_actions:
+            not_idle_agents &= ~are_agents_transferring
+
         energy_agents_new = (
             energy_agents_new
             - self.energy_loss_idle * idle_agents
@@ -1096,9 +1101,27 @@ class GridworldEnv(EcoEnvironment):
         are_existing_agents = state.agents.are_existing_agents
         agents_reprod = (
             (state.agents.energy_agents > self.energy_req_reprod)
-            & (state.agents.age_agents >= self.min_age_reprod)
+            & (state.agents.age_agents >= self.infancy_duration)
             & are_existing_agents
         ).astype(jnp.int32)
+
+        # # randomise the location of the newborn agents
+        # key_random, subkey = jax.random.split(key_random)
+        # newborn_tile_indices = jax.random.choice(
+        #     subkey,
+        #     100 * 100,
+        #     shape=(self.n_agents_max,),
+        #     replace=False,
+        # )
+        # newborn_positions = jnp.stack(
+        #     [
+        #         newborn_tile_indices // 100,
+        #         newborn_tile_indices % 100,
+        #     ],
+        #     axis=1,
+        # )
+        # agent_map = state.map[:, :, self.dict_name_channel_to_idx["agents"]]
+        # agents_reprod &= agent_map[newborn_positions[:, 0], newborn_positions[:, 1]] == 0
 
         # Don't allow agents to reproduce into a tile that's already occupied
         facing_positions = jax.vmap(self.get_facing_pos, in_axes=(0, 0))(
@@ -1256,20 +1279,24 @@ class GridworldEnv(EcoEnvironment):
         """
         H, W, C_map = state.map.shape
 
-        # normalize the ages of the agents in the visual field
-        age_idx = self.dict_name_channel_to_idx["agent_ages"]
-        map_vis_field = state.map.at[:, :, age_idx].set(
-            state.map[:, :, age_idx] / self.age_max
-        )
-
-        map_vis_field = map_vis_field[
+        # get the visual field of the agents
+        map_vis_field = state.map[
             :, :, self.list_indexes_channels_visual_field
         ]
+
+        # add flag for whether agents are infants
+        poses = state.agents.positions_agents[::-1]
+        is_infant = state.agents.age_agents < self.infancy_duration
+        is_infant_map = jnp.zeros((H, W), dtype=jnp.int32).at[
+            poses[:, 0], poses[:, 1]
+        ].set(is_infant[::-1])
+        map_vis_field = map_vis_field.at[
+            :, :, self.dict_name_channel_to_idx["agent_ages"]
+        ].set(is_infant_map)
 
         # construct a map giving the index of each agent's parent (for agents not in the initial generation)
         # note: we set in reverse order to avoid overriding any positions with ghost agents
         agent_index_map = jnp.zeros((H, W), dtype=jnp.int32) + self.fill_value
-        poses = state.agents.positions_agents[::-1]
         agent_index_map = agent_index_map.at[poses[:, 0], poses[:, 1]].set(
             jnp.arange(self.n_agents_max)[::-1]
         )
@@ -1307,13 +1334,20 @@ class GridworldEnv(EcoEnvironment):
             )
 
             # Rotate the visual field according to the orientation of the agent
-            vis_field = jnp.select(
-                [agent.orientation_agents == i for i in range(4)],
-                [jnp.rot90(vis_field, k=j, axes=(0, 1)) for j in range(4)],
+            return jnp.select(
+                [
+                    agent.orientation_agents == 0,
+                    agent.orientation_agents == 1,
+                    agent.orientation_agents == 2,
+                    agent.orientation_agents == 3,
+                ],
+                [
+                    vis_field,
+                    jnp.rot90(vis_field, k=3, axes=(0, 1)), # if we turn left, the observation should be rotated right, eg 270 degrees
+                    jnp.rot90(vis_field, k=2, axes=(0, 1)),
+                    jnp.rot90(vis_field, k=1, axes=(0, 1)),
+                ],
             )
-
-            # Return the visual field of the agent
-            return vis_field
 
         # Create the observation of the agents
         dict_observations: Dict[str, jnp.ndarray] = {}

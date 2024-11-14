@@ -13,17 +13,17 @@ measures:
     - reproduce_success_rate
     - life_expectancy
     # - group_size # commented for now cause it's only implemented through a non jittable function
-  immediate: []
-    # - do_action_eat
-    # - do_action_transfer
-    # - do_action_reproduce
-    # - do_action_forward
-    # - do_action_left
-    # - do_action_right
-    # - do_action_idle
-    # - amount_food_eaten
-    # - amount_children
-    # - died
+  immediate:
+    - do_action_eat
+    - do_action_transfer
+    - do_action_reproduce
+    - do_action_forward
+    - do_action_left
+    - do_action_right
+    - do_action_idle
+    - amount_food_eaten
+    - amount_children
+    - died
   state:
     - energy
     - age

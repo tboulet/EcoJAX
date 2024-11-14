@@ -1,16 +1,15 @@
 # Hyperparameters
 n_timesteps: 500000
-# period_eval : ${eval:'${n_timesteps} / 500'}
-period_eval: 2000
-period_video: 50000
-n_agents_max: 1000
-n_agents_initial: 1000
+period_eval: ${eval:'${n_timesteps} / 500'}
+period_video: 100
+n_agents_max: 2500
+n_agents_initial: 2000
 
 # Logging
 do_wandb: False
 wandb_config:
   project: EcoJAX
-do_tb: True
+do_tb: False
 do_cli: False
 do_csv: False
 do_tqdm: True

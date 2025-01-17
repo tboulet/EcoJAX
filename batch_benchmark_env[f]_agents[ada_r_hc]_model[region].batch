@@ -47,7 +47,7 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 seed_max=100
 benchmark_name='bench6_f_hc'
 for _ in $(seq 1 $seed_max); do
-    seed=$RANDOM
+    seed=$RANDOM 
     for p_base_fruit_growth in 0.0065 0.008 0.01; do
         for variability_fruits in "[0.1,0.1,0.1,0.1]" "[0.5,0.5,0.5,0.5]" "[1,1,1,1]" "[0,0.1,0.5,1]" "[0,1,1,1]" "[0,0,0,1]"; do
             variability_fruits_repr=$(echo $variability_fruits | sed 's/\[//g; s/\]//g')  

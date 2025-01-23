@@ -272,6 +272,7 @@ class GridworldEnv(EcoEnvironment):
             self.proportion_fruit_initial: float = config["proportion_fruit_initial"]
             self.p_base_fruit_growth: float = config["p_base_fruit_growth"]
             self.energy_fruit_max_abs: float = config["energy_fruit_max_abs"]
+            
             self.side_cluster_fruits: int = config["side_cluster_fruits"]
             assert (
                 self.height % self.side_cluster_fruits == 0
@@ -300,6 +301,27 @@ class GridworldEnv(EcoEnvironment):
             self.id_ressource_to_map_value["plants"] = (
                 jnp.ones((self.height, self.width)) * self.energy_plant
             )
+            
+            # Set energy_fruit_max_abs_final depending on the variability
+            energy_fruit_max_abs_ref : float = 10
+            sum_energy_map_ref : float = 200
+            sum_energy_map : float = 0
+            for x in range(self.n_clusters_x):
+                for y in range(self.n_clusters_y):
+                    for w_ in self.variability_fruits: # average over the variability of the quadri-cluster on this cluster
+                        energy = np.cos(w_ * np.pi * x) * np.cos(w_ * np.pi * y)
+                        sum_energy_map += max(0, energy) / len(self.variability_fruits)
+            # Currently : energy_fruit_max_abs set to the right value, below the final value is set and a scheduler should be added
+            self.energy_fruit_max_abs = energy_fruit_max_abs_ref * sum_energy_map_ref / sum_energy_map
+            print(f"Energy fruit max abs set to: {self.energy_fruit_max_abs}")
+
+            # TODO: define here the final value of energy_fruit_max_abs and add a scheduler
+            # self.energy_fruit_max_abs_final = energy_fruit_max_abs_ref * sum_energy_map_ref / sum_energy_map
+            # print(f"Energy fruit max abs final set to: {self.energy_fruit_max_abs_final}")
+            # if self.energy_fruit_max_abs < self.energy_fruit_max_abs_final:
+            #     self.energy_fruit_max_abs = self.energy_fruit_max_abs_final
+            #     print(f"Energy fruit max abs initial set to: {self.energy_fruit_max_abs} because inferior to final")
+                
             for x in range(self.n_clusters_x):
                 for y in range(self.n_clusters_y):
                     # Get the coordinates of the center of the cluster
@@ -1631,6 +1653,19 @@ class GridworldEnv(EcoEnvironment):
 
         return dict_observations, dict_measures
 
+    def get_energy_fruit_max_abs(self, t: int) -> jnp.ndarray:
+        """Get the maximum absolute energy of the fruits at time t.
+        It is an exponential decay from self.energy_fruit_max_abs_initial to self.energy_fruit_max_abs_final at time 100k.
+        """
+        # e_t = e_0 * (e_final / e_0)^(t / T)
+        energy_fruit_max_abs = self.energy_fruit_max_abs * jnp.power(
+            self.energy_fruit_max_abs_final / self.energy_fruit_max_abs,
+            t / 100000,
+        )
+        # e_t <-- max(e_final, e_t) so that the energy of the fruits does not decreases after reaching e_final
+        energy_fruit_max_abs = jnp.maximum(self.energy_fruit_max_abs_final, energy_fruit_max_abs)
+        return energy_fruit_max_abs
+    
     # ================== Measures and metrics ==================
 
     def compute_measures(

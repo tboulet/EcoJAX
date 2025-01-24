@@ -70,8 +70,8 @@ aggregators_population:
 config_video:
   do_video : True
   do_agent_video : True
-  n_steps_per_video : 10
-  n_steps_min_between_videos : 10
+  n_steps_per_video : ${period_eval}
+  n_steps_min_between_videos : ${period_eval}
   fps_video : 20
   dir_videos : logs
   height_max_video : 500

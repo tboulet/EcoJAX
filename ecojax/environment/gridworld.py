@@ -1450,7 +1450,7 @@ class GridworldEnv(EcoEnvironment):
         n_agents_trying_reprod = jnp.sum(are_agents_trying_reprod)
         n_ghost_agents = jnp.sum(~are_existing_agents)
         n_newborns = jnp.minimum(n_agents_trying_reprod, n_ghost_agents)
-
+        
         # Compute which agents are actually reproducing
         try_reprod_mask = are_agents_trying_reprod.astype(
             jnp.int32
@@ -1486,7 +1486,8 @@ class GridworldEnv(EcoEnvironment):
             .at[indices_newborn_agents_FILLED]
             .set(True)
         )  # whether agent i is a newborn
-
+        are_existing_agents_new = are_existing_agents | are_newborns_agents
+        
         # Get the indices of are_reproducing agents
         indices_had_reproduced_FILLED = jnp.where(
             are_agents_reproducing,
@@ -1506,19 +1507,77 @@ class GridworldEnv(EcoEnvironment):
             state.agents.energy_agents
             - are_agents_reproducing * self.energy_cost_reprod
         )
-
+        
+        # Recreate/spawn random agents if n_agents < threshold_n_agents
+        threshold_n_agents = 5
+        n_agents_alive = jnp.sum(are_existing_agents_new)
+        n_agents_trying_spawn = jnp.maximum(
+            0, threshold_n_agents - n_agents_alive
+        )
+        n_ghost_agents = jnp.sum(~are_existing_agents_new)
+        n_newborns2 = jnp.minimum(n_agents_trying_spawn, n_ghost_agents)
+        indices_ghost_agents_FILLED2 = jnp.where(
+            ~are_existing_agents_new,
+            size=self.n_agents_max,
+            fill_value=self.fill_value,
+        )[
+            0
+        ]  # placeholder_indices = [i1, i2, ..., i(n_ghost_agents), f, f, ..., f] of shape (n_max_agents,)
+        indices_newborn_agents_FILLED2 = jnp.where(
+            jnp.arange(self.n_agents_max) < n_newborns2,
+            indices_ghost_agents_FILLED2,
+            self.n_agents_max,
+        )  # placeholder_indices = [i1, i2, ..., i(n_newborns2), f, f, ..., f] of shape (n_max_agents,), with n_newborns2 <= n_ghost_agents
+        are_newborns_agents2 = (
+            jnp.zeros(self.n_agents_max, dtype=jnp.bool_)
+            .at[indices_newborn_agents_FILLED2]
+            .set(True)
+        )
+        are_existing_agents_new = are_existing_agents_new | are_newborns_agents2
+        agents_parents = agents_parents.at[indices_newborn_agents_FILLED2].set(self.fill_value)
+        
+        
         # Initialize the newborn agents
-        are_existing_agents_new = are_existing_agents | are_newborns_agents
         energy_agents_new = energy_agents_new.at[indices_newborn_agents_FILLED].set(
             self.energy_initial
         )
+        energy_agents_new = energy_agents_new.at[indices_newborn_agents_FILLED2].set(
+            self.energy_initial
+        )
         age_agents_new = state.agents.age_agents.at[indices_newborn_agents_FILLED].set(
+            0
+        )
+        age_agents_new = age_agents_new.at[indices_newborn_agents_FILLED2].set(
             0
         )
         positions_agents_new = state.agents.positions_agents.at[
             indices_newborn_agents_FILLED
         ].set(state.agents.positions_agents[indices_had_reproduced_FILLED])
         key_random, subkey = jax.random.split(key_random)
+        positions_agents_spawn = jax.random.randint(
+            key=subkey,
+            shape=(self.n_agents_max, 2),
+            minval=0,
+            maxval=max(self.height, self.width),
+        ) % jnp.array([self.height, self.width])
+        positions_agents_new = positions_agents_new.at[
+            indices_newborn_agents_FILLED2
+        ].set(positions_agents_spawn[indices_newborn_agents_FILLED2])
+        
+        key_random, subkey = jax.random.split(key_random)
+        orientation_agents_newborn_and_spawn = jax.random.randint(
+            key=subkey,
+            shape=(self.n_agents_max,),
+            minval=0,
+            maxval=4,
+        )
+        orientation_agents_new = state.agents.orientation_agents.at[
+            indices_had_reproduced_FILLED
+        ].set(orientation_agents_newborn_and_spawn[indices_had_reproduced_FILLED])
+        orientation_agents_new = orientation_agents_new.at[
+            indices_newborn_agents_FILLED2
+        ].set(orientation_agents_newborn_and_spawn[indices_newborn_agents_FILLED2])
+        
         noise_appearances = (
             jax.random.normal(
                 key=subkey,
@@ -1532,8 +1591,17 @@ class GridworldEnv(EcoEnvironment):
             state.agents.appearance_agents[indices_had_reproduced_FILLED]
             + noise_appearances
         )
+        noise_appearances = jnp.zeros(
+            (self.n_agents_max, self.config["dim_appearance"])
+        )
+        appearance_agents_new = appearance_agents_new.at[
+            indices_newborn_agents_FILLED2
+        ].set(noise_appearances[indices_newborn_agents_FILLED2])
         novelty_hunger_new = state.agents.novelty_hunger.at[
             indices_newborn_agents_FILLED
+        ].set(self.novelty_hunger_value_initial)
+        novelty_hunger_new = novelty_hunger_new.at[
+            indices_newborn_agents_FILLED2
         ].set(self.novelty_hunger_value_initial)
         n_childrens_new = state.agents.n_childrens.at[
             indices_had_reproduced_FILLED
@@ -1546,12 +1614,12 @@ class GridworldEnv(EcoEnvironment):
             are_existing_agents=are_existing_agents_new,
             age_agents=age_agents_new,
             positions_agents=positions_agents_new,
+            orientation_agents=orientation_agents_new,
             appearance_agents=appearance_agents_new,
             novelty_hunger=novelty_hunger_new,
             n_childrens=n_childrens_new,
         )
         state = state.replace(agents=agents_new)
-
         return (
             state,
             are_newborns_agents,

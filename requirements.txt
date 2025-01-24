@@ -1,6 +1,6 @@
-# pip install --upgrade "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
-#jaxlib==0.4.24
-moviepy
+# pip install --upgrade "jax[cuda12]==0.4.30" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+# jaxlib should install in 0.4.30
+moviepy==1.0.3
 matplotlib
 PyYAML
 IPython

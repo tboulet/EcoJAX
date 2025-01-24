@@ -1509,7 +1509,7 @@ class GridworldEnv(EcoEnvironment):
         )
         
         # Recreate/spawn random agents if n_agents < threshold_n_agents
-        threshold_n_agents = 5
+        threshold_n_agents = self.config["threshold_n_agents"]
         n_agents_alive = jnp.sum(are_existing_agents_new)
         n_agents_trying_spawn = jnp.maximum(
             0, threshold_n_agents - n_agents_alive

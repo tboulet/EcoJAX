@@ -41,7 +41,8 @@ class MLP(nn.Module):
     n_output_features: int
     name_activation_fn: str = "swish"
     name_activation_output_fn: str = "swish"
-
+    stddev_bias: float = 0.1
+    
     def setup(self) -> None:
         self.activation_fn = names_activations_to_fn[self.name_activation_fn]
         self.activation_output_fn = names_activations_to_fn[
@@ -60,9 +61,15 @@ class MLP(nn.Module):
             jnp.ndarray: the output data
         """
         for hidden_dim in self.hidden_dims:
-            x = nn.Dense(features=hidden_dim)(x)
+            x = nn.Dense(
+                features=hidden_dim,
+                bias_init=nn.initializers.normal(stddev=self.stddev_bias),
+            )(x)
             x = self.activation_fn(x)
-        x = nn.Dense(features=self.n_output_features)(x)
+        x = nn.Dense(
+            features=self.n_output_features,
+            bias_init=nn.initializers.normal(stddev=self.stddev_bias),
+        )(x)
         x = self.activation_output_fn(x)
         return x
 
@@ -86,7 +93,8 @@ class CNN(nn.Module):
     shape_output: List[int]
     name_activation_fn: str = "swish"
     name_activation_output_fn: str = "swish"
-
+    stddev_bias: float = 0.1
+    
     def setup(self) -> None:
         self.activation_fn = names_activations_to_fn[self.name_activation_fn]
         self.activation_output_fn = names_activations_to_fn[
@@ -121,6 +129,7 @@ class CNN(nn.Module):
                 features=hidden_dim,
                 kernel_size=(self.kernel_size, self.kernel_size),
                 strides=(self.strides, self.strides),
+                bias_init=nn.initializers.normal(stddev=self.stddev_bias),
             )(x)
             x = self.activation_fn(x)
 
@@ -134,6 +143,7 @@ class CNN(nn.Module):
                 features=1,
                 kernel_size=(1, 1),
                 strides=(1, 1),
+                bias_init=nn.initializers.normal(stddev=self.stddev_bias),
             )(x)
             x = jnp.reshape(x, (-1,))
             x = nn.Dense(features=self.shape_output[0])(x)
@@ -159,6 +169,7 @@ class CNN(nn.Module):
                     features=C_output,
                     kernel_size=(1, 1),
                     strides=(1, 1),
+                    bias_init=nn.initializers.normal(stddev=self.stddev_bias),
                 )(x)
             else:
                 # Simply return the value

@@ -1622,7 +1622,7 @@ class GridworldEnv(EcoEnvironment):
         state = state.replace(agents=agents_new)
         return (
             state,
-            are_newborns_agents,
+            are_newborns_agents | are_newborns_agents2,
             agents_parents,
             dict_measures,
         )

@@ -155,7 +155,7 @@ energy_req_reprod : ${eval:'${env.energy_initial} * 2'}
 energy_cost_reprod : ${eval:'${env.energy_initial} * 1.2'}
 
 # The threshold below with new random agents will be added to the simulation
-threshold_n_agents: 30
+threshold_n_agents: 6
 
 
 

@@ -41,8 +41,8 @@ do_global_log : True
 defaults:
   - _self_
   - env : test_env
-  - agents : ne
-  - model : perc
+  - agents : ada_r_hc
+  - model : region
   - override hydra/hydra_logging: disabled  
   - override hydra/job_logging: disabled 
 

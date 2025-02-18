@@ -313,6 +313,7 @@ class GridworldEnv(EcoEnvironment):
                         sum_energy_map += max(0, energy) / len(self.variability_fruits)
             # Currently : energy_fruit_max_abs set to the right value, below the final value is set and a scheduler should be added
             self.energy_fruit_max_abs = energy_fruit_max_abs_ref * sum_energy_map_ref / sum_energy_map
+            self.energy_fruit_max_abs = max(self.energy_fruit_max_abs, 25.0) # to avoid too low values
             print(f"Energy fruit max abs set to: {self.energy_fruit_max_abs}")
 
             # TODO: define here the final value of energy_fruit_max_abs and add a scheduler

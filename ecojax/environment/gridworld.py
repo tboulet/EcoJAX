@@ -144,6 +144,7 @@ class GridworldEnv(EcoEnvironment):
         self.width: int = config["width"]
         self.height: int = config["height"]
         self.is_terminal: bool = config["is_terminal"]
+        self.duration: int = config["duration"]
         self.do_fruits: bool = config["do_fruits"]
         self.list_names_channels: List[str] = [
             "sun",
@@ -271,8 +272,8 @@ class GridworldEnv(EcoEnvironment):
         if self.do_fruits:
             self.proportion_fruit_initial: float = config["proportion_fruit_initial"]
             self.p_base_fruit_growth: float = config["p_base_fruit_growth"]
-            self.energy_fruit_max_abs: float = config["energy_fruit_max_abs"]
-            
+            self.energy_fruit_max_abs: float = 13  # TODO : remove this
+
             self.side_cluster_fruits: int = config["side_cluster_fruits"]
             assert (
                 self.height % self.side_cluster_fruits == 0
@@ -294,34 +295,36 @@ class GridworldEnv(EcoEnvironment):
             self.n_clusters_y = self.width // self.side_cluster_fruits
             self.n_clusters_x_fruit_i = self.n_clusters_x // 2
             self.n_clusters_y_fruit_i = self.n_clusters_y // 2
-            self.id_ressource_to_map_value: Dict[int, jnp.ndarray] = {
-                id_fruit: jnp.zeros(shape=(self.height, self.width))
-                for id_fruit in range(4)
-            }
-            self.id_ressource_to_map_value["plants"] = (
-                jnp.ones((self.height, self.width)) * self.energy_plant
-            )
-            
-            # Set energy_fruit_max_abs_final depending on the variability
-            energy_fruit_max_abs_ref : float = 10
-            sum_energy_map_ref : float = 200
-            sum_energy_map : float = 0
-            for x in range(self.n_clusters_x):
-                for y in range(self.n_clusters_y):
-                    for w_ in self.variability_fruits: # average over the variability of the quadri-cluster on this cluster
-                        energy = np.cos(w_ * np.pi * x) * np.cos(w_ * np.pi * y)
-                        sum_energy_map += max(0, energy) / len(self.variability_fruits)
-            # Currently : energy_fruit_max_abs set to the right value, below the final value is set and a scheduler should be added
-            self.energy_fruit_max_abs = energy_fruit_max_abs_ref * sum_energy_map_ref / sum_energy_map
-            print(f"Energy fruit max abs set to: {self.energy_fruit_max_abs}")
+            self.map_scaling_factors = jnp.ones(shape=(self.height, self.width))
 
-            # TODO: define here the final value of energy_fruit_max_abs and add a scheduler
-            # self.energy_fruit_max_abs_final = energy_fruit_max_abs_ref * sum_energy_map_ref / sum_energy_map
-            # print(f"Energy fruit max abs final set to: {self.energy_fruit_max_abs_final}")
-            # if self.energy_fruit_max_abs < self.energy_fruit_max_abs_final:
-            #     self.energy_fruit_max_abs = self.energy_fruit_max_abs_final
-            #     print(f"Energy fruit max abs initial set to: {self.energy_fruit_max_abs} because inferior to final")
-                
+            self.e_fruit_0_abs_max = config["e_fruit_0_abs_max"]
+            self.energy_fruit_min = config["energy_fruit_min"]
+
+            # Set e_fruit_T_abs_max (final value of e_fruit_max_abs)
+            if config["do_normalize_fruits"]:
+                e_fruit_abs_max_ref: float = config["e_fruit_abs_max_ref"]
+                sum_energy_map_ref: float = config["sum_energy_map_ref"]
+                sum_energy_map: float = 0
+                for x in range(self.n_clusters_x):
+                    for y in range(self.n_clusters_y):
+                        for (
+                            w_
+                        ) in (
+                            self.variability_fruits
+                        ):  # average over the variability of the quadri-cluster on this cluster
+                            energy = np.cos(w_ * np.pi * x) * np.cos(w_ * np.pi * y)
+                            sum_energy_map += max(0, energy) / len(
+                                self.variability_fruits
+                            )
+                self.e_fruit_T_abs_max = (
+                    e_fruit_abs_max_ref * sum_energy_map_ref / sum_energy_map
+                )
+                print(
+                    f"[INFO] e_fruit_max_abs final normalized to: {self.e_fruit_T_abs_max}"
+                )
+            else:
+                self.e_fruit_T_abs_max = config["e_fruit_T_abs_max"]
+
             for x in range(self.n_clusters_x):
                 for y in range(self.n_clusters_y):
                     # Get the coordinates of the center of the cluster
@@ -345,52 +348,33 @@ class GridworldEnv(EcoEnvironment):
                         assert (
                             0 <= w <= 1
                         ), f"Space variability must be in [0, 1], but got {w}"
-                        value_cluster = (
-                            self.energy_fruit_max_abs
-                            * (jnp.cos(2 * jnp.pi * x_i * w / 2))
-                            * (jnp.cos(2 * jnp.pi * y_i * w / 2))
+                        factor = jnp.cos(2 * jnp.pi * x_i * w / 2) * jnp.cos(
+                            2 * jnp.pi * y_i * w / 2
                         )
                     elif self.mode_variability_fruits == "time":
+                        raise NotImplementedError
                         assert (
                             0 <= w
                         ), f"Time variability must be positive, but got {w}."
-                        value_cluster = self.energy_fruit_max_abs * (
+                        factor = self.energy_fruit_max_abs * (
                             jnp.cos(2 * jnp.pi * w * 0 / 2 * self.age_max)
                         )
                     else:
                         raise ValueError(
                             f"Unknown mode_variability_fruits: {self.mode_variability_fruits}"
                         )
-                    self.id_ressource_to_map_value[id_fruit] = (
-                        self.id_ressource_to_map_value[id_fruit]
-                        .at[
-                            coords_center[0]
-                            - self.range_cluster_fruits : coords_center[0]
-                            + self.range_cluster_fruits
-                            + 1,
-                            coords_center[1]
-                            - self.range_cluster_fruits : coords_center[1]
-                            + self.range_cluster_fruits
-                            + 1,
-                        ]
-                        .set(value_cluster)
-                    )
-                    self.id_ressource_to_map_value["plants"] = (
-                        self.id_ressource_to_map_value["plants"]
-                        .at[
-                            coords_center[0]
-                            - self.range_cluster_fruits : coords_center[0]
-                            + self.range_cluster_fruits
-                            + 1,
-                            coords_center[1]
-                            - self.range_cluster_fruits : coords_center[1]
-                            + self.range_cluster_fruits
-                            + 1,
-                        ]
-                        .add(
-                            -self.energy_plant
-                        )  # Remove the plant energy (no plants grow in fruit clusters)
-                    )
+                    self.map_scaling_factors = self.map_scaling_factors.at[
+                        coords_center[0]
+                        - self.range_cluster_fruits : coords_center[0]
+                        + self.range_cluster_fruits
+                        + 1,
+                        coords_center[1]
+                        - self.range_cluster_fruits : coords_center[1]
+                        + self.range_cluster_fruits
+                        + 1,
+                    ].set(
+                        factor
+                    )  # remove 1 cause map_scaling_factors is initialized to 1 (plant factor)
                     self.coords_clusters_to_fruit_id[coords_center] = id_fruit
         # ======================== Agent Parameters ========================
 
@@ -1132,17 +1116,30 @@ class GridworldEnv(EcoEnvironment):
             map_plants = state.map[:, :, idx_plants]
             return map_plants * self.energy_plant
         idx_fruit_i = self.dict_name_channel_to_idx[f"fruits_{id_ressource}"]
-        map_fruits = state.map[:, :, idx_fruit_i]  # (H, W), whether there is a fruit
+        map_fruits_i = state.map[:, :, idx_fruit_i]  # (H, W), whether there is a fruit
         if self.mode_variability_fruits == "space":
-            map_value_fruit_i = self.id_ressource_to_map_value[id_ressource]
-            return map_fruits * map_value_fruit_i
+            t = state.timestep
+            e_fruit_t_abs_max = self.e_fruit_0_abs_max + (
+                self.e_fruit_T_abs_max - self.e_fruit_0_abs_max
+            ) * t / (self.duration / 2)
+            e_fruit_t_abs_max = jnp.maximum(e_fruit_t_abs_max, self.e_fruit_T_abs_max)
+            map_ressource_energy = (
+                map_fruits_i * self.map_scaling_factors * e_fruit_t_abs_max
+            )
+            map_ressource_energy = jnp.maximum(
+                map_ressource_energy, self.energy_fruit_min
+            )  # TODO : set -10 in config
+            if id_ressource == 3:
+                breakpoint()
+            return map_ressource_energy
         elif self.mode_variability_fruits == "time":
+            raise NotImplementedError
             w = self.variability_fruits[id_ressource]
             t = state.timestep
             value_fruit = self.energy_fruit_max_abs * jnp.cos(
                 2 * jnp.pi * t * w / (2 * self.age_max)
             )
-            return map_fruits * value_fruit
+            return map_fruits_i * value_fruit
         else:
             raise ValueError(
                 f"Unknown mode_variability_fruits: {self.mode_variability_fruits}"
@@ -1250,11 +1247,46 @@ class GridworldEnv(EcoEnvironment):
         map_food_energy_bonus_available_per_agent = self.energy_plant * map_plants
         # Add the energy bonus from the fruits
         if self.do_fruits:
+            # Compute the sum of the energy bonus of all the fruits (assum fruits are non-overlapping)
+            map_fruit_energy_bonus_available_per_agent = jnp.zeros((H, W))
             for id_fruit in range(4):
-                map_fruit_energy = self.get_map_ressource_energy(
-                    state=state, id_ressource=id_fruit, key_random=key_random
-                )
-                map_food_energy_bonus_available_per_agent += map_fruit_energy
+                idx_fruit_i = self.dict_name_channel_to_idx[f"fruits_{id_fruit}"]
+                map_fruits_i = state.map[:, :, idx_fruit_i]
+                map_fruit_energy_bonus_available_per_agent += map_fruits_i
+            # Compute the maxi abs energy of a fruit
+            t = state.timestep
+            e_fruit_t_abs_max = self.e_fruit_0_abs_max + (
+                self.e_fruit_T_abs_max - self.e_fruit_0_abs_max
+            ) * t / (self.duration / 2)
+            e_fruit_t_abs_max = jnp.maximum(e_fruit_t_abs_max, self.e_fruit_T_abs_max)
+            # Scale by the map_scaling_factors and e_fruit_t_abs_max
+            map_fruit_energy_bonus_available_per_agent = (
+                map_fruit_energy_bonus_available_per_agent
+                * self.map_scaling_factors
+                * e_fruit_t_abs_max
+            )
+            # Low-bound the energy of the fruit to avoid too poisonous fruits
+            map_fruit_energy_bonus_available_per_agent = jnp.maximum(
+                map_fruit_energy_bonus_available_per_agent, self.energy_fruit_min
+            )
+            if True:
+                arr = np.array(map_fruit_energy_bonus_available_per_agent)
+                fig, ax = plt.subplots(figsize=(6, 6))
+                cax = ax.matshow(arr, cmap='viridis')
+                plt.colorbar(cax)
+                
+                for (i, j), val in np.ndenumerate(arr):
+                    ax.text(j, i, f'{val:.1f}', ha='center', va='center', color='white', fontsize=10)
+                
+                ax.set_xticks([])
+                ax.set_yticks([])
+                plt.show()
+                breakpoint()
+            # Add the energy bonus from the fruits
+            map_food_energy_bonus_available_per_agent += (
+                map_fruit_energy_bonus_available_per_agent
+            )
+
         # Compute the energy bonus obtainable by each agent
         map_food_energy_bonus_available_per_agent /= jnp.maximum(
             1, map_n_agents_try_eating
@@ -1450,7 +1482,7 @@ class GridworldEnv(EcoEnvironment):
         n_agents_trying_reprod = jnp.sum(are_agents_trying_reprod)
         n_ghost_agents = jnp.sum(~are_existing_agents)
         n_newborns = jnp.minimum(n_agents_trying_reprod, n_ghost_agents)
-        
+
         # Compute which agents are actually reproducing
         try_reprod_mask = are_agents_trying_reprod.astype(
             jnp.int32
@@ -1487,7 +1519,7 @@ class GridworldEnv(EcoEnvironment):
             .set(True)
         )  # whether agent i is a newborn
         are_existing_agents_new = are_existing_agents | are_newborns_agents
-        
+
         # Get the indices of are_reproducing agents
         indices_had_reproduced_FILLED = jnp.where(
             are_agents_reproducing,
@@ -1507,13 +1539,11 @@ class GridworldEnv(EcoEnvironment):
             state.agents.energy_agents
             - are_agents_reproducing * self.energy_cost_reprod
         )
-        
+
         # Recreate/spawn random agents if n_agents < threshold_n_agents
         threshold_n_agents = self.config["threshold_n_agents"]
         n_agents_alive = jnp.sum(are_existing_agents_new)
-        n_agents_trying_spawn = jnp.maximum(
-            0, threshold_n_agents - n_agents_alive
-        )
+        n_agents_trying_spawn = jnp.maximum(0, threshold_n_agents - n_agents_alive)
         n_ghost_agents = jnp.sum(~are_existing_agents_new)
         n_newborns2 = jnp.minimum(n_agents_trying_spawn, n_ghost_agents)
         indices_ghost_agents_FILLED2 = jnp.where(
@@ -1534,9 +1564,10 @@ class GridworldEnv(EcoEnvironment):
             .set(True)
         )
         are_existing_agents_new = are_existing_agents_new | are_newborns_agents2
-        agents_parents = agents_parents.at[indices_newborn_agents_FILLED2].set(self.fill_value)
-        
-        
+        agents_parents = agents_parents.at[indices_newborn_agents_FILLED2].set(
+            self.fill_value
+        )
+
         # Initialize the newborn agents
         energy_agents_new = energy_agents_new.at[indices_newborn_agents_FILLED].set(
             self.energy_initial
@@ -1547,9 +1578,7 @@ class GridworldEnv(EcoEnvironment):
         age_agents_new = state.agents.age_agents.at[indices_newborn_agents_FILLED].set(
             0
         )
-        age_agents_new = age_agents_new.at[indices_newborn_agents_FILLED2].set(
-            0
-        )
+        age_agents_new = age_agents_new.at[indices_newborn_agents_FILLED2].set(0)
         positions_agents_new = state.agents.positions_agents.at[
             indices_newborn_agents_FILLED
         ].set(state.agents.positions_agents[indices_had_reproduced_FILLED])
@@ -1563,7 +1592,7 @@ class GridworldEnv(EcoEnvironment):
         positions_agents_new = positions_agents_new.at[
             indices_newborn_agents_FILLED2
         ].set(positions_agents_spawn[indices_newborn_agents_FILLED2])
-        
+
         key_random, subkey = jax.random.split(key_random)
         orientation_agents_newborn_and_spawn = jax.random.randint(
             key=subkey,
@@ -1577,7 +1606,7 @@ class GridworldEnv(EcoEnvironment):
         orientation_agents_new = orientation_agents_new.at[
             indices_newborn_agents_FILLED2
         ].set(orientation_agents_newborn_and_spawn[indices_newborn_agents_FILLED2])
-        
+
         noise_appearances = (
             jax.random.normal(
                 key=subkey,
@@ -1600,9 +1629,9 @@ class GridworldEnv(EcoEnvironment):
         novelty_hunger_new = state.agents.novelty_hunger.at[
             indices_newborn_agents_FILLED
         ].set(self.novelty_hunger_value_initial)
-        novelty_hunger_new = novelty_hunger_new.at[
-            indices_newborn_agents_FILLED2
-        ].set(self.novelty_hunger_value_initial)
+        novelty_hunger_new = novelty_hunger_new.at[indices_newborn_agents_FILLED2].set(
+            self.novelty_hunger_value_initial
+        )
         n_childrens_new = state.agents.n_childrens.at[
             indices_had_reproduced_FILLED
         ].set(0)
@@ -1721,19 +1750,6 @@ class GridworldEnv(EcoEnvironment):
 
         return dict_observations, dict_measures
 
-    def get_energy_fruit_max_abs(self, t: int) -> jnp.ndarray:
-        """Get the maximum absolute energy of the fruits at time t.
-        It is an exponential decay from self.energy_fruit_max_abs_initial to self.energy_fruit_max_abs_final at time 100k.
-        """
-        # e_t = e_0 * (e_final / e_0)^(t / T)
-        energy_fruit_max_abs = self.energy_fruit_max_abs * jnp.power(
-            self.energy_fruit_max_abs_final / self.energy_fruit_max_abs,
-            t / 100000,
-        )
-        # e_t <-- max(e_final, e_t) so that the energy of the fruits does not decreases after reaching e_final
-        energy_fruit_max_abs = jnp.maximum(self.energy_fruit_max_abs_final, energy_fruit_max_abs)
-        return energy_fruit_max_abs
-    
     # ================== Measures and metrics ==================
 
     def compute_measures(
@@ -1767,6 +1783,7 @@ class GridworldEnv(EcoEnvironment):
                 dict_measures["n_plants"] = jnp.sum(state.map[..., idx_plants])
             elif name_measure == "values_fruits" and self.do_fruits:
                 if self.mode_variability_fruits == "time":
+                    raise NotImplementedError
                     for id_fruit in range(4):
                         w = self.variability_fruits[id_fruit]
                         t = state.timestep
@@ -1777,16 +1794,7 @@ class GridworldEnv(EcoEnvironment):
                             value_fruit
                         )
                 elif self.mode_variability_fruits == "space":
-                    minimap_value_ressource = jnp.zeros(
-                        (self.height, self.width)
-                    )  # set the value as energy_plant (plant values in cluster will be removed below)
-                    for (
-                        key_ressource,
-                        map_value,
-                    ) in self.id_ressource_to_map_value.items():
-                        minimap_value_ressource += map_value
-                    dict_measures[f"minimap_value_ressource"] = minimap_value_ressource
-
+                    dict_measures[f"map_scaling_factors"] = self.map_scaling_factors
                 else:
                     raise ValueError(
                         f"Unknown mode_variability_fruits: {self.mode_variability_fruits}"
@@ -2167,7 +2175,7 @@ class GridworldEnv(EcoEnvironment):
                                 state_species = state_species.replace(
                                     agents=state_species.agents.replace(
                                         table_value_fruits=jnp.zeros((n, 4))
-                                        .at[:,id_fruit]
+                                        .at[:, id_fruit]
                                         .set(value_fruit)
                                     )
                                 )
@@ -2185,8 +2193,10 @@ class GridworldEnv(EcoEnvironment):
                                 logits = new_state_species.agents.logits_last
                                 probs = jax.nn.softmax(logits, axis=-1)
                                 prob_eating = probs[:, self.action_to_idx["eat"]]
-                                measures[f"eating P(eat fruit {id_fruit} | nh={nh}, value={value_fruit}, density_fruit={density_fruit}, density_agents={density_agents})/eating"] = prob_eating
-        
+                                measures[
+                                    f"eating P(eat fruit {id_fruit} | nh={nh}, value={value_fruit}, density_fruit={density_fruit}, density_agents={density_agents})/eating"
+                                ] = prob_eating
+
         else:
             raise ValueError(f"Unknown behavior measure: {name_measure}")
 

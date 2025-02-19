@@ -11,18 +11,6 @@ n_actions: ${eval:'len(${env.list_actions})'}
 
 
 
-# Logging
-# do_wandb : False
-# wandb_config:
-#   project : EcoJAX
-# do_tb : True
-# do_cli : False
-# do_csv : True
-# do_tqdm : True
-# do_snakeviz : True
-# do_render : True
-# do_global_log : True
-
 do_wandb : False
 wandb_config:
   project : EcoJAX
@@ -34,6 +22,8 @@ do_snakeviz : True
 do_jax_prof : False
 do_render : True
 do_global_log : True
+
+
 
 
 

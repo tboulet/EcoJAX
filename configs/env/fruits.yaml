@@ -7,6 +7,9 @@ width : 220
 # Whether the env is terminal, i.e. the simulation stops when all agents are dead
 is_terminal : True
 
+# The duration of the simulation
+duration : ${n_timesteps}
+
 
 
 # ======================== Sun Parameters ========================
@@ -49,7 +52,7 @@ do_plant_grow_in_fruit_clusters : False
 # The base probability of a non-food tile to grow spontaneously
 p_base_plant_growth : 0.0
 # The base probability of a food tile to die spontaneously
-p_base_plant_death : 0.0
+p_base_plant_death : 0.95 # to deal with unlucky food spawn
 
 # The factor of the sun's effect on the growth of food
 factor_sun_effect : 0
@@ -77,8 +80,25 @@ proportion_fruit_initial : 0.4
 # The base probability of a non-fruit tile to grow spontaneously a fruit
 p_base_fruit_growth : 0.01
 
-# The maximum absolute value of the energy of a fruit. The value of a fruit will vary between -max_abs and max_abs
-energy_fruit_max_abs : 20
+# The rules for the value of a fruit are the following :
+# - The value of fruit j will be e_fruit_t_max_abs * cos(w_j x pi) * cos(w_j y pi)
+# - This will then be low-bounded by energy_fruit_min to avoid too poisonous fruits
+# - The value of e_fruit_t_max_abs is given by the scheduler starting at e_fruit_0_abs_max and ending at e_fruit_T_max_abs
+# - The scheduler can not be increasing, so if e_fruit_0_abs_max < e_fruit_T_max_abs, the value will directly be e_fruit_T_max_abs during all the run
+# - If no normalization is done, e_fruit_T_max_abs is extracted from the config. 
+# - If normalization is done, it is set so that the input of positive energy by unit of time correspond to (energy_fruit_max_abs_ref, sum_energy_map_ref)
+
+# The maximum absolute value of the energy of a fruit at the beginning of the simulation
+e_fruit_0_abs_max : 25 # (like in brown experiment)
+# Whether to do normalization of the energy of the fruits
+do_normalize_fruits : True
+# The maximum absolute value of the energy of a fruit at the end of the simulation (if do_normalize_fruits is True)
+e_fruit_T_abs_max : null
+# The reference values that caracterize a certain amount of energy input by unit of time
+e_fruit_abs_max_ref : 10
+sum_energy_map_ref : 200
+# The minimum value of the energy of a fruit
+energy_fruit_min : -10
 
 # The number of tiles of the side of a fruit cluster. Must be a divider of H and W.
 side_cluster_fruits: 11

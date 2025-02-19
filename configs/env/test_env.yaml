@@ -98,7 +98,7 @@ e_fruit_T_abs_max : 50
 e_fruit_abs_max_ref : 10
 sum_energy_map_ref : 200
 # The minimum value of the energy of a fruit
-energy_fruit_min : -10
+energy_fruit_min : -5
 
 # The number of tiles of the side of a fruit cluster. Must be a divider of H and W.
 side_cluster_fruits: 5

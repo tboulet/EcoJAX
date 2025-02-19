@@ -1269,8 +1269,12 @@ class GridworldEnv(EcoEnvironment):
             map_fruit_energy_bonus_available_per_agent = jnp.maximum(
                 map_fruit_energy_bonus_available_per_agent, self.energy_fruit_min
             )
-            if True:
-                arr = np.array(map_fruit_energy_bonus_available_per_agent)
+            # Add the energy bonus from the fruits
+            map_food_energy_bonus_available_per_agent += (
+                map_fruit_energy_bonus_available_per_agent
+            )
+            if False:
+                arr = np.array(map_food_energy_bonus_available_per_agent)
                 fig, ax = plt.subplots(figsize=(6, 6))
                 cax = ax.matshow(arr, cmap='viridis')
                 plt.colorbar(cax)
@@ -1282,10 +1286,6 @@ class GridworldEnv(EcoEnvironment):
                 ax.set_yticks([])
                 plt.show()
                 breakpoint()
-            # Add the energy bonus from the fruits
-            map_food_energy_bonus_available_per_agent += (
-                map_fruit_energy_bonus_available_per_agent
-            )
 
         # Compute the energy bonus obtainable by each agent
         map_food_energy_bonus_available_per_agent /= jnp.maximum(

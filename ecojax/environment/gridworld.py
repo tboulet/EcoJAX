@@ -325,6 +325,13 @@ class GridworldEnv(EcoEnvironment):
             else:
                 self.e_fruit_T_abs_max = config["e_fruit_T_abs_max"]
 
+            # The curriculum must decrease, so if e_fruit_0_abs_max is smaller than e_fruit_T_abs_max, we set e_fruit_0_abs_max to e_fruit_T_abs_max
+            if self.e_fruit_0_abs_max < self.e_fruit_T_abs_max:
+                self.e_fruit_0_abs_max = self.e_fruit_T_abs_max
+                print(
+                    f"[INFO] e_fruit_0_abs_max ({self.e_fruit_0_abs_max}) is lower than e_fruit_T_abs_max ({self.e_fruit_T_abs_max}). Setting e_fruit_0_abs_max to e_fruit_T_abs_max."
+                )
+                
             for x in range(self.n_clusters_x):
                 for y in range(self.n_clusters_y):
                     # Get the coordinates of the center of the cluster
@@ -1118,19 +1125,13 @@ class GridworldEnv(EcoEnvironment):
         idx_fruit_i = self.dict_name_channel_to_idx[f"fruits_{id_ressource}"]
         map_fruits_i = state.map[:, :, idx_fruit_i]  # (H, W), whether there is a fruit
         if self.mode_variability_fruits == "space":
-            t = state.timestep
-            e_fruit_t_abs_max = self.e_fruit_0_abs_max + (
-                self.e_fruit_T_abs_max - self.e_fruit_0_abs_max
-            ) * t / (self.duration / 2)
-            e_fruit_t_abs_max = jnp.maximum(e_fruit_t_abs_max, self.e_fruit_T_abs_max)
+            e_t = self.get_e_t(t=state.timestep)
             map_ressource_energy = (
-                map_fruits_i * self.map_scaling_factors * e_fruit_t_abs_max
+                map_fruits_i * self.map_scaling_factors * e_t
             )
             map_ressource_energy = jnp.maximum(
                 map_ressource_energy, self.energy_fruit_min
-            )  # TODO : set -10 in config
-            if id_ressource == 3:
-                breakpoint()
+            )
             return map_ressource_energy
         elif self.mode_variability_fruits == "time":
             raise NotImplementedError
@@ -1145,6 +1146,19 @@ class GridworldEnv(EcoEnvironment):
                 f"Unknown mode_variability_fruits: {self.mode_variability_fruits}"
             )
 
+    def get_e_t(self, t: int) -> jnp.ndarray:
+        """Get the energy of the fruits at time t."""
+        e_0 = self.e_fruit_0_abs_max
+        e_T = self.e_fruit_T_abs_max
+        # e_t decrease linearly from e_0 to e_T in T/2 timesteps, then stay at e_T
+        e_t = jax.lax.cond(
+            t < self.duration / 2,
+            lambda _: e_0 + (e_T - e_0) * t / (self.duration / 2),
+            lambda _: e_T,
+            operand=t,
+        )
+        return e_t
+    
     def get_single_agent_new_position_and_orientation(
         self,
         agent_position: jnp.ndarray,
@@ -1804,6 +1818,8 @@ class GridworldEnv(EcoEnvironment):
                 dict_measures["average_group_size"] = group_sizes.mean()
                 dict_measures["max_group_size"] = group_sizes.max()
                 continue
+            elif name_measure == "energy_fruit_max_abs":
+                dict_measures["energy_fruit_max_abs"] = self.get_e_t(state.timestep)
             # Immediate measures
             elif name_measure.startswith("do_action_"):
                 str_action = name_measure[len("do_action_") :]

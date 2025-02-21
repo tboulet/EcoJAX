@@ -5,6 +5,8 @@ measures:
     - n_plants
     - net_energy_transfer_per_capita
     - values_fruits
+    - map_scaling_factors
+    - energy_fruit_max_abs
   immediate:
     - do_action_eat
     - do_action_transfer

@@ -32,6 +32,7 @@ measures:
 
 behavior_measures_on_render: 
   - eating_behavior
+  - moving_behavior
 
 aggregators_lifespan:
   - class_string : ecojax.metrics.aggregators:AggregatorLifespanCumulative
@@ -48,7 +49,7 @@ aggregators_lifespan:
   - class_string : ecojax.metrics.aggregators:AggregatorLifespanVariation
     config:
       keys_measures : ${merge:${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
-      keys_measures_prefix : [eating]
+      keys_measures_prefix : [eating, moving]
       n_agents : ${n_agents_max}
       prefix_metric : life_var
 
@@ -56,7 +57,7 @@ aggregators_population:
   - class_string : ecojax.metrics.aggregators:AggregatorPopulationMean
     config:
       keys_measures : ${merge:${env.metrics.measures.immediate}, ${env.metrics.measures.state}, ${env.metrics.measures.behavior}}
-      keys_measures_prefix : [life, last_final, novelty_hunger, eating]
+      keys_measures_prefix : [life, last_final, novelty_hunger, eating, moving]
       n_agents : ${n_agents_max}
       prefix_metric : pop_mean
   - class_string : ecojax.metrics.aggregators:AggregatorPopulationStd

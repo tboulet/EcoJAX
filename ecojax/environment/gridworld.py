@@ -327,10 +327,10 @@ class GridworldEnv(EcoEnvironment):
 
             # The curriculum must decrease, so if e_fruit_0_abs_max is smaller than e_fruit_T_abs_max, we set e_fruit_0_abs_max to e_fruit_T_abs_max
             if self.e_fruit_0_abs_max < self.e_fruit_T_abs_max:
-                self.e_fruit_0_abs_max = self.e_fruit_T_abs_max
                 print(
                     f"[INFO] e_fruit_0_abs_max ({self.e_fruit_0_abs_max}) is lower than e_fruit_T_abs_max ({self.e_fruit_T_abs_max}). Setting e_fruit_0_abs_max to e_fruit_T_abs_max."
                 )
+                self.e_fruit_0_abs_max = self.e_fruit_T_abs_max
                 
             for x in range(self.n_clusters_x):
                 for y in range(self.n_clusters_y):
@@ -2114,17 +2114,15 @@ class GridworldEnv(EcoEnvironment):
                 are_just_dead_agents=jnp.full(n, False),
             )
             for id_fruit in range(4):
-                for nh in [0.0, 1.0]:
-                    for value_fruit in [
-                        -self.energy_fruit_max_abs,
-                        0.0,
-                        self.energy_fruit_max_abs,
-                    ]:
-                        for density_fruit in [0, 1]:
-                            for density_agents in [0, 1]:
-                                idx_fruit = self.dict_name_channel_to_idx_visual_field[
-                                    f"fruits_{id_fruit}"
-                                ]
+                idx_fruit = self.dict_name_channel_to_idx_visual_field[
+                    f"fruits_{id_fruit}"
+                ]
+                for name_nh, nh in {"zero": 0, "maximal": 1}.items():
+                    for name_value_fruit, coeff_value_fruit in {"negative" : -1, "zero" : 0, "positive" : 1}.items():
+                        value_fruit = coeff_value_fruit * (self.e_fruit_T_abs_max - 1) / (self.energy_plant - 1)
+                        for name_density_fruit, density_fruit in {"zero": 0, "maximal": 1}.items():
+                            for name_density_agents, density_agents in {"zero": 0, "maximal": 1}.items(): # TODO : think about this
+                                
                                 # Create empty observation
                                 visual_field = jnp.zeros(
                                     (
@@ -2153,22 +2151,19 @@ class GridworldEnv(EcoEnvironment):
                                             "agents"
                                         ]
                                     )
-                                    if density_agents == 1:
-                                        visual_field = visual_field.at[
+                                    visual_field = visual_field.at[
                                             :, :, :, idx_agent
-                                        ].set(1)
-                                    else:
-                                        visual_field = visual_field.at[
-                                            :, v, v, idx_agent
-                                        ].set(
-                                            1
-                                        )  # Add an agent at the center of the visual field
+                                        ].set(density_agents) # Set the density of agents
+                                    visual_field = visual_field.at[
+                                        :, v, v, idx_agent
+                                    ].set(
+                                        1
+                                    )# Add an agent at the center of the visual field
 
                                 # Set the density of fruits
-                                if density_fruit == 1:
-                                    visual_field = visual_field.at[
-                                        :, :, :, idx_fruit
-                                    ].set(1)
+                                visual_field = visual_field.at[
+                                    :, :, :, idx_fruit
+                                ].set(density_fruit)
 
                                 # Create the observation
                                 obs = {"visual_field": visual_field}
@@ -2210,8 +2205,130 @@ class GridworldEnv(EcoEnvironment):
                                 probs = jax.nn.softmax(logits, axis=-1)
                                 prob_eating = probs[:, self.action_to_idx["eat"]]
                                 measures[
-                                    f"eating P(eat fruit {id_fruit} | nh={nh}, value={value_fruit}, density_fruit={density_fruit}, density_agents={density_agents})/eating"
+                                    f"eating P(eat fruit {id_fruit} | nh={name_nh}, value={name_value_fruit}, density_fruit={name_density_fruit}, density_agents={name_density_agents})/eating"
                                 ] = prob_eating
+        
+        elif name_measure == "moving_behavior":
+            n = self.n_agents_max
+            v = self.vision_range_agent
+            eco_information = EcoInformation(
+                are_newborns_agents=jnp.full(n, False),
+                indexes_parents=jnp.full((n, 1), self.fill_value),
+                are_just_dead_agents=jnp.full(n, False),
+            )
+            
+            def add_pseudo_cluster(visual_field, idx_fruit, density_fruit, density_agents, direction : str, key_random : jnp.ndarray):
+                """Add a pseudo-cluster of fruits and agents in the visual field of the agents."""
+                assert direction in ["forward", "backward", "left", "right"], f"Unknown direction {direction}"
+                range_cluster = 3
+                idx_agent = (
+                    self.dict_name_channel_to_idx_visual_field[
+                        "agents"
+                    ]
+                )
+                pop_size, h, w, c = visual_field.shape
+                assert h >= range_cluster and w >= range_cluster, "Map is too small to apply border modifications."
+
+                # Create a mask of zeros
+                mask = jnp.zeros((pop_size, h, w), dtype=bool)  # Boolean mask for easier selection
+
+                # Select the border area while excluding the corners
+                if direction == "forward":
+                    mask = mask.at[:, :3, 3:-3].set(True)  # Exclude first & last 3 columns
+                elif direction == "backward":
+                    mask = mask.at[:, -3:, 3:-3].set(True)  # Exclude first & last 3 columns
+                elif direction == "left":
+                    mask = mask.at[:, 3:-3, :3].set(True)  # Exclude first & last 3 rows
+                elif direction == "right":
+                    mask = mask.at[:, 3:-3, -3:].set(True)  # Exclude first & last 3 rows
+
+                # Generate random probabilities for fruit and agents
+                subkey_fruit, subkey_agents = jax.random.split(key_random, 3)
+
+                fruit_noise = jax.random.bernoulli(subkey_fruit, p=density_fruit, shape=(pop_size, h, w))
+                agent_noise = jax.random.bernoulli(subkey_agents, p=density_agents, shape=(pop_size, h, w))
+
+                # Apply fruit and agent placement using the mask
+                visual_field = visual_field.at[:, :, :, idx_fruit].add(mask * fruit_noise)
+                visual_field = visual_field.at[:, :, :, idx_agent].add(mask * agent_noise)
+
+                return visual_field
+        
+            # Measure which cluster is preferred among the four (dense/not dense in fruit, dense/not dense in agents)
+            for id_fruit in range(4):
+                idx_fruit = self.dict_name_channel_to_idx_visual_field[
+                    f"fruits_{id_fruit}"
+                ]
+                for name_nh, nh in {"zero": 0, "maximal": 1}.items():
+                    for name_value_fruit, coeff_value_fruit in {"negative" : -1, "zero" : 0, "positive" : 1}.items():
+                        value_fruit = coeff_value_fruit * (self.e_fruit_T_abs_max - 1) / (self.energy_plant - 1)                                        
+                        # Create empty observation
+                        visual_field = jnp.zeros(
+                            (
+                                n,
+                                2 * v + 1,
+                                2 * v + 1,
+                                len(self.list_indexes_channels_visual_field),
+                            )
+                        )
+
+                        # Add pseudo-cluster of fruits and agents in the visual field
+                        key_random, *subkeys = jax.random.split(key_random, 4)
+                        visual_field = add_pseudo_cluster(visual_field, idx_fruit, 0.9, 0.7, "forward", subkeys[0])
+                        visual_field = add_pseudo_cluster(visual_field, idx_fruit, 0.9, 0.05, "backward", subkeys[1])
+                        visual_field = add_pseudo_cluster(visual_field, idx_fruit, 0.1, 0.7, "left", subkeys[2])
+                        visual_field = add_pseudo_cluster(visual_field, idx_fruit, 0.1, 0.05, "right", subkeys[3])
+
+                        # Create the observation
+                        obs = {"visual_field": visual_field}
+                        if "age" in self.list_observations:
+                            obs["age"] = jnp.full(n, 50) / self.age_max
+                        if "energy" in self.list_observations:
+                            obs["energy"] = (
+                                jnp.full(n, 50) / self.energy_max
+                            )  # base energy
+                        if "n_childrens" in self.list_observations:
+                            obs["n_childrens"] = jnp.zeros(n)
+
+                        # Set the novelty hunger
+                        if "novelty_hunger" in self.list_observations:
+                            obs["novelty_hunger"] = (
+                                jnp.full((n, 4), 0.30).at[:, id_fruit].set(nh)
+                            )
+
+                        # Set the value of the fruit
+                        state_species = state_species.replace(
+                            agents=state_species.agents.replace(
+                                table_value_fruits=jnp.zeros((n, 4))
+                                .at[:, id_fruit]
+                                .set(value_fruit)
+                            )
+                        )
+
+                        # Compute the eating probability
+                        key_random, subkey = jax.random.split(key_random)
+                        new_state_species, actions, _ = (
+                            self.agent_species.react(
+                                state_species,
+                                obs,
+                                eco_information,
+                                subkey,
+                            )
+                        )
+                        logits = new_state_species.agents.logits_last
+                        probs = jax.nn.softmax(logits, axis=-1)
+                        measures[
+                            f"moving P towards high rho_fruit high rho_agents fruit {id_fruit}, nh={name_nh}, value={name_value_fruit}/moving"
+                        ] = probs[:, self.action_to_idx["forward"]]
+                        measures[
+                            f"moving P towards high rho_fruit low rho_agents fruit {id_fruit}, nh={name_nh}, value={name_value_fruit}/moving"
+                        ] = probs[:, self.action_to_idx["backward"]]
+                        measures[
+                            f"moving P towards low rho_fruit high rho_agents fruit {id_fruit}, nh={name_nh}, value={name_value_fruit}/moving"
+                        ] = probs[:, self.action_to_idx["left"]]
+                        measures[
+                            f"moving P towards low rho_fruit low rho_agents fruit {id_fruit}, nh={name_nh}, value={name_value_fruit}/moving"
+                        ] = probs[:, self.action_to_idx["right"]]
 
         else:
             raise ValueError(f"Unknown behavior measure: {name_measure}")

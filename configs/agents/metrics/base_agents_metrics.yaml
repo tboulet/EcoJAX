@@ -16,6 +16,7 @@ measures:
     - target
     - gradients weights
     - gradients bias
+    - table_value_fruits
   behavior: []
 
 aggregators_lifespan:

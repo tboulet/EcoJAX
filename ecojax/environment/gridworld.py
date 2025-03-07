@@ -2121,7 +2121,7 @@ class GridworldEnv(EcoEnvironment):
                     for name_value_fruit, coeff_value_fruit in {"negative" : -1, "zero" : 0, "positive" : 1}.items():
                         value_fruit = coeff_value_fruit * (self.e_fruit_T_abs_max - 1) / (self.energy_plant - 1)
                         for name_density_fruit, density_fruit in {"zero": 0, "maximal": 1}.items():
-                            for name_density_agents, density_agents in {"zero": 0, "maximal": 1}.items(): # TODO : think about this
+                            for name_density_agents, density_agents in {"zero": 0, "high": 0.7}.items():
                                 
                                 # Create empty observation
                                 visual_field = jnp.zeros(
@@ -2133,14 +2133,6 @@ class GridworldEnv(EcoEnvironment):
                                     )
                                 )
 
-                                # Add a fruit at the center of the visual field
-                                visual_field = visual_field.at[
-                                    :,
-                                    v,
-                                    v,
-                                    idx_fruit,
-                                ].set(1)
-
                                 # Set the density of agents
                                 if (
                                     "agents"
@@ -2151,19 +2143,17 @@ class GridworldEnv(EcoEnvironment):
                                             "agents"
                                         ]
                                     )
-                                    visual_field = visual_field.at[
-                                            :, :, :, idx_agent
-                                        ].set(density_agents) # Set the density of agents
+                                    key_random, subkey = jax.random.split(key_random)  # Update key for randomness
+                                    visual_field = visual_field.at[:, :, :, idx_agent].add(jax.random.bernoulli(subkey, p=density_agents, shape=visual_field[:, :, :, idx_agent].shape))
                                     visual_field = visual_field.at[
                                         :, v, v, idx_agent
                                     ].set(
                                         1
-                                    )# Add an agent at the center of the visual field
+                                    ) # Add an agent at the center of the visual field
 
                                 # Set the density of fruits
-                                visual_field = visual_field.at[
-                                    :, :, :, idx_fruit
-                                ].set(density_fruit)
+                                key_random, subkey = jax.random.split(key_random)  # Update key for randomness
+                                visual_field = visual_field.at[:, :, :, idx_fruit].add(jax.random.bernoulli(subkey, p=density_fruit, shape=visual_field[:, :, :, idx_fruit].shape))
 
                                 # Create the observation
                                 obs = {"visual_field": visual_field}
@@ -2243,7 +2233,7 @@ class GridworldEnv(EcoEnvironment):
                     mask = mask.at[:, 3:-3, -3:].set(True)  # Exclude first & last 3 rows
 
                 # Generate random probabilities for fruit and agents
-                subkey_fruit, subkey_agents = jax.random.split(key_random, 3)
+                subkey_fruit, subkey_agents = jax.random.split(key_random)
 
                 fruit_noise = jax.random.bernoulli(subkey_fruit, p=density_fruit, shape=(pop_size, h, w))
                 agent_noise = jax.random.bernoulli(subkey_agents, p=density_agents, shape=(pop_size, h, w))
@@ -2253,7 +2243,71 @@ class GridworldEnv(EcoEnvironment):
                 visual_field = visual_field.at[:, :, :, idx_agent].add(mask * agent_noise)
 
                 return visual_field
-        
+
+            # Measure which cluster is preferred among the four (negative, zero, slightly positive, positive)
+            for name_nh, nh in {"zero": 0, "maximal": 1}.items():
+                for name_density_fruit, density_fruit in {"zero": 0, "maximal": 1}.items():
+                    for name_density_agents, density_agents in {"zero": 0, "high": 0.7}.items():
+                        table_value_fruits=jnp.zeros((n, 4))
+                        visual_field = jnp.zeros(
+                            (
+                                n,
+                                2 * v + 1,
+                                2 * v + 1,
+                                len(self.list_indexes_channels_visual_field),
+                            )
+                        )
+                        key_random, *subkeys = jax.random.split(key_random, 5)
+                        id_fruit_to_variables = {
+                            0 : ("negative", -1, "forward"),
+                            1 : ("zero", 0, "backward"),
+                            2 : ("slightly positive", 0.1, "left"),
+                            3 : ("positive", 1, "right"),
+                        }
+                        for id_fruit, (_, coeff_value_fruit, direction) in id_fruit_to_variables.items():
+                            # Set the value of the fruit in the table
+                            value_fruit = coeff_value_fruit * (self.e_fruit_T_abs_max - 1) / (self.energy_plant - 1)
+                            table_value_fruits = table_value_fruits.at[:, id_fruit].set(value_fruit)
+                            # Create a pseudo-cluster of fruits and agents in the visual field
+                            idx_fruit = self.dict_name_channel_to_idx_visual_field[
+                                f"fruits_{id_fruit}"
+                            ]
+                            visual_field = add_pseudo_cluster(visual_field, idx_fruit, density_fruit, density_agents, direction, subkeys[id_fruit])
+                        visual_field = visual_field.at[:, v, v, self.dict_name_channel_to_idx_visual_field["agents"]].set(1)  # Add an agent at the center of the visual field
+                        obs = {"visual_field": visual_field}
+                        if "age" in self.list_observations:
+                            obs["age"] = jnp.full(n, 50) / self.age_max
+                        if "energy" in self.list_observations:
+                            obs["energy"] = (
+                                jnp.full(n, 50) / self.energy_max
+                            )
+                        if "n_childrens" in self.list_observations:
+                            obs["n_childrens"] = jnp.zeros(n)
+                        if "novelty_hunger" in self.list_observations:
+                            obs["novelty_hunger"] = (
+                                jnp.full((n, 4), 0.30).at[:, id_fruit].set(nh)
+                            )
+                        state_species = state_species.replace(
+                            agents=state_species.agents.replace(
+                                table_value_fruits=table_value_fruits
+                            )
+                        )
+                        key_random, subkey = jax.random.split(key_random)
+                        new_state_species, actions, _ = (
+                            self.agent_species.react(
+                                state_species,
+                                obs,
+                                eco_information,
+                                subkey,
+                            )
+                        )
+                        logits = new_state_species.agents.logits_last
+                        probs = jax.nn.softmax(logits, axis=-1)
+                        for id_fruit, (name_value_fruit, coeff_value_fruit, direction) in id_fruit_to_variables.items():
+                            measures[
+                                f"moving P towards {name_value_fruit} fruit {id_fruit}, nh={name_nh}, density_fruit={name_density_fruit}, density_agents={name_density_agents}/moving"
+                            ] = probs[:, self.action_to_idx[direction]]
+            
             # Measure which cluster is preferred among the four (dense/not dense in fruit, dense/not dense in agents)
             for id_fruit in range(4):
                 idx_fruit = self.dict_name_channel_to_idx_visual_field[
@@ -2273,7 +2327,7 @@ class GridworldEnv(EcoEnvironment):
                         )
 
                         # Add pseudo-cluster of fruits and agents in the visual field
-                        key_random, *subkeys = jax.random.split(key_random, 4)
+                        key_random, *subkeys = jax.random.split(key_random, 5)
                         visual_field = add_pseudo_cluster(visual_field, idx_fruit, 0.9, 0.7, "forward", subkeys[0])
                         visual_field = add_pseudo_cluster(visual_field, idx_fruit, 0.9, 0.05, "backward", subkeys[1])
                         visual_field = add_pseudo_cluster(visual_field, idx_fruit, 0.1, 0.7, "left", subkeys[2])

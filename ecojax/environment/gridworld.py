@@ -1147,7 +1147,7 @@ class GridworldEnv(EcoEnvironment):
     def get_e_t(self, t: int) -> jnp.ndarray:
         """Get the energy of the fruits at time t."""
         e_0 = self.e_fruit_0_abs_max
-        e_T = self.e_fruit_T_abs_max
+        e_T = jnp.array(self.e_fruit_T_abs_max)
         # e_t decrease linearly from e_0 to e_T in T/2 timesteps, then stay at e_T
         e_t = jax.lax.cond(
             t < self.duration / 2,
@@ -1972,13 +1972,13 @@ class GridworldEnv(EcoEnvironment):
         idx_agent = self.dict_name_channel_to_idx_visual_field.get(
             "agents", len(self.dict_name_channel_to_idx_visual_field)
         )  # if no agents, set this to a channel that will lead to no effect
+        n = self.n_agents_max
+        v = self.vision_range_agent
         eco_information = EcoInformation(
             are_newborns_agents=jnp.full(n, False),
             indexes_parents=jnp.full((n, 1), self.fill_value),
             are_just_dead_agents=jnp.full(n, False),
         )
-        n = self.n_agents_max
-        v = self.vision_range_agent
 
         # Coherent values
         dict_densities_fruits = {"zero": 0, "low": 0.1, "high": 0.95, "full": 1}
@@ -2102,7 +2102,6 @@ class GridworldEnv(EcoEnvironment):
                                     "center",
                                     subkey,
                                 )
-                                breakpoint()
                                 
                                 # Add an agent and a fruit at the center of the visual field
                                 visual_field = visual_field.at[
@@ -2205,7 +2204,6 @@ class GridworldEnv(EcoEnvironment):
                                 direction,
                                 subkeys[id_fruit],
                             )
-                            breakpoint()
                             
                         visual_field = visual_field.at[
                             :,
@@ -2345,15 +2343,9 @@ class GridworldEnv(EcoEnvironment):
         density_agents,
         direction: str,
         key_random: jnp.ndarray,
+        range_cluster = 3,
     ):
         """Add a pseudo-cluster of fruits and agents in the visual field of the agents."""
-        assert direction in [
-            "forward",
-            "backward",
-            "left",
-            "right",
-        ], f"Unknown direction {direction}"
-        range_cluster = 3
         idx_agent = self.dict_name_channel_to_idx_visual_field["agents"]
         pop_size, h, w, c = visual_field.shape
         assert h >= 2 * range_cluster + 1 and w >= 2 * range_cluster + 1, "Map is too small to apply cluster."
@@ -2374,15 +2366,17 @@ class GridworldEnv(EcoEnvironment):
         elif direction == "center":
             mid_h, mid_w = h // 2, w // 2
             mask = mask.at[:, mid_h - range_cluster:mid_h + range_cluster + 1, mid_w - range_cluster:mid_w + range_cluster + 1].set(True)
+        else:
+            raise ValueError(f"Unknown direction {direction}")
         
         # Generate random probabilities for fruit and agents
         subkey_fruit, subkey_agents = jax.random.split(key_random)
 
         fruit_noise = jax.random.bernoulli(
-            subkey_fruit, p=density_fruit, shape=(pop_size, h, w)
+            subkey_fruit, p=jnp.array(density_fruit).astype(jnp.float32), shape=(pop_size, h, w)
         )
         agent_noise = jax.random.bernoulli(
-            subkey_agents, p=density_agents, shape=(pop_size, h, w)
+            subkey_agents, p=jnp.array(density_agents).astype(jnp.float32), shape=(pop_size, h, w)
         )
 
         # Apply fruit and agent placement using the mask

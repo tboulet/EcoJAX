@@ -93,7 +93,7 @@ e_fruit_0_abs_max : 100 # (like in brown experiment)
 # Whether to do normalization of the energy of the fruits
 do_normalize_fruits : False
 # The maximum absolute value of the energy of a fruit at the end of the simulation (if do_normalize_fruits is True)
-e_fruit_T_abs_max : 50
+e_fruit_T_abs_max : 50.0
 # The reference values that caracterize a certain amount of energy input by unit of time
 e_fruit_abs_max_ref : 10
 sum_energy_map_ref : 200
@@ -129,7 +129,7 @@ list_observations:
 
 # A list indicating which channels the agent can observe in its visual field
 list_channels_visual_field:
-  # - plants
+  - plants
   - agents
   - fruits_0
   - fruits_1
@@ -148,7 +148,7 @@ list_actions:
   # - nothing
 
 # The vision range of an agent. If of value v, the agent will receive the information v tiles around it, so a (2v+1)*(2v+1) grid
-vision_range_agent : 1
+vision_range_agent : 7
 
 # The dimension of the agent's appearance space
 dim_appearance : 0

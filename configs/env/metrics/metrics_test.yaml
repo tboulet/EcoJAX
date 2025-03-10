@@ -24,7 +24,6 @@ measures:
     - n_childrens
     - x
     - appearance
-    - eating_prob
     - eating
   behavior:
     # []

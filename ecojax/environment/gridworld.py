@@ -2181,7 +2181,7 @@ class GridworldEnv(EcoEnvironment):
                             direction,
                         ) in id_fruit_to_name_value_and_direction.items():
                             # Set the value of the fruit in the table
-                            if name_value_fruit == "sightly positive":
+                            if name_value_fruit == "slightly positive":
                                 value_fruit = (
                                     0.1
                                     * (self.e_fruit_T_abs_max - 1)
@@ -2243,7 +2243,7 @@ class GridworldEnv(EcoEnvironment):
                             direction,
                         ) in id_fruit_to_name_value_and_direction.items():
                             measures[
-                                f"moving P towards {name_value_fruit} fruit {id_fruit}, nh={name_nh}, density_fruit={name_density_fruit}, density_agents={name_density_agents}/moving"
+                                f"moving P towards value={name_value_fruit} (fruit {id_fruit}) | nh={name_nh}, density_fruit={name_density_fruit}, density_agents={name_density_agents}/moving"
                             ] = probs[:, self.action_to_idx[direction]]
 
             # Measure which cluster is preferred among the four (dense/not dense in fruit, dense/not dense in agents)
@@ -2327,7 +2327,7 @@ class GridworldEnv(EcoEnvironment):
                             name_density_agents,
                         ) in direction_to_names_densities_fruits_agents.items():
                             measures[
-                                f"moving P towards {name_density_fruit} rho_fruit {name_density_agents} rho_agents fruit {id_fruit}, nh={name_nh}, value={name_value_fruit}/moving"
+                                f"moving P towards rho_fruit={name_density_fruit} rho_agents={name_density_agents} (fruit {id_fruit}) | nh={name_nh}, value={name_value_fruit}/moving"
                             ] = probs[:, self.action_to_idx[direction]]
 
         else:

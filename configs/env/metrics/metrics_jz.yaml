@@ -17,6 +17,9 @@ measures:
     - amount_food_eaten
     - amount_children
     - died
+    - density_plants_observed
+    - density_agents_observed
+    - density_fruits_observed
   state:
     - energy
     - age

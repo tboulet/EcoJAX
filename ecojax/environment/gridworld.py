@@ -161,8 +161,9 @@ class GridworldEnv(EcoEnvironment):
             for idx_channel, name_channel in enumerate(self.list_names_channels)
         }
         self.n_channels_map: int = len(self.dict_name_channel_to_idx)
+        self.list_channels_visual_field : List[str] = config["list_channels_visual_field"]
         self.list_indexes_channels_visual_field: List[int] = []
-        for name_channel in config["list_channels_visual_field"]:
+        for name_channel in self.list_channels_visual_field:
             assert (
                 name_channel in self.dict_name_channel_to_idx
             ), f"Unknown channel: {name_channel} not in {self.dict_name_channel_to_idx}"
@@ -172,7 +173,7 @@ class GridworldEnv(EcoEnvironment):
         self.dict_name_channel_to_idx_visual_field: Dict[str, int] = {
             name_channel: idx_channel
             for idx_channel, name_channel in enumerate(
-                config["list_channels_visual_field"]
+                self.list_channels_visual_field
             )
         }
         self.n_channels_visual_field: int = len(self.list_indexes_channels_visual_field)
@@ -1760,8 +1761,30 @@ class GridworldEnv(EcoEnvironment):
             )
 
         # Compute some observations-related measures
-        dict_measures = {}  # None for now
-
+        dict_measures = {}
+        if "density_plants_observed" in self.names_measures:
+            idx_plants_obs = self.dict_name_channel_to_idx_visual_field["plants"]
+            dict_measures["density_plants_observed"] = jnp.mean(
+                dict_observations["visual_field"][..., idx_plants_obs], axis=(1, 2)
+            )
+        if "density_agents_observed" in self.names_measures and "agents" in self.list_channels_visual_field:
+            idx_agents_obs = self.dict_name_channel_to_idx_visual_field["agents"]
+            dict_measures["density_agents_observed"] = jnp.mean(
+                dict_observations["visual_field"][..., idx_agents_obs], axis=(1, 2)
+            )
+        if "density_fruits_observed" in self.names_measures and self.do_fruits:
+            # Compute the density of fruits observed by the agents to obtain a (n_agents,) array
+            list_indexes_fruits = [self.dict_name_channel_to_idx_visual_field[f"fruits_{i}"] for i in range(4)]
+            dict_measures["density_fruits_observed"] = jnp.mean(
+                jnp.sum(
+                    dict_observations["visual_field"][
+                        ..., list_indexes_fruits
+                    ],
+                    axis=-1,
+                ),
+                axis=(1, 2),
+            )
+        
         # print(f"Map : {state.map[..., 0]}")
         # print(f"Agents positions : {state.positions_agents}")
         # print(f"Agents orientations : {state.orientation_agents}")

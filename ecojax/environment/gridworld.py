@@ -1982,19 +1982,23 @@ class GridworldEnv(EcoEnvironment):
 
         # Coherent values
         dict_densities_fruits = {"zero": 0, "low": 0.1, "high": 0.95, "full": 1}
+        names_density_fruits_considered = ["low", "high"]
         # Coherent values but (TODO) uncertain what "high" means for density of agents
         dict_densities_agents = {"zero": 0, "low": 0.05, "medium": 0.25, "high": 0.7}
+        names_density_agents_considered = ["zero", "medium"]
         # Coherent values to check any effect (notablly infantile behavior)
-        dict_nhs = {"zero": 0, "maximal": 1}
+        dict_nhs = {"zero": 0, "typical" : 0.30, "maximal": 1}
+        names_nhs_considered = ["typical"]
         # Coherent values with actual energy obtained from an abs fruit
         # TODO : e_t curriculum and poison nerfing made this less coherent
         # TODO : deal with reward learned model (not coherent with hardcoded values)
-        dict_values_fruits = {"negative": -1, "zero": 0, "positive": 1}
+        dict_values_fruits = {"negative": -1, "zero": 0, "slightly positive": 0.1, "positive": 1}
         dict_values_fruits = {
             key: value * (self.e_fruit_T_abs_max - 1) / (self.energy_plant - 1)
             for key, value in dict_values_fruits.items()
         }  # to be coherent with obtained reward
-
+        names_values_fruits_considered = ["negative", "zero", "positive"]
+        
         # Metric appetite : P(move to plant) where the plant is 1 tile away in one of the 4 directions
         if name_measure == "appetite":
             if "plants" in self.dict_name_channel_to_idx_visual_field:
@@ -2056,23 +2060,20 @@ class GridworldEnv(EcoEnvironment):
                 appetites = appetites / len(names_action_to_xy)
                 measures["appetite"] = appetites
 
-        # Metric eating_behavior : P(eat fruit j | nh, value, density_fruit, density_agents) for :
+        # Metric eating_behavior : P(eat fruit j | nh, value, density_fruit, density_agents)
         elif name_measure == "eating_behavior":
             for id_fruit in range(4):
                 idx_fruit = self.dict_name_channel_to_idx_visual_field[
                     f"fruits_{id_fruit}"
                 ]
-                for name_nh, nh in dict_nhs.items():
-                    for name_value_fruit, value_fruit in dict_values_fruits.items():
-                        for (
-                            name_density_fruit,
-                            density_fruit,
-                        ) in dict_densities_fruits.items():
-                            for (
-                                name_density_agents,
-                                density_agents,
-                            ) in dict_densities_agents.items():
-
+                for name_nh in names_nhs_considered:
+                    nh = dict_nhs[name_nh]
+                    for name_value_fruit in names_values_fruits_considered:
+                        value_fruit = dict_values_fruits[name_value_fruit]
+                        for name_density_fruit in names_density_fruits_considered:
+                            density_fruit = dict_densities_fruits[name_density_fruit]
+                            for name_density_agents in names_density_agents_considered:
+                                density_agents = dict_densities_agents[name_density_agents]
                                 # Create empty observation
                                 visual_field = jnp.zeros(
                                     (
@@ -2151,15 +2152,16 @@ class GridworldEnv(EcoEnvironment):
                                     f"eating P(eat fruit {id_fruit} | nh={name_nh}, value={name_value_fruit}, density_fruit={name_density_fruit}, density_agents={name_density_agents})/eating"
                                 ] = prob_eating
 
-        # Metric moving_behavior : P(move to fruit j |
+        # Metric moving_behavior
         elif name_measure == "moving_behavior":
+            # Measure 1 : P(move to fruit j | nh, density_fruit, density_agents, values = [negative, zero, slightly positive, positive])
             # Measure which cluster is preferred among the four (negative, zero, slightly positive, positive)
-            for name_nh, nh in dict_nhs.items():
-                for name_density_fruit, density_fruit in dict_densities_fruits.items():
-                    for (
-                        name_density_agents,
-                        density_agents,
-                    ) in dict_densities_agents.items():
+            for name_nh in names_nhs_considered:
+                nh = dict_nhs[name_nh]
+                for name_density_fruit in names_density_fruits_considered:
+                    density_fruit = dict_densities_fruits[name_density_fruit]
+                    for name_density_agents in names_density_agents_considered:
+                        density_agents = dict_densities_agents[name_density_agents]
                         table_value_fruits = jnp.zeros((n, 4))
                         visual_field = jnp.zeros(
                             (
@@ -2171,24 +2173,17 @@ class GridworldEnv(EcoEnvironment):
                         )
                         key_random, *subkeys = jax.random.split(key_random, 5)
                         id_fruit_to_name_value_and_direction = {
-                            0: ("negative", "forward"),
-                            1: ("zero", "backward"),
-                            2: ("slightly positive", "left"),
-                            3: ("positive", "right"),
+                            0: ("positive", "forward"),
+                            1: ("slightly positive", "left"),
+                            2: ("zero", "backward"),
+                            3: ("negative", "right"),
                         }
                         for id_fruit, (
                             name_value_fruit,
                             direction,
                         ) in id_fruit_to_name_value_and_direction.items():
                             # Set the value of the fruit in the table
-                            if name_value_fruit == "slightly positive":
-                                value_fruit = (
-                                    0.1
-                                    * (self.e_fruit_T_abs_max - 1)
-                                    / (self.energy_plant - 1)
-                                )
-                            else:
-                                value_fruit = dict_values_fruits[name_value_fruit]
+                            value_fruit = dict_values_fruits[name_value_fruit]
                             table_value_fruits = table_value_fruits.at[:, id_fruit].set(
                                 value_fruit
                             )
@@ -2246,6 +2241,7 @@ class GridworldEnv(EcoEnvironment):
                                 f"moving P towards value={name_value_fruit} (fruit {id_fruit}) | nh={name_nh}, density_fruit={name_density_fruit}, density_agents={name_density_agents}/moving"
                             ] = probs[:, self.action_to_idx[direction]]
 
+            # Measure 2 : P(move to cluster c | nh, value, clusters_seen_rhos=[(low, low), (high, low), (low, high), (high, high)])
             # Measure which cluster is preferred among the four (dense/not dense in fruit, dense/not dense in agents)
             direction_to_names_densities_fruits_agents = {
                 "forward": ("low", "low"),
@@ -2257,8 +2253,10 @@ class GridworldEnv(EcoEnvironment):
                 idx_fruit = self.dict_name_channel_to_idx_visual_field[
                     f"fruits_{id_fruit}"
                 ]
-                for name_nh, nh in dict_nhs.items():
-                    for name_value_fruit, value_fruit in dict_values_fruits.items():
+                for name_nh in names_nhs_considered:
+                    nh = dict_nhs[name_nh]
+                    for name_value_fruit in names_values_fruits_considered:
+                        value_fruit = dict_values_fruits[name_value_fruit]
                         # Create empty observation
                         visual_field = jnp.zeros(
                             (

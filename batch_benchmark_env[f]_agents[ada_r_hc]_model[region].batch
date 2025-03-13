@@ -45,7 +45,7 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 ## Iterate over the seeds
 seed_max=100
-benchmark_name='bench15_f_hc'
+benchmark_name='bench16_f_hc'
 for _ in $(seq 1 $seed_max); do
     seed=$RANDOM 
     for p_base_fruit_growth in 0.0065; do

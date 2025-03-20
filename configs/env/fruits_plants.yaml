@@ -89,9 +89,9 @@ p_base_fruit_growth : 0.01
 # - If normalization is done, it is set so that the input of positive energy by unit of time correspond to (energy_fruit_max_abs_ref, sum_energy_map_ref)
 
 # The maximum absolute value of the energy of a fruit at the beginning of the simulation
-e_fruit_0_abs_max : 20 # (like in brown experiment)
+e_fruit_0_abs_max : 60 # (like in brown experiment)
 # The timestep where the final value of the energy of a fruit is reached
-t_fruit_T : 10000
+t_fruit_T : 33000
 # Whether to do normalization of the energy of the fruits
 do_normalize_fruits : True
 # The maximum absolute value of the energy of a fruit at the end of the simulation (if do_normalize_fruits is True)

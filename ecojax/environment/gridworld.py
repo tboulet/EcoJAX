@@ -297,7 +297,7 @@ class GridworldEnv(EcoEnvironment):
                 self.height // self.side_cluster_fruits
             )  # 220 // 11 = 20
             self.n_clusters_y_fruit_i = self.width // self.side_cluster_fruits
-            self.n_quadri_clusters_x_ = self.n_clusters_x_fruit_i // 2  # 20 // 2 = 10
+            self.n_quadri_clusters_x = self.n_clusters_x_fruit_i // 2  # 20 // 2 = 10
             self.n_quadri_clusters_y = self.n_clusters_y_fruit_i // 2
             self.map_scaling_factors = jnp.ones(shape=(self.height, self.width))
 
@@ -317,7 +317,7 @@ class GridworldEnv(EcoEnvironment):
                     phis = [1, self.omega, 0]
                 elif 2 / 3 < self.omega <= 1:
                     phis = [1, 1, self.omega]
-                for x_quadri in range(self.n_quadri_clusters_x_):
+                for x_quadri in range(self.n_quadri_clusters_x):
                     for y_quadri in range(self.n_quadri_clusters_y):
                         indexes_sampled = sample_in_K(
                             phis
@@ -388,6 +388,7 @@ class GridworldEnv(EcoEnvironment):
 
             # Define the energy of the fruits
             self.e_fruit_0_abs_max = config["e_fruit_0_abs_max"]
+            self.t_fruit_T = config["t_fruit_T"]
             self.energy_fruit_min = config["energy_fruit_min"]
 
             # Set e_fruit_T_abs_max (final value of e_fruit_max_abs)

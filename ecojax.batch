@@ -45,10 +45,10 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 ## Iterate over the seeds
 seed_max=100
-benchmark_name='bench22_fp_hc'
+benchmark_name='bench23_fp_hc'
 for _ in $(seq 1 $seed_max); do
     seed=$RANDOM 
-    list_omega=(0 0.1 0.4 0.7 1)
+    list_omega=(1 0.1 0.4 0.7 0)
     for i in $(seq 0 $((${#list_omega[@]} - 1))); do
         omega=${list_omega[$i]}
         run_name="run_$benchmark_name-$initial_date/omega_$omega/seed_$seed"
@@ -56,6 +56,7 @@ for _ in $(seq 1 $seed_max); do
         echo "Running $log_dir"
         mkdir -p "$log_dir"
         python run.py --config-name dgx do_wandb=True env/metrics=metrics_dgx +benchmark_name=$benchmark_name seed=$seed +run_name=\'$run_name\' \
+            env.sum_energy_map_ref=275 \
             agents=ada_r_hc \
             model=region \
             env=fruits_plants \

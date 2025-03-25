@@ -78,7 +78,7 @@ do_fruits : True
 proportion_fruit_initial : 0.4
 
 # The base probability of a non-fruit tile to grow spontaneously a fruit
-p_base_fruit_growth : 0.01
+p_base_fruit_growth : 0.0065
 
 # The rules for the value of a fruit are the following :
 # - The value of fruit j will be e_fruit_t_max_abs * cos(w_j x pi) * cos(w_j y pi)

@@ -45,12 +45,16 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 ## Iterate over the seeds
 seed_max=100
-benchmark_name='bench15_fp_hc'
+benchmark_name='bench20_fp_hc'
 for _ in $(seq 1 $seed_max); do
     seed=$RANDOM 
     for p_base_fruit_growth in 0.0065; do
-        for variability_fruits in "[0.1,0.1,0.1,0.1]" "[0.5,0.5,0.5,0.5]" "[1,1,1,1]" "[0,0,0,0]"; do
-            variability_fruits_repr=$(echo $variability_fruits | sed 's/\[//g; s/\]//g')  
+        list_variability_fruits=("[0.1,0.1,0.1,0.1]" "[0.5,0.5,0.5,0.5]" "[1,1,1,1]" "[0,0,0,0]")
+        list_e_fruit_0_abs_max=(0 0 20 10)
+        for i in $(seq 0 $((${#list_variability_fruits[@]} - 1))); do
+            variability_fruits=${list_variability_fruits[$i]}
+            variability_fruits_repr=$(echo $variability_fruits | sed 's/\[//g; s/\]//g')
+            e_fruit_0_abs_max=${list_e_fruit_0_abs_max[$i]}  
             run_name="run_$benchmark_name-$initial_date/p_base_fruit_growth_$p_base_fruit_growth/variability_fruits_$variability_fruits_repr/seed_$seed"
             log_dir="logs/$run_name"
             echo "Running $log_dir"
@@ -63,6 +67,7 @@ for _ in $(seq 1 $seed_max); do
                 env.mode_variability_fruits=space \
                 env.p_base_fruit_growth=$p_base_fruit_growth \
                 env.variability_fruits="$variability_fruits" \
+                env.e_fruit_0_abs_max=$e_fruit_0_abs_max \
                 model.mlp_region_config.hidden_dims=[] \
                 model.mlp_config.hidden_dims=[10] \
                 > "$log_dir"/log.txt 2>&1

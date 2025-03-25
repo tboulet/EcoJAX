@@ -273,7 +273,6 @@ class GridworldEnv(EcoEnvironment):
         if self.do_fruits:
             self.proportion_fruit_initial: float = config["proportion_fruit_initial"]
             self.p_base_fruit_growth: float = config["p_base_fruit_growth"]
-            self.energy_fruit_max_abs: float = 13  # TODO : remove this
 
             self.side_cluster_fruits: int = config["side_cluster_fruits"]
             assert (
@@ -1152,8 +1151,8 @@ class GridworldEnv(EcoEnvironment):
         e_T = jnp.array(self.e_fruit_T_abs_max)
         # e_t decrease linearly from e_0 to e_T in T/2 timesteps, then stay at e_T
         e_t = jax.lax.cond(
-            t < self.duration / 2,
-            lambda _: e_0 + (e_T - e_0) * t / (self.duration / 2),
+            t < self.t_fruit_T,
+            lambda _: e_0 + (e_T - e_0) * t / (self.t_fruit_T),
             lambda _: e_T,
             operand=t,
         )
@@ -1268,11 +1267,7 @@ class GridworldEnv(EcoEnvironment):
                 map_fruits_i = state.map[:, :, idx_fruit_i]
                 map_fruit_energy_bonus_available_per_agent += map_fruits_i
             # Compute the maxi abs energy of a fruit
-            t = state.timestep
-            e_fruit_t_abs_max = self.e_fruit_0_abs_max + (
-                self.e_fruit_T_abs_max - self.e_fruit_0_abs_max
-            ) * t / (self.duration / 2)
-            e_fruit_t_abs_max = jnp.maximum(e_fruit_t_abs_max, self.e_fruit_T_abs_max)
+            e_fruit_t_abs_max = self.get_e_t(t=state.timestep)
             # Scale by the map_scaling_factors and e_fruit_t_abs_max
             map_fruit_energy_bonus_available_per_agent = (
                 map_fruit_energy_bonus_available_per_agent

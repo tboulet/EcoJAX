@@ -89,7 +89,7 @@ def eco_loop(
             )
         )
     if do_tb:
-        list_loggers.append(LoggerTensorboard(log_dir=f"tensorboard/{run_name}"))
+        list_loggers.append(LoggerTensorboard(log_dir=f"logs/{run_name}/"))
     if do_cli:
         list_loggers.append(LoggerCLI())
     if do_csv:

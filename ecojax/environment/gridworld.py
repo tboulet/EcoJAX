@@ -161,7 +161,9 @@ class GridworldEnv(EcoEnvironment):
             for idx_channel, name_channel in enumerate(self.list_names_channels)
         }
         self.n_channels_map: int = len(self.dict_name_channel_to_idx)
-        self.list_channels_visual_field : List[str] = config["list_channels_visual_field"]
+        self.list_channels_visual_field: List[str] = config[
+            "list_channels_visual_field"
+        ]
         self.list_indexes_channels_visual_field: List[int] = []
         for name_channel in self.list_channels_visual_field:
             assert (
@@ -172,9 +174,7 @@ class GridworldEnv(EcoEnvironment):
             )
         self.dict_name_channel_to_idx_visual_field: Dict[str, int] = {
             name_channel: idx_channel
-            for idx_channel, name_channel in enumerate(
-                self.list_channels_visual_field
-            )
+            for idx_channel, name_channel in enumerate(self.list_channels_visual_field)
         }
         self.n_channels_visual_field: int = len(self.list_indexes_channels_visual_field)
         # Metrics parameters
@@ -288,53 +288,54 @@ class GridworldEnv(EcoEnvironment):
                 self.range_cluster_fruits <= self.side_cluster_fruits // 2
             ), f"The range of the cluster of fruits must be less than half the side of the cluster, but got {self.range_cluster_fruits} > {self.side_cluster_fruits}//2"
             self.variability_fruits: List[float] = config["variability_fruits"]
+            self.omega: float = config["omega"]
+            self.factors_fruits: List[float] = config["factors_fruits"]
             self.mode_variability_fruits: str = config["mode_variability_fruits"]
             self.coords_clusters_to_fruit_id: Dict[
                 Tuple[int, int], Tuple[int, float]
             ] = {}
-            self.n_clusters_x = self.height // self.side_cluster_fruits
-            self.n_clusters_y = self.width // self.side_cluster_fruits
-            self.n_clusters_x_fruit_i = self.n_clusters_x // 2
-            self.n_clusters_y_fruit_i = self.n_clusters_y // 2
+            self.n_clusters_x_fruit_i = (
+                self.height // self.side_cluster_fruits
+            )  # 220 // 11 = 20
+            self.n_clusters_y_fruit_i = self.width // self.side_cluster_fruits
+            self.n_quadri_clusters_x_ = self.n_clusters_x_fruit_i // 2  # 20 // 2 = 10
+            self.n_quadri_clusters_y = self.n_clusters_y_fruit_i // 2
             self.map_scaling_factors = jnp.ones(shape=(self.height, self.width))
 
-            self.e_fruit_0_abs_max = config["e_fruit_0_abs_max"]
-            self.energy_fruit_min = config["energy_fruit_min"]
-
-            # Set e_fruit_T_abs_max (final value of e_fruit_max_abs)
-            if config["do_normalize_fruits"]:
-                e_fruit_abs_max_ref: float = config["e_fruit_abs_max_ref"]
-                sum_energy_map_ref: float = config["sum_energy_map_ref"]
-                sum_energy_map: float = 0
-                for x in range(self.n_clusters_x):
-                    for y in range(self.n_clusters_y):
-                        for (
-                            w_
-                        ) in (
-                            self.variability_fruits
-                        ):  # average over the variability of the quadri-cluster on this cluster
-                            energy = np.cos(w_ * np.pi * x) * np.cos(w_ * np.pi * y)
-                            sum_energy_map += max(0, energy) / len(
-                                self.variability_fruits
-                            )
-                self.e_fruit_T_abs_max = (
-                    e_fruit_abs_max_ref * sum_energy_map_ref / sum_energy_map
+            # Define the factors by sampling if mode_variability_fruits is "space_entropy":
+            if self.mode_variability_fruits == "space_entropy":
+                self.factors_fruits = np.random.permutation(self.factors_fruits) # randomize for alternating idx2factor between runs
+                assert (
+                    0 <= self.omega <= 1
+                ), f"Space variability must be in [0, 1], but got omega={self.omega}"
+                clusters_to_factors: jnp.ndarray = jnp.zeros(
+                    (self.n_clusters_x_fruit_i, self.n_clusters_y_fruit_i)
                 )
-                print(
-                    f"[INFO] e_fruit_max_abs final normalized to: {self.e_fruit_T_abs_max}"
-                )
-            else:
-                self.e_fruit_T_abs_max = config["e_fruit_T_abs_max"]
+                dict_values_to_count = {}
+                if 0 <= self.omega <= 1 / 3:
+                    phis = [self.omega, 0, 0]
+                elif 1 / 3 < self.omega <= 2 / 3:
+                    phis = [1, self.omega, 0]
+                elif 2 / 3 < self.omega <= 1:
+                    phis = [1, 1, self.omega]
+                for x_quadri in range(self.n_quadri_clusters_x_):
+                    for y_quadri in range(self.n_quadri_clusters_y):
+                        indexes_sampled = sample_in_K(
+                            phis
+                        )  # a list of 4 index determining the fruit types
+                        dict_values_to_count[tuple(indexes_sampled)] = (
+                            dict_values_to_count.get(tuple(indexes_sampled), 0) + 1
+                        )
+                        for x in range(2):
+                            for y in range(2):
+                                clusters_to_factors = clusters_to_factors.at[
+                                    x_quadri * 2 + x, y_quadri * 2 + y
+                                ].set(self.factors_fruits[indexes_sampled[x * 2 + y]])
+                self.entropy_fruits = compute_entropy(dict_values_to_count)
+                print(f"[INFO] Entropy of the fruit distribution: {self.entropy_fruits}")
 
-            # The curriculum must decrease, so if e_fruit_0_abs_max is smaller than e_fruit_T_abs_max, we set e_fruit_0_abs_max to e_fruit_T_abs_max
-            if self.e_fruit_0_abs_max < self.e_fruit_T_abs_max:
-                print(
-                    f"[INFO] e_fruit_0_abs_max ({self.e_fruit_0_abs_max}) is lower than e_fruit_T_abs_max ({self.e_fruit_T_abs_max}). Setting e_fruit_0_abs_max to e_fruit_T_abs_max."
-                )
-                self.e_fruit_0_abs_max = self.e_fruit_T_abs_max
-
-            for x in range(self.n_clusters_x):
-                for y in range(self.n_clusters_y):
+            for x in range(self.n_clusters_x_fruit_i):
+                for y in range(self.n_clusters_y_fruit_i):
                     # Get the coordinates of the center of the cluster
                     coords_center = (
                         x * self.side_cluster_fruits + self.side_cluster_fruits // 2,
@@ -352,13 +353,16 @@ class GridworldEnv(EcoEnvironment):
                     x_i, y_i = x // 2, y // 2
                     # Assign initial value depending on the variability mode
                     w = self.variability_fruits[id_fruit]
-                    if self.mode_variability_fruits == "space":
+                    if self.mode_variability_fruits == "space_sin":
                         assert (
                             0 <= w <= 1
                         ), f"Space variability must be in [0, 1], but got {w}"
                         factor = jnp.cos(2 * jnp.pi * x_i * w / 2) * jnp.cos(
                             2 * jnp.pi * y_i * w / 2
                         )
+                    elif self.mode_variability_fruits == "space_entropy":
+                        factor = clusters_to_factors[x, y]
+
                     elif self.mode_variability_fruits == "time":
                         raise NotImplementedError
                         assert (
@@ -380,10 +384,46 @@ class GridworldEnv(EcoEnvironment):
                         - self.range_cluster_fruits : coords_center[1]
                         + self.range_cluster_fruits
                         + 1,
-                    ].set(
-                        factor
-                    )  # remove 1 cause map_scaling_factors is initialized to 1 (plant factor)
+                    ].set(factor)
                     self.coords_clusters_to_fruit_id[coords_center] = id_fruit
+
+            # Define the energy of the fruits
+            self.e_fruit_0_abs_max = config["e_fruit_0_abs_max"]
+            self.energy_fruit_min = config["energy_fruit_min"]
+
+            # Set e_fruit_T_abs_max (final value of e_fruit_max_abs)
+            if config["do_normalize_fruits"] and self.mode_variability_fruits != "time":
+                e_fruit_abs_max_ref: float = config["e_fruit_abs_max_ref"]
+                sum_factor_map_ref: float = config["sum_energy_map_ref"]
+                sum_factor_map: float = 0
+                for x in range(self.n_clusters_x_fruit_i):
+                    for y in range(self.n_clusters_y_fruit_i):
+                        coords_center = (
+                            x * self.side_cluster_fruits
+                            + self.side_cluster_fruits // 2,
+                            y * self.side_cluster_fruits
+                            + self.side_cluster_fruits // 2,
+                        )
+                        factor = self.map_scaling_factors[
+                            coords_center[0], coords_center[1]
+                        ]
+                        sum_factor_map += max(0, factor)
+                self.e_fruit_T_abs_max = (
+                    e_fruit_abs_max_ref * sum_factor_map_ref / sum_factor_map
+                )
+                print(
+                    f"[INFO] e_fruit_max_abs final normalized to: {self.e_fruit_T_abs_max}"
+                )
+            else:
+                self.e_fruit_T_abs_max = config["e_fruit_T_abs_max"]
+
+            # The curriculum must decrease, so if e_fruit_0_abs_max is smaller than e_fruit_T_abs_max, we set e_fruit_0_abs_max to e_fruit_T_abs_max
+            if self.e_fruit_0_abs_max < self.e_fruit_T_abs_max:
+                print(
+                    f"[INFO] e_fruit_0_abs_max ({self.e_fruit_0_abs_max}) is lower than e_fruit_T_abs_max ({self.e_fruit_T_abs_max}). Setting e_fruit_0_abs_max to e_fruit_T_abs_max."
+                )
+                self.e_fruit_0_abs_max = self.e_fruit_T_abs_max
+
         # ======================== Agent Parameters ========================
 
         # Observations
@@ -1106,45 +1146,6 @@ class GridworldEnv(EcoEnvironment):
             ),
         )
 
-    def get_map_ressource_energy(
-        self, state: StateEnvGridworld, id_ressource: int, key_random: jnp.ndarray
-    ) -> jnp.ndarray:
-        """Get the map of the energy of the fruits, as an array of shape (H, W).
-
-        Args:
-            state (StateEnvGridworld): the state of the environment
-            id_fruit (int): the indicator of the ressource, between 0 and 3 for fruits, or "plants" for plants
-            key_random (jnp.ndarray): the random key
-
-        Returns:
-            jnp.ndarray: the map of the energy of the fruits, as an array of shape (H, W)
-        """
-        if id_ressource == "plants":
-            idx_plants = self.dict_name_channel_to_idx["plants"]
-            map_plants = state.map[:, :, idx_plants]
-            return map_plants * self.energy_plant
-        idx_fruit_i = self.dict_name_channel_to_idx[f"fruits_{id_ressource}"]
-        map_fruits_i = state.map[:, :, idx_fruit_i]  # (H, W), whether there is a fruit
-        if self.mode_variability_fruits == "space":
-            e_t = self.get_e_t(t=state.timestep)
-            map_ressource_energy = map_fruits_i * self.map_scaling_factors * e_t
-            map_ressource_energy = jnp.maximum(
-                map_ressource_energy, self.energy_fruit_min
-            )
-            return map_ressource_energy
-        elif self.mode_variability_fruits == "time":
-            raise NotImplementedError
-            w = self.variability_fruits[id_ressource]
-            t = state.timestep
-            value_fruit = self.energy_fruit_max_abs * jnp.cos(
-                2 * jnp.pi * t * w / (2 * self.age_max)
-            )
-            return map_fruits_i * value_fruit
-        else:
-            raise ValueError(
-                f"Unknown mode_variability_fruits: {self.mode_variability_fruits}"
-            )
-
     def get_e_t(self, t: int) -> jnp.ndarray:
         """Get the energy of the fruits at time t."""
         e_0 = self.e_fruit_0_abs_max
@@ -1767,24 +1768,28 @@ class GridworldEnv(EcoEnvironment):
             dict_measures["density_plants_observed"] = jnp.mean(
                 dict_observations["visual_field"][..., idx_plants_obs], axis=(1, 2)
             )
-        if "density_agents_observed" in self.names_measures and "agents" in self.list_channels_visual_field:
+        if (
+            "density_agents_observed" in self.names_measures
+            and "agents" in self.list_channels_visual_field
+        ):
             idx_agents_obs = self.dict_name_channel_to_idx_visual_field["agents"]
             dict_measures["density_agents_observed"] = jnp.mean(
                 dict_observations["visual_field"][..., idx_agents_obs], axis=(1, 2)
             )
         if "density_fruits_observed" in self.names_measures and self.do_fruits:
             # Compute the density of fruits observed by the agents to obtain a (n_agents,) array
-            list_indexes_fruits = [self.dict_name_channel_to_idx_visual_field[f"fruits_{i}"] for i in range(4)]
+            list_indexes_fruits = [
+                self.dict_name_channel_to_idx_visual_field[f"fruits_{i}"]
+                for i in range(4)
+            ]
             dict_measures["density_fruits_observed"] = jnp.mean(
                 jnp.sum(
-                    dict_observations["visual_field"][
-                        ..., list_indexes_fruits
-                    ],
+                    dict_observations["visual_field"][..., list_indexes_fruits],
                     axis=-1,
                 ),
                 axis=(1, 2),
             )
-        
+
         # print(f"Map : {state.map[..., 0]}")
         # print(f"Agents positions : {state.positions_agents}")
         # print(f"Agents orientations : {state.orientation_agents}")
@@ -1836,7 +1841,7 @@ class GridworldEnv(EcoEnvironment):
                         dict_measures[f"value_fruits {id_fruit}/value_fruits"] = (
                             value_fruit
                         )
-                elif self.mode_variability_fruits == "space":
+                elif self.mode_variability_fruits in ["space_sin", "space_entropy"]:
                     dict_measures[f"map_scaling_factors"] = self.map_scaling_factors
                 else:
                     raise ValueError(
@@ -1849,6 +1854,9 @@ class GridworldEnv(EcoEnvironment):
                 continue
             elif name_measure == "energy_fruit_max_abs":
                 dict_measures["energy_fruit_max_abs"] = self.get_e_t(state.timestep)
+            elif name_measure == "entropy_fruits":
+                if hasattr(self, "entropy_fruits"):
+                    dict_measures["entropy_fruits"] = self.entropy_fruits
             # Immediate measures
             elif name_measure.startswith("do_action_"):
                 str_action = name_measure[len("do_action_") :]
@@ -2010,18 +2018,23 @@ class GridworldEnv(EcoEnvironment):
         dict_densities_agents = {"zero": 0, "low": 0.05, "medium": 0.25, "high": 0.7}
         names_density_agents_considered = ["zero", "medium"]
         # Coherent values to check any effect (notablly infantile behavior)
-        dict_nhs = {"zero": 0, "typical" : 0.30, "maximal": 1}
+        dict_nhs = {"zero": 0, "typical": 0.30, "maximal": 1}
         names_nhs_considered = ["typical"]
         # Coherent values with actual energy obtained from an abs fruit
         # TODO : e_t curriculum and poison nerfing made this less coherent
         # TODO : deal with reward learned model (not coherent with hardcoded values)
-        dict_values_fruits = {"negative": -1, "zero": 0, "slightly positive": 0.1, "positive": 1}
+        dict_values_fruits = {
+            "negative": -1,
+            "zero": 0,
+            "slightly positive": 0.1,
+            "positive": 1,
+        }
         dict_values_fruits = {
             key: value * (self.e_fruit_T_abs_max - 1) / (self.energy_plant - 1)
             for key, value in dict_values_fruits.items()
         }  # to be coherent with obtained reward
         names_values_fruits_considered = ["negative", "zero", "positive"]
-        
+
         # Metric appetite : P(move to plant) where the plant is 1 tile away in one of the 4 directions
         if name_measure == "appetite":
             if "plants" in self.dict_name_channel_to_idx_visual_field:
@@ -2096,7 +2109,9 @@ class GridworldEnv(EcoEnvironment):
                         for name_density_fruit in names_density_fruits_considered:
                             density_fruit = dict_densities_fruits[name_density_fruit]
                             for name_density_agents in names_density_agents_considered:
-                                density_agents = dict_densities_agents[name_density_agents]
+                                density_agents = dict_densities_agents[
+                                    name_density_agents
+                                ]
                                 # Create empty observation
                                 visual_field = jnp.zeros(
                                     (
@@ -2126,7 +2141,7 @@ class GridworldEnv(EcoEnvironment):
                                     "center",
                                     subkey,
                                 )
-                                
+
                                 # Add an agent and a fruit at the center of the visual field
                                 visual_field = visual_field.at[
                                     :, v, v, [idx_agent, idx_fruit]
@@ -2222,7 +2237,7 @@ class GridworldEnv(EcoEnvironment):
                                 direction,
                                 subkeys[id_fruit],
                             )
-                            
+
                         visual_field = visual_field.at[
                             :,
                             v,
@@ -2364,12 +2379,14 @@ class GridworldEnv(EcoEnvironment):
         density_agents,
         direction: str,
         key_random: jnp.ndarray,
-        range_cluster = 3,
+        range_cluster=3,
     ):
         """Add a pseudo-cluster of fruits and agents in the visual field of the agents."""
         idx_agent = self.dict_name_channel_to_idx_visual_field["agents"]
         pop_size, h, w, c = visual_field.shape
-        assert h >= 2 * range_cluster + 1 and w >= 2 * range_cluster + 1, "Map is too small to apply cluster."
+        assert (
+            h >= 2 * range_cluster + 1 and w >= 2 * range_cluster + 1
+        ), "Map is too small to apply cluster."
         # Create a mask of zeros
         mask = jnp.zeros(
             (pop_size, h, w), dtype=bool
@@ -2386,18 +2403,26 @@ class GridworldEnv(EcoEnvironment):
             mask = mask.at[:, 3:-3, -3:].set(True)  # Exclude first & last 3 rows
         elif direction == "center":
             mid_h, mid_w = h // 2, w // 2
-            mask = mask.at[:, mid_h - range_cluster:mid_h + range_cluster + 1, mid_w - range_cluster:mid_w + range_cluster + 1].set(True)
+            mask = mask.at[
+                :,
+                mid_h - range_cluster : mid_h + range_cluster + 1,
+                mid_w - range_cluster : mid_w + range_cluster + 1,
+            ].set(True)
         else:
             raise ValueError(f"Unknown direction {direction}")
-        
+
         # Generate random probabilities for fruit and agents
         subkey_fruit, subkey_agents = jax.random.split(key_random)
 
         fruit_noise = jax.random.bernoulli(
-            subkey_fruit, p=jnp.array(density_fruit).astype(jnp.float32), shape=(pop_size, h, w)
+            subkey_fruit,
+            p=jnp.array(density_fruit).astype(jnp.float32),
+            shape=(pop_size, h, w),
         )
         agent_noise = jax.random.bernoulli(
-            subkey_agents, p=jnp.array(density_agents).astype(jnp.float32), shape=(pop_size, h, w)
+            subkey_agents,
+            p=jnp.array(density_agents).astype(jnp.float32),
+            shape=(pop_size, h, w),
         )
 
         # Apply fruit and agent placement using the mask
@@ -2492,6 +2517,66 @@ class GridworldEnv(EcoEnvironment):
 
 
 # ================== Helper functions ==================
+
+
+def sample_in_K(phis: List[float]):
+    """Sample X from K^4 where K = {0,1,2,3} following the following pattern :
+        - sample X_0 from an in-between 0 and U(K) where U(K) is the uniform distribution over K
+        - that in-between is determined by the value of phi_0
+        - if X_0 is 1:
+            sample X_1 from U(K - {1})
+          else:
+            sample X_1 from an in-between 1 and U(K - {1})
+        - if X_0 or X_1 is 2:
+            sample X_2 from U(K - {2})
+          else:
+            sample X_2 from an in-between 2 and U(K - {2})
+        - take X_3 as the remaining value in K - {X_0, X_1, X_2}
+
+    Phis can go from 0 to 1. We define the variability as the mean of all phis.
+
+    Args:
+        phis (List[float]): a list of 3 floats between 0 and 1
+    """
+    phi_0, phi_1, phi_2 = phis
+    K = set([0, 1, 2, 3])
+    X = [0, 0, 0, 0]
+    # Sample X_0
+    probs_x0_constant = np.array([1, 0, 0, 0])
+    probs_x0_uniform = np.array([1 / 4, 1 / 4, 1 / 4, 1 / 4])
+    probs_x0 = phi_0 * probs_x0_uniform + (1 - phi_0) * probs_x0_constant
+    X[0] = np.random.choice(list(K), p=probs_x0)
+    K.remove(X[0])
+    # Sample X_1
+    if X[0] == 1:
+        probs_x1 = np.array([1 / 3 for j in K])
+    else:
+        probs_x1_constant = np.array([1 if j == 1 else 0 for j in K])
+        probs_x1_uniform = np.array([1 / 3 for j in K])
+        probs_x1 = phi_1 * probs_x1_uniform + (1 - phi_1) * probs_x1_constant
+    X[1] = np.random.choice(list(K), p=probs_x1)
+    K.remove(X[1])
+    # Sample X_2
+    if X[0] == 2 or X[1] == 2:
+        probs_x2 = np.array([1 / 2 for j in K])
+    else:
+        probs_x2_constant = np.array([1 if j == 2 else 0 for j in K])
+        probs_x2_uniform = np.array([1 / 2 for j in K])
+        probs_x2 = phi_2 * probs_x2_uniform + (1 - phi_2) * probs_x2_constant
+    X[2] = np.random.choice(list(K), p=probs_x2)
+    K.remove(X[2])
+    # Sample (take) X_3
+    X[3] = list(K)[0]
+    return X
+
+
+def compute_entropy(dict_values_to_count: dict):
+    entropy = 0
+    total_count = sum(dict_values_to_count.values())
+    for count in dict_values_to_count.values():
+        prob = count / total_count
+        entropy -= prob * np.log2(prob)
+    return entropy
 
 
 def compute_group_sizes(agent_map: jnp.ndarray) -> float:

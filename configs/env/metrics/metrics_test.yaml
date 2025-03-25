@@ -8,6 +8,7 @@ measures:
     - values_fruits
     - map_scaling_factors
     - energy_fruit_max_abs
+    - entropy_fruits
   immediate:
     - do_action_eat
     - do_action_transfer

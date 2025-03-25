@@ -112,9 +112,11 @@ variability_fruits:
   - 0.1
   - 0.5
   - 1
+omega: 0.1
+factors_fruits: [-1, -0.2, 0.5, 1]
 
-# The variability mode, either "time" (cluster's energy value changes over time) or "space" (cluster's energy value changes over space)
-mode_variability_fruits: "space"
+# The variability mode, either "time" (cluster's energy value changes over time) or "space_sin"/"space_entropy" (cluster's energy value changes over space)
+mode_variability_fruits: "space_entropy"
 
 
 # ======================== Agent Parameters ========================

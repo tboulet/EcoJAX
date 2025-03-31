@@ -2029,10 +2029,10 @@ class GridworldEnv(EcoEnvironment):
         )
 
         # Coherent values
-        dict_densities_fruits = {"zero": 0, "low": 0.1, "high": 0.95, "full": 1}
+        dict_densities_fruits = {"zero": 0, "low": 0.1, "medium" : 0.2, "high": 0.5, "full": 1}
         names_density_fruits_considered = ["low", "high"]
         # Coherent values but (TODO) uncertain what "high" means for density of agents
-        dict_densities_agents = {"zero": 0, "low": 0.05, "medium": 0.25, "high": 0.7}
+        dict_densities_agents = {"zero": 0, "low": 0.01, "medium": 0.1, "high": 0.5}
         names_density_agents_considered = ["zero", "medium"]
         # Coherent values to check any effect (notablly infantile behavior)
         dict_nhs = {"zero": 0, "typical": 0.30, "maximal": 1}

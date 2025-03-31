@@ -45,10 +45,10 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 ## Iterate over the seeds
 seed_max=100
-benchmark_name='bench26_fp_hc'
+benchmark_name='bench27_fp_hc'
 for _ in $(seq 1 $seed_max); do
     seed=$RANDOM 
-    list_omega=(1 0.1 0.4 0.7 0)
+    list_omega=(0 0.1 0.2 0.6 1)
     for i in $(seq 0 $((${#list_omega[@]} - 1))); do
         omega=${list_omega[$i]}
         run_name="run_$benchmark_name-$initial_date/omega_$omega/seed_$seed"

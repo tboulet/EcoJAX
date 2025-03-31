@@ -2228,10 +2228,10 @@ class GridworldEnv(EcoEnvironment):
                         )
                         key_random, *subkeys = jax.random.split(key_random, 5)
                         id_fruit_to_name_value_and_direction = {
-                            0: ("positive", "forward"),
+                            0: ("positive", "right"),
                             1: ("slightly positive", "left"),
                             2: ("zero", "backward"),
-                            3: ("negative", "right"),
+                            3: ("negative", "forward"),
                         }
                         for id_fruit, (
                             name_value_fruit,
@@ -2246,12 +2246,12 @@ class GridworldEnv(EcoEnvironment):
                             idx_fruit = self.dict_name_channel_to_idx_visual_field[
                                 f"fruits_{id_fruit}"
                             ]
-                            visual_field = self.add_pseudo_cluster(
+                            visual_field = self.add_pseudo_cluster2(
                                 visual_field,
-                                idx_fruit,
+                                idx_fruit_batch,
                                 density_fruit,
                                 density_agents,
-                                direction,
+                                direction_batch,
                                 subkeys[id_fruit],
                             )
 
@@ -2448,6 +2448,49 @@ class GridworldEnv(EcoEnvironment):
 
         return visual_field
 
+    def add_pseudo_cluster2(
+        self,
+        visual_field,
+        idx_fruit: jnp.ndarray,
+        density_fruit,
+        density_agents,
+        directions: jnp.ndarray,
+        key_random: jnp.ndarray,
+        range_cluster=3,
+    ):
+        """Add a pseudo-cluster of fruits and agents in the visual field of the agents.
+        Version where idx_fruit and directions are batched arrays of size pop_size.
+        """
+        idx_agent = self.dict_name_channel_to_idx_visual_field["agents"]
+        pop_size, h, w, c = visual_field.shape
+        assert (
+            h >= 2 * range_cluster + 1 and w >= 2 * range_cluster + 1
+        ), "Map is too small to apply cluster."
+        
+        # Define possible masks for each direction
+        base_masks = jnp.zeros((5, h, w), dtype=bool)
+        base_masks = base_masks.at[0, :3, 3:-3].set(True)  # Forward
+        base_masks = base_masks.at[1, -3:, 3:-3].set(True)  # Backward
+        base_masks = base_masks.at[2, 3:-3, :3].set(True)  # Left
+        base_masks = base_masks.at[3, 3:-3, -3:].set(True)  # Right
+        mid_h, mid_w = h // 2, w // 2
+        base_masks = base_masks.at[4, mid_h - range_cluster : mid_h + range_cluster + 1, mid_w - range_cluster : mid_w + range_cluster + 1].set(True)  # Center
+        
+        # Gather masks based on directions
+        mask = base_masks[directions]
+        
+        # Generate random probabilities for fruit and agents
+        subkey_fruit, subkey_agents = jax.random.split(key_random)
+        fruit_noise = jax.random.bernoulli(subkey_fruit, p=density_fruit, shape=(pop_size, h, w))
+        agent_noise = jax.random.bernoulli(subkey_agents, p=density_agents, shape=(pop_size, h, w))
+        
+        # Apply fruit and agent placement using the mask with batched fruit indices
+        visual_field = visual_field.at[jnp.arange(pop_size), :, :, idx_fruit].add(mask * fruit_noise)
+        visual_field = visual_field.at[:, :, :, idx_agent].add(mask * agent_noise)
+        
+        return visual_field
+    
+     
     def compute_on_render_behavior_measures(
         self,
         state_species: StateSpecies,

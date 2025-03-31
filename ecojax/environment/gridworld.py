@@ -21,6 +21,7 @@ from tqdm import tqdm
 from ecojax.agents.base_agent_species import AgentSpecies
 from ecojax.core.eco_info import EcoInformation
 from ecojax.environment import EcoEnvironment
+from ecojax.environment.grid_variability import get_grid_of_variability
 from ecojax.metrics.aggregators import Aggregator
 from ecojax.spaces import DictSpace, EcojaxSpace, DiscreteSpace, ContinuousSpace
 from ecojax.types import ActionAgent, ObservationAgent, StateEnv, StateSpecies
@@ -300,10 +301,10 @@ class GridworldEnv(EcoEnvironment):
             self.n_quadri_clusters_x = self.n_clusters_x_fruit_i // 2  # 20 // 2 = 10
             self.n_quadri_clusters_y = self.n_clusters_y_fruit_i // 2
             self.map_scaling_factors = jnp.ones(shape=(self.height, self.width))
-
-            # Define the factors by sampling if mode_variability_fruits is "space_entropy":
+            self.factors_fruits = np.random.permutation(self.factors_fruits) # randomize for alternating idx2factor between runs
+            
+            # Define the factors by sampling if mode_variability_fruits is "space_entropy"/"space_diffusion":
             if self.mode_variability_fruits == "space_entropy":
-                self.factors_fruits = np.random.permutation(self.factors_fruits) # randomize for alternating idx2factor between runs
                 assert (
                     0 <= self.omega <= 1
                 ), f"Space variability must be in [0, 1], but got omega={self.omega}"
@@ -333,6 +334,26 @@ class GridworldEnv(EcoEnvironment):
                 self.entropy_fruits = compute_entropy(dict_values_to_count)
                 print(f"[INFO] Entropy of the fruit distribution: {self.entropy_fruits}")
 
+            elif self.mode_variability_fruits == "space_diffusion":
+                clusters_to_factors: jnp.ndarray = jnp.zeros(
+                    (self.n_clusters_x_fruit_i, self.n_clusters_y_fruit_i)
+            )
+                quadri_cluster_to_grid_indexes = get_grid_of_variability(
+                    var_target = self.omega * 3, # cause var_target is in [0, 3]
+                    H = self.n_quadri_clusters_x,
+                    W = self.n_quadri_clusters_y,
+                    diffusion_rate=0.5,
+                    iterations=10000,
+                )
+                for x_quadri in range(self.n_quadri_clusters_x):
+                    for y_quadri in range(self.n_quadri_clusters_y):
+                        indexes_sampled = quadri_cluster_to_grid_indexes[x_quadri, y_quadri]
+                        for x in range(2):
+                            for y in range(2):
+                                clusters_to_factors = clusters_to_factors.at[
+                                    x_quadri * 2 + x, y_quadri * 2 + y
+                                ].set(self.factors_fruits[indexes_sampled[x * 2 + y]])
+                                
             for x in range(self.n_clusters_x_fruit_i):
                 for y in range(self.n_clusters_y_fruit_i):
                     # Get the coordinates of the center of the cluster
@@ -359,7 +380,7 @@ class GridworldEnv(EcoEnvironment):
                         factor = jnp.cos(2 * jnp.pi * x_i * w / 2) * jnp.cos(
                             2 * jnp.pi * y_i * w / 2
                         )
-                    elif self.mode_variability_fruits == "space_entropy":
+                    elif self.mode_variability_fruits in ["space_entropy", "space_diffusion"]:
                         factor = clusters_to_factors[x, y]
 
                     elif self.mode_variability_fruits == "time":
@@ -1837,7 +1858,7 @@ class GridworldEnv(EcoEnvironment):
                         dict_measures[f"value_fruits {id_fruit}/value_fruits"] = (
                             value_fruit
                         )
-                elif self.mode_variability_fruits in ["space_sin", "space_entropy"]:
+                elif self.mode_variability_fruits in ["space_sin", "space_entropy", "space_diffusion"]:
                     dict_measures[f"map_scaling_factors"] = self.map_scaling_factors
                 else:
                     raise ValueError(

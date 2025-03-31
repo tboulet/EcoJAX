@@ -45,7 +45,7 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 ## Iterate over the seeds
 seed_max=100
-benchmark_name='bench23_fp_hc'
+benchmark_name='bench26_fp_hc'
 for _ in $(seq 1 $seed_max); do
     seed=$RANDOM 
     list_omega=(1 0.1 0.4 0.7 0)
@@ -61,7 +61,7 @@ for _ in $(seq 1 $seed_max); do
             model=region \
             env=fruits_plants \
             agents.do_include_id_fruit=True \
-            env.mode_variability_fruits=space_entropy \
+            env.mode_variability_fruits=space_diffusion \
             env.omega=$omega \
             model.mlp_region_config.hidden_dims=[] \
             model.mlp_config.hidden_dims=[10] \

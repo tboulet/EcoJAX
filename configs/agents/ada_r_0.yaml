@@ -21,6 +21,7 @@ do_use_different_model_fruit: False
 do_use_decision_model: False
 decision_model_config:
   hidden_dims: []
+factor_normalization_table_value_fruits: 1
 
 # ======================== Evolution Hyperparameters ========================
 mode_weights_transmission: none # initial, final, none

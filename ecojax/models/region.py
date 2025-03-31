@@ -39,6 +39,7 @@ class RegionalModel(BaseModel):
     weighting_method: str
     mlp_region_config: Dict[str, Any]
     mlp_config: Dict[str, Any]
+    factor_normalization_table_value_fruits: float
     
     def obs_to_encoding(
         self, obs: ObservationAgent, key_random: jnp.ndarray
@@ -55,6 +56,8 @@ class RegionalModel(BaseModel):
         visual_field = obs["visual_field"]
         list_values = []
         for key, value in obs.items():
+            if key == "table_value_fruits":
+                value /= self.factor_normalization_table_value_fruits
             if key != "visual_field":
                 shape_value = value.shape
                 if len(shape_value) == 0:

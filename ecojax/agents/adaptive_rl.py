@@ -114,7 +114,9 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
             "do_use_different_model_fruit"
         ]  # if False, just average the fruit embeddings. If True, concatenate them and apply the decision model that should output (n_actions,) logits
         self.do_use_decision_model: bool = self.config["do_use_decision_model"]
-
+        self.factor_normalization_table_value_fruits = self.config[
+            "factor_normalization_table_value_fruits"
+        ]
         assert (
             int(self.do_include_id_fruit)
             + int(self.do_use_different_model_fruit)
@@ -279,7 +281,9 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
                     for id_fruit, x_fruit in enumerate(list_x_fruit):
                         key_random, subkey = random.split(key_random)
                         config_model_fruit_i = deepcopy(config_model)
-                        config_model_fruit_i["name"] = f"{config_model['name']}_fruit_{id_fruit}"
+                        config_model_fruit_i["name"] = (
+                            f"{config_model['name']}_fruit_{id_fruit}"
+                        )
                         encoding_fruit = model_class(
                             space_input=self.space_observation_individual_fruit,
                             space_output=spaces.ContinuousSpace(
@@ -301,7 +305,7 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
                         key_random, subkey = random.split(key_random)
                         encoding_fruit = model_fruit(x=x_fruit, key_random=subkey)
                         list_encoding_fruit.append(encoding_fruit)
-                    
+
                 # 4) Apply the decision model, or average the fruit encodings
                 if self.do_use_decision_model:
                     # Concatenate the fruit encodings and apply the decision model
@@ -414,7 +418,13 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
         if hp is None:
             hp = self.init_hp()
         if table_value_fruits is None:
-            table_value_fruits = jnp.zeros((4,))
+            key_random, subkey = random.split(key_random)
+            table_value_fruits = random.uniform(
+                subkey,
+                (4,),
+                minval=-self.factor_normalization_table_value_fruits,
+                maxval=self.factor_normalization_table_value_fruits,
+            )
         if (
             table_value_fruits_initial is None
             and self.mode_weights_transmission == "initial"
@@ -556,7 +566,9 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
         new_mutation = mutate_scalar(
             value=agent.hp.strength_mutation, range=(0, None), key_random=subkeys[0]
         )
-        new_mutation = agent.hp.strength_mutation # fix mutation strength TODO : remove this line
+        new_mutation = (
+            agent.hp.strength_mutation
+        )  # fix mutation strength TODO : remove this line
         new_hp = HyperParametersAdaRL(
             strength_mutation=new_mutation,
         )
@@ -684,7 +696,7 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
             )
             key_random, subkey = random.split(key_random)
             action = random.categorical(key_random, logits=logits)
-            
+
             # # Debug code
             # idx_action = input()
             # while True:
@@ -717,6 +729,7 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
 
             # Update the agent's state and act
             return agent, action, dict_measures
+
         batch_keys = random.split(key_random, self.n_agents_max)
         new_agents, actions, dict_measures = jax.vmap(react_single_agent)(
             key_random=batch_keys,
@@ -810,7 +823,7 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
             if name_measure == "params_reward_model":
                 for name_param, values_param in state.agents.params_reward.items():
                     dict_measures[f"params_reward_model {name_param}"] = values_param
-                    
+
             if name_measure == "weights_agents":
                 continue
                 # Metric for logging the weights between Gridworld env and the first layer of the neural network

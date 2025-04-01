@@ -418,13 +418,7 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
         if hp is None:
             hp = self.init_hp()
         if table_value_fruits is None:
-            key_random, subkey = random.split(key_random)
-            table_value_fruits = random.uniform(
-                subkey,
-                (4,),
-                minval=-self.factor_normalization_table_value_fruits,
-                maxval=self.factor_normalization_table_value_fruits,
-            )
+            table_value_fruits = jnp.zeros((4,))
         if (
             table_value_fruits_initial is None
             and self.mode_weights_transmission == "initial"

@@ -2029,11 +2029,11 @@ class GridworldEnv(EcoEnvironment):
         )
 
         # Coherent values
-        dict_densities_fruits = {"zero": 0, "low": 0.1, "medium" : 0.2, "high": 0.5, "full": 1}
-        names_density_fruits_considered = ["low", "high"]
+        dict_densities_fruits = {"zero": 0, "low": 0.2, "medium" : 0.35, "high": 0.5, "full": 1}
+        names_density_fruits_considered = ["low", "full"]
         # Coherent values but (TODO) uncertain what "high" means for density of agents
-        dict_densities_agents = {"zero": 0, "low": 0.01, "medium": 0.1, "high": 0.5}
-        names_density_agents_considered = ["zero", "medium"]
+        dict_densities_agents = {"zero": 0, "low": 0.01, "medium": 0.1, "high": 0.5, "full": 1}
+        names_density_agents_considered = ["zero", "full"]
         # Coherent values to check any effect (notablly infantile behavior)
         dict_nhs = {"zero": 0, "typical": 0.30, "maximal": 1}
         names_nhs_considered = ["typical"]
@@ -2310,12 +2310,12 @@ class GridworldEnv(EcoEnvironment):
 
             # Measure 2 : P(move to cluster c | nh, value, clusters_seen_rhos=[(low, low), (high, low), (low, high), (high, high)])
             # Measure which cluster is preferred among the four (dense/not dense in fruit, dense/not dense in agents)
-            direction_to_names_densities_fruits_agents = {
-                "forward": ("low", "low"),
-                "backward": ("high", "low"),
-                "left": ("low", "high"),
-                "right": ("high", "high"),
-            }
+            list_names_densities_fruits_agents = [
+                ("low", "zero"),
+                ("full", "zero"),
+                ("low", "full"),
+                ("full", "full"),
+            ]
             for id_fruit in range(4):
                 idx_fruit = self.dict_name_channel_to_idx_visual_field[
                     f"fruits_{id_fruit}"
@@ -2324,6 +2324,13 @@ class GridworldEnv(EcoEnvironment):
                     nh = dict_nhs[name_nh]
                     for name_value_fruit in names_values_fruits_considered:
                         value_fruit = dict_values_fruits[name_value_fruit]
+                        
+                        # Generate randomly the directions : create a (n, 4) array with the directions
+                        key_random, subkey = jax.random.split(key_random)
+                        directions_to_jth_cluster = self.generate_permuted_array(
+                            key_random=subkey, n=n, array_to_permute=jnp.arange(4)
+                        ) # (n, 4) of permutations of [0, 1, 2, 3], where [i, j] correspond to the direction of the cluster of j-th value
+                        
                         # Create empty observation
                         visual_field = jnp.zeros(
                             (
@@ -2332,23 +2339,25 @@ class GridworldEnv(EcoEnvironment):
                                 2 * v + 1,
                                 len(self.list_indexes_channels_visual_field),
                             )
-                        )
+                        ).at[
+                            :,
+                            v,
+                            v,
+                            self.dict_name_channel_to_idx_visual_field["agents"],
+                        ].set(
+                            1
+                        )  # Add an agent at the center of the visual field
 
                         # Add pseudo-cluster of fruits and agents in the visual field
                         key_random, *subkeys = jax.random.split(key_random, 5)
-                        for i, (
-                            direction,
-                            (name_density_fruit, name_density_agents),
-                        ) in enumerate(
-                            direction_to_names_densities_fruits_agents.items()
-                        ):
-                            visual_field = self.add_pseudo_cluster(
+                        for j, (name_density_fruit, name_density_agents)in enumerate(list_names_densities_fruits_agents):
+                            visual_field = self.add_pseudo_cluster2(
                                 visual_field,
-                                idx_fruit,
+                                jnp.full((n,), idx_fruit),
                                 dict_densities_fruits[name_density_fruit],
                                 dict_densities_agents[name_density_agents],
-                                direction,
-                                subkeys[i],
+                                directions_to_jth_cluster[:, j],
+                                subkeys[j],
                             )
 
                         # Create the observation
@@ -2387,13 +2396,19 @@ class GridworldEnv(EcoEnvironment):
                         )
                         logits = new_state_species.agents.logits_last
                         probs = jax.nn.softmax(logits, axis=-1)
-                        for direction, (
-                            name_density_fruit,
-                            name_density_agents,
-                        ) in direction_to_names_densities_fruits_agents.items():
+                        
+                        for j in range(4):
+                            # Step 1: For each agent i, get the direction d corresponding to caracteristics j
+                            direction_for_j = directions_to_jth_cluster[:, j]  # Shape (n,)
+
+                            # Step 2: For each agent i, get prob[i, d] where d = direction_for_j[i]
+                            probs_for_j = jnp.take_along_axis(probs, direction_for_j[:, None], axis=1).flatten()  # Shape (n,)
+
+                            # Step 3: Store the mean probability across agents for caracteristics j
+                            name_density_fruit, name_density_agents = list_names_densities_fruits_agents[j]
                             measures[
                                 f"moving P towards rho_fruit={name_density_fruit} rho_agents={name_density_agents} (fruit {id_fruit}) | nh={name_nh}, value={name_value_fruit}/moving"
-                            ] = probs[:, self.action_to_idx[direction]]
+                            ] = probs_for_j
 
         else:
             raise ValueError(f"Unknown behavior measure: {name_measure}")

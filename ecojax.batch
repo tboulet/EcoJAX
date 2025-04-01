@@ -45,7 +45,7 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 ## Iterate over the seeds
 seed_max=100
-benchmark_name='bench28_fp_hc'
+benchmark_name='bench29_fp_hc'
 for _ in $(seq 1 $seed_max); do
     seed=$RANDOM 
     list_omega=(0 0.1 0.2 0.6 1)

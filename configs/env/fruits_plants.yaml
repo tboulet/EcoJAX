@@ -106,7 +106,7 @@ energy_fruit_min : -5
 side_cluster_fruits: 11
 
 # The range of each fruit cluster, which is the number of tiles around the center tile where fruits will be generated
-range_cluster_fruits: 3
+range_cluster_fruits: 4
 
 # The list of variabilities of the energy of the fruits, of length 4
 variability_fruits:

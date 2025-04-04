@@ -3,6 +3,7 @@ import os
 
 import jax
 import numpy as np
+import yaml
 from ecojax.core.eco_info import EcoInformation
 from ecojax.evolution.metrics import compute_eco_return, get_phylogenetic_tree
 from ecojax.loggers import BaseLogger
@@ -14,64 +15,66 @@ from typing import Dict, List, Tuple, Type, Union
 class LoggerCSV(BaseLogger):
     def __init__(
         self,
-        dir_metrics: str,
-        do_log_phylo_tree: bool = True,
-        period_compute_metrics: int = 5000,
+        log_dir: str,
+        config_run: Dict,
+        timestep_key: str = "_step",
     ):
-        # Metrics
-        os.makedirs(os.path.dirname(dir_metrics), exist_ok=True)
-        self.file_csv_metrics = open(
-            f"{dir_metrics}/metrics.csv", "w", newline="", encoding="utf-8"
-        )
-        self.writer_metrics_csv = csv.writer(self.file_csv_metrics)
-        self.writer_metrics_csv.writerow(
-            ["timestep", "metric_name", "agent_idx", "value"]
-        )
-        # Eco return metrics
-        os.makedirs(os.path.dirname(dir_metrics), exist_ok=True)
-        self.path_eco_return_metrics = f"{dir_metrics}/eco_return_metrics.csv"
-        self.period_compute_metrics = period_compute_metrics
-        self.current_agent_idx_to_id = {}  # map current agent index to its ID
-        self.id_to_agent_idx = {}  # map ID to the agent index when he was living
-        self.id_to_timestep_born = {}  # map ID to the timestep when he was born
-        self.id_to_parent_id = {}  # map ID to the parent ID
-        # Phylo tree
-        self.do_log_phylo_tree = do_log_phylo_tree
-        if self.do_log_phylo_tree:
-            self.path_phylo_tree = f"{dir_metrics}/phylo_tree.png"
+        os.makedirs(log_dir, exist_ok=True)
+        self.timestep_key = timestep_key
+        # Log config as yaml
+        with open(f"{log_dir}/config.yaml", "w") as f:
+            yaml.dump(config_run, f)
+        # Initialize scalar logger
+
+        self.csv_path = os.path.join(log_dir, "scalars.csv")
+        self.headers = [self.timestep_key]
+        self.seen_fields = set(self.headers)
+
+        # Create empty file and write initial header
+        with open(self.csv_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=self.headers)
+            writer.writeheader()
 
     def log_scalars(
         self,
         dict_scalars: Dict[str, float],
         timestep: int,
     ):
-        for metric_name, scalar in dict_scalars.items():
-            self.writer_metrics_csv.writerow(
-                [
-                    timestep,
-                    metric_name,
-                    "",
-                    float(scalar),
-                ]
-            )
+        row_dict = {self.timestep_key: timestep, **dict_scalars}
+        new_keys = [k for k in dict_scalars if k not in self.seen_fields]
 
-    def log_histograms(
-        self,
-        dict_histograms: Dict[str, List[float]],
-        timestep: int,
-    ):
-        for metric_name, histogram in dict_histograms.items():
-            for agent_idx in range(len(histogram)):
-                value = histogram[agent_idx]
-                if not np.isnan(value):
-                    self.writer_metrics_csv.writerow(
-                        [
-                            timestep,
-                            metric_name,
-                            agent_idx,
-                            value,
-                        ]
-                    )
+        if new_keys:
+            # Update header and seen fields
+            self.headers.extend(new_keys)
+            self.seen_fields.update(new_keys)
+            self._expand_csv_with_new_keys(new_keys)
+
+        # Build full row with missing values as ""
+        complete_row = {key: row_dict.get(key, "") for key in self.headers}
+
+        with open(self.csv_path, "a", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=self.headers)
+            writer.writerow(complete_row)
+
+    def _expand_csv_with_new_keys(self, new_keys):
+        # Read all rows
+        with open(self.csv_path, "r", newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            existing_rows = list(reader)
+
+        # Update rows with NaN ("") for new keys
+        updated_rows = []
+        for row in existing_rows:
+            for key in new_keys:
+                row[key] = ""
+            updated_rows.append(row)
+
+        # Rewrite file with updated headers and rows
+        with open(self.csv_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=self.headers)
+            writer.writeheader()
+            writer.writerows(updated_rows)
+
 
     def log_eco_metrics(
         self,
@@ -141,7 +144,7 @@ class LoggerCSV(BaseLogger):
                         eco_return,
                     ]
                 )
-                
+
             # Save the phylo tree
             if self.do_log_phylo_tree:
                 phylotree_fig = get_phylogenetic_tree(
@@ -152,9 +155,4 @@ class LoggerCSV(BaseLogger):
                 print(f"Phylo tree saved at {self.path_phylo_tree}")
 
     def close(self):
-        try:
-            self.file_csv_metrics.close()
-            if self.do_log_phylo_tree:
-                self.file_csv_phylo_tree.close()
-        except Exception as e:
-            print(f"Error while closing the logger: {e}")
+        pass

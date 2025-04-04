@@ -3,6 +3,7 @@ venv*
 
 # Data
 data/
+metrics/
 
 # Logs (text files or other output files)
 logs/

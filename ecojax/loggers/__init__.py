@@ -17,19 +17,17 @@ class BaseLogger(ABC):
         """Log dictionary of scalars"""
         raise NotImplementedError
 
-    @abstractmethod
     def log_histograms(
         self,
         dict_histograms: Dict[str, List[float]],
         timestep: int,
     ):
         """Log dictionary of histograms"""
-        raise NotImplementedError
+        pass
 
-    @abstractmethod
     def close(self):
         """Close the logger"""
-        raise NotImplementedError
+        pass
 
     def log_eco_metrics(
         self,

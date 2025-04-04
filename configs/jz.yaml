@@ -13,7 +13,7 @@ n_actions: ${eval:'len(${env.list_actions})'}
 do_wandb : False
 wandb_config:
   project : EcoJAX
-do_tb : True
+do_tb : False
 do_cli : False
 do_csv : False
 do_tqdm : True

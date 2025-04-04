@@ -57,7 +57,7 @@ def eco_loop(
     n_timesteps: int = config["n_timesteps"]
     period_eval: int = int(max(1, config["period_eval"]))
     do_jit: bool = config["do_jit"]
-    
+
     # Logging
     do_wandb: bool = config["do_wandb"]
     do_tb: bool = config["do_tb"]
@@ -70,14 +70,17 @@ def eco_loop(
     do_global_log: bool = config["do_global_log"]
 
     # Initialize loggers
-    run_name = config.get(
+    run_name : str = config.get(
         "run_name", datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     )
     print(f"\nStarting run {run_name}")
     if not do_global_log:
-        dir_metrics = f"./logs/{run_name}"
+        log_dir = f"./logs/{run_name}"
+        run_name_sanitized = run_name.replace("/", "_").replace("\\", "_")
+        log_dir_metrics = f"./metrics/{run_name_sanitized}"
     else:
-        dir_metrics = "./logs"
+        log_dir = "./logs"
+        log_dir_metrics = "./metrics/last_run"
 
     list_loggers: List[Type[BaseLogger]] = []
     if do_wandb:
@@ -93,7 +96,12 @@ def eco_loop(
     if do_cli:
         list_loggers.append(LoggerCLI())
     if do_csv:
-        list_loggers.append(LoggerCSV(dir_metrics=dir_metrics, do_log_phylo_tree=False))
+        list_loggers.append(
+            LoggerCSV(
+                log_dir=log_dir_metrics,
+                config_run=config,
+            )
+        )
     if do_tqdm:
         list_loggers.append(LoggerTQDM(n_timesteps=n_timesteps))
     if do_snakeviz:
@@ -130,10 +138,12 @@ def eco_loop(
                     metrics_global[key] = value
                     metrics_global[f"{key}/pop_mean"] = jnp.mean(value)
                     metrics_global[f"{key}/pop_std"] = jnp.std(value)
-      
+
         # Log the metrics
         metrics_global.update(get_runtime_metrics())
-        metrics_scalar, metrics_histogram, metrics_map = get_dict_metrics_by_type(metrics_global)
+        metrics_scalar, metrics_histogram, metrics_map = get_dict_metrics_by_type(
+            metrics_global
+        )
         for logger in list_loggers:
             logger.log_scalars(metrics_scalar, t)
             logger.log_histograms(metrics_histogram, t)
@@ -213,7 +223,9 @@ def eco_loop(
     metrics_env = info_env.get("metrics", {})
     metrics_species = info_species.get("metrics", {})
     metrics_global = {**metrics_env, **metrics_species}
-    metrics_scalar, metrics_histogram, metrics_map = get_dict_metrics_by_type(metrics_global)
+    metrics_scalar, metrics_histogram, metrics_map = get_dict_metrics_by_type(
+        metrics_global
+    )
     for logger in list_loggers:
         logger.log_scalars(metrics_scalar, timestep=0)
         logger.log_histograms(metrics_histogram, timestep=0)

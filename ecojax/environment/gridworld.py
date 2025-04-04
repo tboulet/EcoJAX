@@ -302,6 +302,7 @@ class GridworldEnv(EcoEnvironment):
             self.n_quadri_clusters_y = self.n_clusters_y_fruit_i // 2
             self.map_scaling_factors = jnp.ones(shape=(self.height, self.width))
             self.factors_fruits = np.random.permutation(self.factors_fruits) # randomize for alternating idx2factor between runs
+            print(f"[INFO] Factors fruits: {self.factors_fruits}")
             
             # Define the factors by sampling if mode_variability_fruits is "space_entropy"/"space_diffusion":
             if self.mode_variability_fruits == "space_entropy":

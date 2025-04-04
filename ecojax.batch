@@ -45,7 +45,7 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 ## Iterate over the seeds
 seed_max=100
-benchmark_name='bench30_fp_hc'
+benchmark_name='bench31_fp_hc'
 for _ in $(seq 1 $seed_max); do
     seed=$RANDOM 
     list_omega=(0 0.1 0.2 0.6 1)
@@ -58,12 +58,12 @@ for _ in $(seq 1 $seed_max); do
         python run.py --config-name dgx do_wandb=True env/metrics=metrics_dgx +benchmark_name=$benchmark_name seed=$seed +run_name=\'$run_name\' \
             env.sum_energy_map_ref=275 \
             agents=ada_r_hc \
-            model=region \
             env=fruits_plants \
-            agents.do_include_id_fruit=True \
             env.mode_variability_fruits=space_diffusion \
             env.omega=$omega \
-            model.mlp_region_config.hidden_dims=[] \
+            agents.do_include_id_fruit=True \
+            model=region \
+            model.mlp_region_config.hidden_dims=[10] \
             model.mlp_config.hidden_dims=[10] \
             > "$log_dir"/log.txt 2>&1
     done

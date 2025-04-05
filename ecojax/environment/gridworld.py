@@ -2158,6 +2158,7 @@ class GridworldEnv(EcoEnvironment):
                                     density_agents,
                                     "center",
                                     subkey,
+                                    range_cluster=self.vision_range_agent,
                                 )
 
                                 # Add an agent and a fruit at the center of the visual field
@@ -2434,7 +2435,7 @@ class GridworldEnv(EcoEnvironment):
         density_agents,
         direction: str,
         key_random: jnp.ndarray,
-        range_cluster=3,
+        range_cluster=6,
     ):
         """Add a pseudo-cluster of fruits and agents in the visual field of the agents."""
         idx_agent = self.dict_name_channel_to_idx_visual_field["agents"]
@@ -2449,13 +2450,13 @@ class GridworldEnv(EcoEnvironment):
 
         # Select the border area while excluding the corners
         if direction == "forward":
-            mask = mask.at[:, :3, 3:-3].set(True)  # Exclude first & last 3 columns
+            mask = mask.at[:, :range_cluster, range_cluster:-range_cluster].set(True)  # Exclude first & last range_cluster columns
         elif direction == "backward":
-            mask = mask.at[:, -3:, 3:-3].set(True)  # Exclude first & last 3 columns
+            mask = mask.at[:, -range_cluster:, range_cluster:-range_cluster].set(True)  # Exclude first & last range_cluster columns
         elif direction == "left":
-            mask = mask.at[:, 3:-3, :3].set(True)  # Exclude first & last 3 rows
+            mask = mask.at[:, range_cluster:-range_cluster, :range_cluster].set(True)  # Exclude first & last range_cluster rows
         elif direction == "right":
-            mask = mask.at[:, 3:-3, -3:].set(True)  # Exclude first & last 3 rows
+            mask = mask.at[:, range_cluster:-range_cluster, -range_cluster:].set(True)  # Exclude first & last range_cluster rows
         elif direction == "center":
             mid_h, mid_w = h // 2, w // 2
             mask = mask.at[
@@ -2494,7 +2495,7 @@ class GridworldEnv(EcoEnvironment):
         density_agents,
         directions: jnp.ndarray,
         key_random: jnp.ndarray,
-        range_cluster=3,
+        range_cluster=6,
     ):
         """Add a pseudo-cluster of fruits and agents in the visual field of the agents.
         Version where idx_fruit and directions are batched arrays of size pop_size.
@@ -2507,10 +2508,10 @@ class GridworldEnv(EcoEnvironment):
         
         # Define possible masks for each direction
         base_masks = jnp.zeros((5, h, w), dtype=bool)
-        base_masks = base_masks.at[0, :3, 3:-3].set(True)  # Forward
-        base_masks = base_masks.at[1, 3:-3, :3].set(True)  # Left
-        base_masks = base_masks.at[2, -3:, 3:-3].set(True)  # Backward
-        base_masks = base_masks.at[3, 3:-3, -3:].set(True)  # Right
+        base_masks = base_masks.at[0, :range_cluster, range_cluster:-range_cluster].set(True)  # Forward
+        base_masks = base_masks.at[1, range_cluster:-range_cluster, :range_cluster].set(True)  # Left
+        base_masks = base_masks.at[2, -range_cluster:, range_cluster:-range_cluster].set(True)  # Backward
+        base_masks = base_masks.at[range_cluster, range_cluster:-range_cluster, -range_cluster:].set(True)  # Right
         mid_h, mid_w = h // 2, w // 2
         base_masks = base_masks.at[4, mid_h - range_cluster : mid_h + range_cluster + 1, mid_w - range_cluster : mid_w + range_cluster + 1].set(True)  # Center
         

@@ -1170,8 +1170,8 @@ class GridworldEnv(EcoEnvironment):
 
     def get_e_t(self, t: int) -> jnp.ndarray:
         """Get the energy of the fruits at time t."""
-        e_0 = self.e_fruit_0_abs_max
-        e_T = jnp.array(self.e_fruit_T_abs_max)
+        e_0 = jnp.array(self.e_fruit_0_abs_max, dtype=jnp.float32)
+        e_T = jnp.array(self.e_fruit_T_abs_max, dtype=jnp.float32)
         # e_t decrease linearly from e_0 to e_T in T/2 timesteps, then stay at e_T
         e_t = jax.lax.cond(
             t < self.t_fruit_T,

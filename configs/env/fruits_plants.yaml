@@ -89,13 +89,13 @@ p_base_fruit_growth : 0.0065
 # - If normalization is done, it is set so that the input of positive energy by unit of time correspond to (energy_fruit_max_abs_ref, sum_energy_map_ref)
 
 # The maximum absolute value of the energy of a fruit at the beginning of the simulation
-e_fruit_0_abs_max : 40 # (zero for no curriculum)
+e_fruit_0_abs_max : 40.0 # (zero for no curriculum)
 # The timestep where the final value of the energy of a fruit is reached
 t_fruit_T : 50000
 # Whether to do normalization of the energy of the fruits
 do_normalize_fruits : False
 # The maximum absolute value of the energy of a fruit at the end of the simulation (if do_normalize_fruits is True)
-e_fruit_T_abs_max : 20
+e_fruit_T_abs_max : 20.0
 # The reference values that caracterize a certain amount of energy input by unit of time
 e_fruit_abs_max_ref : 10
 sum_energy_map_ref : 300

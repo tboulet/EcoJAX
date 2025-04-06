@@ -1,8 +1,8 @@
 name : Gridworld
 
 # The dimensions of the gridworld
-height : 210
-width : 210
+height : 220
+width : 220
 
 # Whether the env is terminal, i.e. the simulation stops when all agents are dead
 is_terminal : True
@@ -36,7 +36,7 @@ radius_sun_perception : 40
 # ======================== Plants Dynamics ========================
 
 # The initial proportion of food tiles at the beginning of the simulation
-proportion_plant_initial : 0.0
+proportion_plant_initial : 0.3
 
 # Whether plant can grow inside of fruit clusters
 do_plant_grow_in_fruit_clusters : False
@@ -50,7 +50,7 @@ do_plant_grow_in_fruit_clusters : False
 # - logit(p_base_die_food) * 1_if_tile_is_food
 
 # The base probability of a non-food tile to grow spontaneously
-p_base_plant_growth : 0.000
+p_base_plant_growth : 0.001
 # The base probability of a food tile to die spontaneously
 p_base_plant_death : 0.0
 
@@ -89,24 +89,24 @@ p_base_fruit_growth : 0.0065
 # - If normalization is done, it is set so that the input of positive energy by unit of time correspond to (energy_fruit_max_abs_ref, sum_energy_map_ref)
 
 # The maximum absolute value of the energy of a fruit at the beginning of the simulation
-e_fruit_0_abs_max : 40.0 # (zero for no curriculum)
+e_fruit_0_abs_max : 30 # (zero for no curriculum)
 # The timestep where the final value of the energy of a fruit is reached
 t_fruit_T : 50000
 # Whether to do normalization of the energy of the fruits
-do_normalize_fruits : False
+do_normalize_fruits : True
 # The maximum absolute value of the energy of a fruit at the end of the simulation (if do_normalize_fruits is True)
-e_fruit_T_abs_max : 20.0
+e_fruit_T_abs_max : null
 # The reference values that caracterize a certain amount of energy input by unit of time
 e_fruit_abs_max_ref : 10
 sum_energy_map_ref : 300
 # The minimum value of the energy of a fruit
-energy_fruit_min : -20
+energy_fruit_min : -5
 
-# The number of tiles of the side of a fruit cluster. Must be an odd divider of H and W.
-side_cluster_fruits: 7
+# The number of tiles of the side of a fruit cluster. Must be a divider of H and W.
+side_cluster_fruits: 11
 
 # The range of each fruit cluster, which is the number of tiles around the center tile where fruits will be generated
-range_cluster_fruits: 2
+range_cluster_fruits: 3
 
 # The list of variabilities of the energy of the fruits, of length 4
 variability_fruits:
@@ -118,7 +118,7 @@ omega: 0.1
 factors_fruits: [1, 0.5, -0.2, -1]
 
 # The variability mode, either "time" (cluster's energy value changes over time) or "space_sin"/"space_entropy" (cluster's energy value changes over space)
-mode_variability_fruits: "space_entropy"
+mode_variability_fruits: "space_diffusion"
 
 
 # ======================== Agent Parameters ========================

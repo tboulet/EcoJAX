@@ -302,7 +302,6 @@ class GridworldEnv(EcoEnvironment):
             self.n_quadri_clusters_y = self.n_clusters_y_fruit_i // 2
             self.map_scaling_factors = jnp.ones(shape=(self.height, self.width))
             self.factors_fruits = np.random.permutation(self.factors_fruits) # randomize for alternating idx2factor between runs
-            print(f"[INFO] Factors fruits: {self.factors_fruits}")
             
             # Define the factors by sampling if mode_variability_fruits is "space_entropy"/"space_diffusion":
             if self.mode_variability_fruits == "space_entropy":
@@ -1170,8 +1169,8 @@ class GridworldEnv(EcoEnvironment):
 
     def get_e_t(self, t: int) -> jnp.ndarray:
         """Get the energy of the fruits at time t."""
-        e_0 = jnp.array(self.e_fruit_0_abs_max, dtype=jnp.float32)
-        e_T = jnp.array(self.e_fruit_T_abs_max, dtype=jnp.float32)
+        e_0 = self.e_fruit_0_abs_max
+        e_T = jnp.array(self.e_fruit_T_abs_max)
         # e_t decrease linearly from e_0 to e_T in T/2 timesteps, then stay at e_T
         e_t = jax.lax.cond(
             t < self.t_fruit_T,
@@ -2030,11 +2029,11 @@ class GridworldEnv(EcoEnvironment):
         )
 
         # Coherent values
-        dict_densities_fruits = {"zero": 0, "low": 0.2, "medium" : 0.35, "high": 0.5, "full": 1}
-        names_density_fruits_considered = ["low", "full"]
+        dict_densities_fruits = {"zero": 0, "low": 0.1, "high": 0.95, "full": 1}
+        names_density_fruits_considered = ["low", "high"]
         # Coherent values but (TODO) uncertain what "high" means for density of agents
-        dict_densities_agents = {"zero": 0, "low": 0.01, "medium": 0.1, "high": 0.5, "full": 1}
-        names_density_agents_considered = ["zero", "full"]
+        dict_densities_agents = {"zero": 0, "low": 0.05, "medium": 0.25, "high": 0.7}
+        names_density_agents_considered = ["zero", "medium"]
         # Coherent values to check any effect (notablly infantile behavior)
         dict_nhs = {"zero": 0, "typical": 0.30, "maximal": 1}
         names_nhs_considered = ["typical"]
@@ -2158,7 +2157,6 @@ class GridworldEnv(EcoEnvironment):
                                     density_agents,
                                     "center",
                                     subkey,
-                                    range_cluster=self.vision_range_agent,
                                 )
 
                                 # Add an agent and a fruit at the center of the visual field
@@ -2219,34 +2217,7 @@ class GridworldEnv(EcoEnvironment):
                     density_fruit = dict_densities_fruits[name_density_fruit]
                     for name_density_agents in names_density_agents_considered:
                         density_agents = dict_densities_agents[name_density_agents]
-                        
-                        # Generate randomly the directions : create a (n, 4) array with the directions
-                        key_random, subkey = jax.random.split(key_random)
-                        directions_to_jth_cluster = self.generate_permuted_array(
-                            key_random=subkey, n=n, array_to_permute=jnp.arange(4)
-                        ) # (n, 4) of permutations of [0, 1, 2, 3], where [i, j] correspond to the direction of the cluster of j-th value
-                        
-                        # Generate randomly the fruit indexes : create a (n, 4) array with the fruit indexes
-                        key_random, subkey = jax.random.split(key_random)
-                        idx_fruit_of_jth_cluster = self.generate_permuted_array(
-                            key_random=subkey, n=n, array_to_permute=jnp.array([self.dict_name_channel_to_idx_visual_field[f"fruits_{i}"] for i in range(4)])
-                        ) # (n, 4) of permutations of [2, 3, 4, 5], where [i, j] correspond to the fruit index of the cluster of j-th value
-                        
-                        # Generate randomly the indices of the values of the fruits
-                        table_value_fruits_indexes_batch = idx_fruit_of_jth_cluster - self.dict_name_channel_to_idx_visual_field["fruits_0"]
-                            # (n, 4) of permutations of [0, 1, 2, 3], where [i, j] correspond to the index of the value of the fruit of the cluster of j-th value
-                        
-                        # Create the table of values of the fruits
-                        list_name_values : List[str] = ["positive", "slightly positive", "zero", "negative"]
-                        array_table_value_fruits = jnp.array([dict_values_fruits[name] for name in list_name_values]) # (4,) like (1, 1/2, 0, -1)
-                        table_value_fruits = array_table_value_fruits[table_value_fruits_indexes_batch] # (n, 4) that corresponds to the actual values
-                        state_species = state_species.replace(
-                            agents=state_species.agents.replace(
-                                table_value_fruits=table_value_fruits
-                            )
-                        )        
-                                        
-                        # Build the visual field
+                        table_value_fruits = jnp.zeros((n, 4))
                         visual_field = jnp.zeros(
                             (
                                 n,
@@ -2254,7 +2225,37 @@ class GridworldEnv(EcoEnvironment):
                                 2 * v + 1,
                                 len(self.list_indexes_channels_visual_field),
                             )
-                        ).at[
+                        )
+                        key_random, *subkeys = jax.random.split(key_random, 5)
+                        id_fruit_to_name_value_and_direction = {
+                            0: ("positive", "forward"),
+                            1: ("slightly positive", "left"),
+                            2: ("zero", "backward"),
+                            3: ("negative", "right"),
+                        }
+                        for id_fruit, (
+                            name_value_fruit,
+                            direction,
+                        ) in id_fruit_to_name_value_and_direction.items():
+                            # Set the value of the fruit in the table
+                            value_fruit = dict_values_fruits[name_value_fruit]
+                            table_value_fruits = table_value_fruits.at[:, id_fruit].set(
+                                value_fruit
+                            )
+                            # Create a pseudo-cluster of fruits and agents in the visual field
+                            idx_fruit = self.dict_name_channel_to_idx_visual_field[
+                                f"fruits_{id_fruit}"
+                            ]
+                            visual_field = self.add_pseudo_cluster(
+                                visual_field,
+                                idx_fruit,
+                                density_fruit,
+                                density_agents,
+                                direction,
+                                subkeys[id_fruit],
+                            )
+
+                        visual_field = visual_field.at[
                             :,
                             v,
                             v,
@@ -2262,19 +2263,6 @@ class GridworldEnv(EcoEnvironment):
                         ].set(
                             1
                         )  # Add an agent at the center of the visual field
-                        
-                        # Add pseudo-clusters of fruits and agents in the visual field
-                        key_random, *subkeys = jax.random.split(key_random, 5)
-                        for j in range(4): 
-                            # For each j-th value, add a pseudo-cluster of fruits and agents in the visual field
-                            visual_field = self.add_pseudo_cluster2(
-                                visual_field,
-                                idx_fruit_of_jth_cluster[:, j],
-                                density_fruit,
-                                density_agents,
-                                directions_to_jth_cluster[:, j],
-                                subkeys[j],
-                            )
                         obs = {"visual_field": visual_field}
                         if "age" in self.list_observations:
                             obs["age"] = jnp.full(n, 50) / self.age_max
@@ -2284,10 +2272,13 @@ class GridworldEnv(EcoEnvironment):
                             obs["n_childrens"] = jnp.zeros(n)
                         if "novelty_hunger" in self.list_observations:
                             obs["novelty_hunger"] = (
-                                jnp.full((n, 4), 0.30).at[:, :].set(nh)
+                                jnp.full((n, 4), 0.30).at[:, id_fruit].set(nh)
                             )
-                            
-                        # Inference of the action
+                        state_species = state_species.replace(
+                            agents=state_species.agents.replace(
+                                table_value_fruits=table_value_fruits
+                            )
+                        )
                         key_random, subkey = jax.random.split(key_random)
                         new_state_species, actions, _ = self.agent_species.react(
                             state_species,
@@ -2297,27 +2288,22 @@ class GridworldEnv(EcoEnvironment):
                         )
                         logits = new_state_species.agents.logits_last
                         probs = jax.nn.softmax(logits, axis=-1)
-                        
-                        for j in range(4):
-                            # Step 1: For each agent i, get the direction d corresponding to quality j
-                            direction_for_j = directions_to_jth_cluster[:, j]  # Shape (n,)
-
-                            # Step 2: For each agent i, get prob[i, d] where d = direction_for_j[i]
-                            probs_for_j = jnp.take_along_axis(probs, direction_for_j[:, None], axis=1).flatten()  # Shape (n,)
-
-                            # Step 3: Store the mean probability across agents for quality j
+                        for id_fruit, (
+                            name_value_fruit,
+                            direction,
+                        ) in id_fruit_to_name_value_and_direction.items():
                             measures[
-                                f"moving P towards value={list_name_values[j]} | nh={name_nh}, density_fruit={name_density_fruit}, density_agents={name_density_agents}/moving"
-                            ] = probs_for_j
+                                f"moving P towards value={name_value_fruit} (fruit {id_fruit}) | nh={name_nh}, density_fruit={name_density_fruit}, density_agents={name_density_agents}/moving"
+                            ] = probs[:, self.action_to_idx[direction]]
 
             # Measure 2 : P(move to cluster c | nh, value, clusters_seen_rhos=[(low, low), (high, low), (low, high), (high, high)])
             # Measure which cluster is preferred among the four (dense/not dense in fruit, dense/not dense in agents)
-            list_names_densities_fruits_agents = [
-                ("low", "zero"),
-                ("full", "zero"),
-                ("low", "full"),
-                ("full", "full"),
-            ]
+            direction_to_names_densities_fruits_agents = {
+                "forward": ("low", "low"),
+                "backward": ("high", "low"),
+                "left": ("low", "high"),
+                "right": ("high", "high"),
+            }
             for id_fruit in range(4):
                 idx_fruit = self.dict_name_channel_to_idx_visual_field[
                     f"fruits_{id_fruit}"
@@ -2326,13 +2312,6 @@ class GridworldEnv(EcoEnvironment):
                     nh = dict_nhs[name_nh]
                     for name_value_fruit in names_values_fruits_considered:
                         value_fruit = dict_values_fruits[name_value_fruit]
-                        
-                        # Generate randomly the directions : create a (n, 4) array with the directions
-                        key_random, subkey = jax.random.split(key_random)
-                        directions_to_jth_cluster = self.generate_permuted_array(
-                            key_random=subkey, n=n, array_to_permute=jnp.arange(4)
-                        ) # (n, 4) of permutations of [0, 1, 2, 3], where [i, j] correspond to the direction of the cluster of j-th value
-                        
                         # Create empty observation
                         visual_field = jnp.zeros(
                             (
@@ -2341,25 +2320,23 @@ class GridworldEnv(EcoEnvironment):
                                 2 * v + 1,
                                 len(self.list_indexes_channels_visual_field),
                             )
-                        ).at[
-                            :,
-                            v,
-                            v,
-                            self.dict_name_channel_to_idx_visual_field["agents"],
-                        ].set(
-                            1
-                        )  # Add an agent at the center of the visual field
+                        )
 
                         # Add pseudo-cluster of fruits and agents in the visual field
                         key_random, *subkeys = jax.random.split(key_random, 5)
-                        for j, (name_density_fruit, name_density_agents)in enumerate(list_names_densities_fruits_agents):
-                            visual_field = self.add_pseudo_cluster2(
+                        for i, (
+                            direction,
+                            (name_density_fruit, name_density_agents),
+                        ) in enumerate(
+                            direction_to_names_densities_fruits_agents.items()
+                        ):
+                            visual_field = self.add_pseudo_cluster(
                                 visual_field,
-                                jnp.full((n,), idx_fruit),
+                                idx_fruit,
                                 dict_densities_fruits[name_density_fruit],
                                 dict_densities_agents[name_density_agents],
-                                directions_to_jth_cluster[:, j],
-                                subkeys[j],
+                                direction,
+                                subkeys[i],
                             )
 
                         # Create the observation
@@ -2398,34 +2375,18 @@ class GridworldEnv(EcoEnvironment):
                         )
                         logits = new_state_species.agents.logits_last
                         probs = jax.nn.softmax(logits, axis=-1)
-                        
-                        for j in range(4):
-                            # Step 1: For each agent i, get the direction d corresponding to caracteristics j
-                            direction_for_j = directions_to_jth_cluster[:, j]  # Shape (n,)
-
-                            # Step 2: For each agent i, get prob[i, d] where d = direction_for_j[i]
-                            probs_for_j = jnp.take_along_axis(probs, direction_for_j[:, None], axis=1).flatten()  # Shape (n,)
-
-                            # Step 3: Store the mean probability across agents for caracteristics j
-                            name_density_fruit, name_density_agents = list_names_densities_fruits_agents[j]
+                        for direction, (
+                            name_density_fruit,
+                            name_density_agents,
+                        ) in direction_to_names_densities_fruits_agents.items():
                             measures[
                                 f"moving P towards rho_fruit={name_density_fruit} rho_agents={name_density_agents} (fruit {id_fruit}) | nh={name_nh}, value={name_value_fruit}/moving"
-                            ] = probs_for_j
+                            ] = probs[:, self.action_to_idx[direction]]
 
         else:
             raise ValueError(f"Unknown behavior measure: {name_measure}")
 
         return measures
-
-    def generate_permuted_array(self, key_random, n, array_to_permute : jnp.ndarray):
-        # Create the base array (n, *array_to_permute.shape)
-        base_array = jnp.tile(array_to_permute, (n, 1))
-        
-        # Generate a random permutation for each row independently
-        keys = jax.random.split(key_random, n)  # Split key into n subkeys
-        permuted_array = jax.vmap(lambda k, row: jax.random.permutation(k, row))(keys, base_array)
-    
-        return permuted_array
 
     def add_pseudo_cluster(
         self,
@@ -2435,7 +2396,7 @@ class GridworldEnv(EcoEnvironment):
         density_agents,
         direction: str,
         key_random: jnp.ndarray,
-        range_cluster=6,
+        range_cluster=3,
     ):
         """Add a pseudo-cluster of fruits and agents in the visual field of the agents."""
         idx_agent = self.dict_name_channel_to_idx_visual_field["agents"]
@@ -2450,13 +2411,13 @@ class GridworldEnv(EcoEnvironment):
 
         # Select the border area while excluding the corners
         if direction == "forward":
-            mask = mask.at[:, :range_cluster, range_cluster:-range_cluster].set(True)  # Exclude first & last range_cluster columns
+            mask = mask.at[:, :3, 3:-3].set(True)  # Exclude first & last 3 columns
         elif direction == "backward":
-            mask = mask.at[:, -range_cluster:, range_cluster:-range_cluster].set(True)  # Exclude first & last range_cluster columns
+            mask = mask.at[:, -3:, 3:-3].set(True)  # Exclude first & last 3 columns
         elif direction == "left":
-            mask = mask.at[:, range_cluster:-range_cluster, :range_cluster].set(True)  # Exclude first & last range_cluster rows
+            mask = mask.at[:, 3:-3, :3].set(True)  # Exclude first & last 3 rows
         elif direction == "right":
-            mask = mask.at[:, range_cluster:-range_cluster, -range_cluster:].set(True)  # Exclude first & last range_cluster rows
+            mask = mask.at[:, 3:-3, -3:].set(True)  # Exclude first & last 3 rows
         elif direction == "center":
             mid_h, mid_w = h // 2, w // 2
             mask = mask.at[
@@ -2487,49 +2448,6 @@ class GridworldEnv(EcoEnvironment):
 
         return visual_field
 
-    def add_pseudo_cluster2(
-        self,
-        visual_field,
-        idx_fruit: jnp.ndarray,
-        density_fruit,
-        density_agents,
-        directions: jnp.ndarray,
-        key_random: jnp.ndarray,
-        range_cluster=6,
-    ):
-        """Add a pseudo-cluster of fruits and agents in the visual field of the agents.
-        Version where idx_fruit and directions are batched arrays of size pop_size.
-        """
-        idx_agent = self.dict_name_channel_to_idx_visual_field["agents"]
-        pop_size, h, w, c = visual_field.shape
-        assert (
-            h >= 2 * range_cluster + 1 and w >= 2 * range_cluster + 1
-        ), "Map is too small to apply cluster."
-        
-        # Define possible masks for each direction
-        base_masks = jnp.zeros((5, h, w), dtype=bool)
-        base_masks = base_masks.at[0, :range_cluster, range_cluster:-range_cluster].set(True)  # Forward
-        base_masks = base_masks.at[1, range_cluster:-range_cluster, :range_cluster].set(True)  # Left
-        base_masks = base_masks.at[2, -range_cluster:, range_cluster:-range_cluster].set(True)  # Backward
-        base_masks = base_masks.at[range_cluster, range_cluster:-range_cluster, -range_cluster:].set(True)  # Right
-        mid_h, mid_w = h // 2, w // 2
-        base_masks = base_masks.at[4, mid_h - range_cluster : mid_h + range_cluster + 1, mid_w - range_cluster : mid_w + range_cluster + 1].set(True)  # Center
-        
-        # Gather masks based on directions
-        mask = base_masks[directions]
-        
-        # Generate random probabilities for fruit and agents
-        subkey_fruit, subkey_agents = jax.random.split(key_random)
-        fruit_noise = jax.random.bernoulli(subkey_fruit, p=jnp.array(density_fruit).astype(jnp.float32), shape=(pop_size, h, w))
-        agent_noise = jax.random.bernoulli(subkey_agents, p=jnp.array(density_agents).astype(jnp.float32), shape=(pop_size, h, w))
-        
-        # Apply fruit and agent placement using the mask with batched fruit indices
-        visual_field = visual_field.at[jnp.arange(pop_size), :, :, idx_fruit].add(mask * fruit_noise)
-        visual_field = visual_field.at[:, :, :, idx_agent].add(mask * agent_noise)
-        
-        return visual_field
-    
-     
     def compute_on_render_behavior_measures(
         self,
         state_species: StateSpecies,

@@ -48,6 +48,12 @@ reward_model: # Constant (initialiazed easily)
 #     age: 0
 #     n_childrens: 0
 
+# ========================= Logging and Visualization ========================
+log_dir: ${log_dir}
+
+log_weights: True
+n_weights_log: 10
+
 
 
 # ======================== Defaults sub-configs and other Hydra config ========================

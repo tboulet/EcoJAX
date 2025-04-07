@@ -22,6 +22,7 @@ n_actions: ${eval:'len(${env.list_actions})'}
 # do_render : True
 # do_global_log : True
 
+log_dir : logs
 do_wandb : False
 wandb_config:
   project : EcoJAX

@@ -32,6 +32,12 @@ mode_weights_transmission: none # initial, final, none
 reward_model: # Constant (initialiazed randomly)
   func_weight: constant
 
+# ========================= Logging and Visualization ========================
+log_dir: ${log_dir}
+
+log_weights: True
+n_weights_log: 10
+
 
 
 

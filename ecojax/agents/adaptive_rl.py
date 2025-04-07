@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from copy import deepcopy
 from functools import partial
 import os
+import pickle
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 import jax
@@ -16,6 +17,7 @@ import flax.linen as nn
 import optax
 from flax.training import train_state
 from flax.struct import PyTreeNode, dataclass
+import yaml
 
 
 from ecojax.agents.base_agent_species import AgentSpecies
@@ -98,6 +100,11 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
         ), f"Only DiscreteSpace is supported for now, got {action_space}"
         self.n_actions = action_space.n
 
+        self.log_dir = self.config["log_dir"]
+        self.run_name : str = self.config["run_name"]
+        self.run_name = self.run_name.replace("/", "_").replace("\\", "_")
+        self.dir_weights = f"{self.log_dir}/weights/{self.run_name}"
+        
         # Hyperparameters
 
         self.do_include_fruit: bool = self.config["do_include_fruit"]
@@ -329,10 +336,12 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
         self.space_observation_fruit_averager.dict_space["table_value_fruits"] = (
             spaces.ContinuousSpace(shape=(4,))
         )
+        self.space_output_fruit_averager = spaces.ContinuousSpace(
+            shape=(self.n_actions,)
+        )
         self.model = ModelFruitAverager(
             space_input=self.space_observation_fruit_averager,
-            space_output=spaces.ContinuousSpace(shape=(self.n_actions,)),
-            # TODO : add decision model and inbetween here
+            space_output=self.space_output_fruit_averager,
         )
         print(f"Model: {self.model.get_table_summary()}")
 
@@ -739,13 +748,40 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
 
     # =============== Metrics methods =================
 
-    def render(self, state: StateSpeciesAdaRL, force_render: bool = False) -> None:
+    def render(self, state: StateSpeciesAdaRL, timestep : int, force_render: bool = False) -> None:
         """Do the rendering of the species. This can be a visual rendering or a logging of the state of any kind.
 
         Args:
             state (StateSpecies): the state of the species to render
+            timestep (int): the timestep of the simulation
             force_render (bool): whether to force the rendering even if the species is not in a state where it should be rendered
         """
+        # Save agents weights in a log file
+        if self.config["log_weights"]:
+            # Log the config as yaml if t=2
+            if timestep == 2:
+                with open(f"{self.dir_weights}/config.yaml", "w") as f:
+                    yaml.dump(self.config, f)
+                    
+            # Pick the n first alive agents
+            n_weights_log = self.config["n_weights_log"]
+            idx_alive_agents = jnp.where(state.agents.do_exist)[0][: n_weights_log]
+            print(idx_alive_agents)
+            
+            # Create the directory to save the weights
+            dir_agent_weight = f"{self.dir_weights}/t_{timestep}"
+            os.makedirs(dir_agent_weight, exist_ok=True)
+            
+            # Save the weights of the agents as pickle files
+            for i in idx_alive_agents:
+                i = int(i)
+                
+                path_agent_weight = f"{dir_agent_weight}/agent_{i}.pkl"
+                
+                agent_params = jax.tree_util.tree_map(lambda x: x[i], state.agents.params)
+                with open(path_agent_weight, "wb") as f:
+                    pickle.dump(agent_params, f)
+                           
         return
         # Log heatmaps of the weights
         try:

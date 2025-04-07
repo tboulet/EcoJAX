@@ -36,6 +36,12 @@ reward_model: # Hardcoded null : no memory
     age: 0
     n_childrens: 0
 
+# ========================= Logging and Visualization ========================
+log_dir: ${log_dir}
+
+log_weights: True
+n_weights_log: 10
+
 
 
 

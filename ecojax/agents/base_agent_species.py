@@ -82,7 +82,7 @@ class AgentSpecies(ABC):
         """
 
     @abstractmethod
-    def render(self, state: StateSpecies, force_render : bool = False) -> None:
+    def render(self, state: StateSpecies, timestep : int = 0, force_render : bool = False) -> None:
         """Do the rendering of the species. This can be a visual rendering or a logging of the state of any kind.
         
         Args:

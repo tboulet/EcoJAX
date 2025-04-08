@@ -34,7 +34,7 @@ for k in $(seq 1 $seed_max); do
         echo "Running python script with seed $seed and omega $omega"
         python run.py --config-name dgx do_wandb=True env/metrics=metrics_dgx +benchmark_name=$benchmark_name seed=$seed +run_name=\'$run_name\' \
             env.sum_energy_map_ref=275 \
-            agents=ada_nor \
+            agents=ada_r_hc \
             env=fruits_plants \
             env.mode_variability_fruits=space_diffusion \
             env.omega=$omega \

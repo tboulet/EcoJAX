@@ -760,6 +760,7 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
         if self.config["log_weights"]:
             # Log the config as yaml if t=2
             if timestep == 2:
+                os.makedirs(self.dir_weights, exist_ok=True)
                 with open(f"{self.dir_weights}/config.yaml", "w") as f:
                     yaml.dump(self.config, f)
                     
@@ -771,6 +772,7 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
             # Create the directory to save the weights
             dir_agent_weight = f"{self.dir_weights}/t_{timestep}"
             os.makedirs(dir_agent_weight, exist_ok=True)
+            print(f"Saving weights in {dir_agent_weight}")
             
             # Save the weights of the agents as pickle files
             for i in idx_alive_agents:

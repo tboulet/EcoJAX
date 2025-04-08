@@ -7,7 +7,7 @@ IPython
 pandas
 flax==0.8.3
 seaborn
-
+scikit-learn
 
 # Monitoring
 snakeviz

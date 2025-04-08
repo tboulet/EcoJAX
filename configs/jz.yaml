@@ -9,7 +9,7 @@ do_jit: True
 n_actions: ${eval:'len(${env.list_actions})'}
 
 
-
+log_dir: /lustre/fsn1/projects/rech/imi/upb99ot/logs_ecojax
 do_wandb : False
 wandb_config:
   project : EcoJAX

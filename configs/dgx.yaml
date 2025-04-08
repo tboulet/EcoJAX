@@ -9,6 +9,7 @@ do_jit: True
 n_actions: ${eval:'len(${env.list_actions})'}
 
 
+log_dir: logs
 do_wandb : True
 wandb_config:
   project : EcoJAX

@@ -49,11 +49,6 @@ benchmark_name='bench26b'
 model='region'
 for k in $(seq 1 $seed_max); do
     seed=$RANDOM 
-    if [ "$k" -eq 1 ]; then
-        seed=3742
-    else
-        seed=$RANDOM
-    fi
     list_omega=(0 0.1 0.2 0.6 1)
     for i in $(seq 0 $((${#list_omega[@]} - 1))); do
         omega=${list_omega[$i]}

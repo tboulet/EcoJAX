@@ -45,7 +45,7 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 ## Iterate over the seeds
 seed_max=100
-benchmark_name='bench26b'
+benchmark_name='bench26b_nor'
 model='region'
 for k in $(seq 1 $seed_max); do
     seed=$RANDOM 
@@ -58,7 +58,7 @@ for k in $(seq 1 $seed_max); do
         mkdir -p "$log_dir"
         python run.py --config-name dgx do_wandb=True env/metrics=metrics_dgx +benchmark_name=$benchmark_name seed=$seed +run_name=\'$run_name\' \
             env.sum_energy_map_ref=275 \
-            agents=ada_r_hc \
+            agents=ada_nor \
             env=fruits_plants \
             env.mode_variability_fruits=space_diffusion \
             env.omega=$omega \

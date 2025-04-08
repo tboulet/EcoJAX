@@ -52,7 +52,7 @@ reward_model: # Constant (initialiazed easily)
 log_dir: ${log_dir}
 
 log_weights: True
-n_weights_log: 10
+n_weights_log: 30
 
 
 

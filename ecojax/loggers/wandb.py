@@ -28,7 +28,19 @@ class LoggerWandB(BaseLogger):
     ):
         for key, values in dict_histograms.items():
             values = values[~np.isnan(values)]
-            self.run.log({key: wandb.Histogram(values)}, step=timestep)
+            if len(values) == 0:
+                continue # skip empty histograms
+            
+            if np.min(values) == np.max(values):
+                # Constant array: use 1 bin centered on the unique value
+                single_val = values[0]
+                bin_edges = np.array([single_val - 0.5, single_val + 0.5])
+                counts = np.array([len(values)])
+                histogram =  wandb.Histogram(np_histogram=(counts, bin_edges))
+            else:
+                # Non-constant array: use default histogram
+                histogram = wandb.Histogram(values)
+            self.run.log({key: histogram}, step=timestep)
 
     def log_maps(
         self,

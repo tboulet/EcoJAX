@@ -32,9 +32,9 @@ for k in $(seq 1 $seed_max); do
         omega=${list_omega[$i]}
         run_name="run_$benchmark_name-$initial_date-$model/omega_$omega/seed_$seed"
         log_dir="logs/$run_name"
-        echo "Running $log_dir"
         mkdir -p "$log_dir"
-        echo "Running python script with seed $seed and omega $omega"
+        echo "Running $run_name"
+        echo "Logdir : $log_dir"
         python run.py --config-name dgx do_wandb=True env/metrics=metrics_dgx +benchmark_name=$benchmark_name seed=$seed +run_name=\'$run_name\' \
             env.sum_energy_map_ref=275 \
             agents=ada_r_hc \

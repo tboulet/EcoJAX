@@ -8,10 +8,10 @@ hp_initial:
 # Which informations to include in the input of the fruit model
 do_include_fruit: True
 do_include_value_global: False
-do_include_value_fruit: True
+do_include_value_fruit: False
 do_include_novelty_hunger: True
-do_include_values_other_fruits: False
-do_include_id_fruit: False
+do_include_values_other_fruits: True
+do_include_id_fruit: True
 list_channels_visual_field: ${env.list_channels_visual_field}
 
 # Whether we use the same model instance for all fruits

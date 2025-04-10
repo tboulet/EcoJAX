@@ -1,9 +1,9 @@
 name: RegionalModel
 weighting_method: "uniform"
 mlp_region_config:
-  hidden_dims: [10]
+  hidden_dims: [16, 12, 8]
   n_output_features: 1 # must be 1
 mlp_config:
-  hidden_dims: [10]
+  hidden_dims: []
   n_output_features: ${n_actions} # if same numbeer as n_actions, no dense layer will be added by BaseModel
 factor_normalization_table_value_fruits: 1

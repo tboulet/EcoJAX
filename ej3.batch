@@ -8,13 +8,13 @@
 ## For partition: either prod10, prod 20, prod 40 or prod80
 ## For gres: either 1g.10gb:[1:10] for prod10, 2g.20gb:[1:4] for prod20, 3g.40gb:1 for prod40 or A100.80gb for prod80.
 
-##SBATCH --partition=prod10
-##SBATCH --gres=gpu:1g.10gb:1
-##SBATCH --cpus-per-task=4
-
-#SBATCH --partition=prod20
-#SBATCH --gres=gpu:2g.20gb:1
+#SBATCH --partition=prod10
+#SBATCH --gres=gpu:1g.10gb:1
 #SBATCH --cpus-per-task=4
+
+##SBATCH --partition=prod20
+##SBATCH --gres=gpu:2g.20gb:1
+##SBATCH --cpus-per-task=4
 
 ##SBATCH --partition=prod40
 ##SBATCH --gres=gpu:3g.40gb:1
@@ -45,8 +45,8 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 ## Iterate over the seeds
 seed_max=100
-benchmark_name='bench40'
-model='region'
+benchmark_name='bench41'
+model='cnn'
 for k in $(seq 1 $seed_max); do
     seed=$RANDOM
     list_omega=(0 0.1 0.2 0.6 1)
@@ -64,8 +64,6 @@ for k in $(seq 1 $seed_max); do
             env.omega=$omega \
             agents.do_include_id_fruit=True \
             model=$model \
-            model.mlp_region_config.hidden_dims=[10, 10] \
-            model.mlp_config.hidden_dims=[10] \
             > "$log_dir"/log.txt 2>&1
     done
 done

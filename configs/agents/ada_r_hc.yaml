@@ -6,19 +6,19 @@ hp_initial:
   strength_mutation: 0.05
 
 # Which informations to include in the input of the fruit model
-do_include_fruit: True
-do_include_value_global: False
+do_include_fruit: True # should be always True
+do_include_value_global: False # should generally be False (easy setting)
 do_include_value_fruit: True
 do_include_novelty_hunger: True
 do_include_values_other_fruits: False
-do_include_id_fruit: True
+do_include_id_fruit: False
 list_channels_visual_field: ${env.list_channels_visual_field}
 
 # Whether we use the same model instance for all fruits
-do_use_different_model_fruit: False
+do_use_different_model_fruit: True
 
 # The configuration of the decision model . TODO : maybe prevent do_include_values_other_fruits if use of decision model ?
-do_use_decision_model: True
+do_use_decision_model: False
 decision_model_config:
   hidden_dims: []
 factor_normalization_table_value_fruits: 1

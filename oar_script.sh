@@ -27,7 +27,7 @@ benchmark_name='bench_g'
 model='region'
 for k in $(seq 1 $seed_max); do
     seed=$RANDOM 
-    list_omega=(0 0.1 0.2 0.6 1)
+    list_omega=(1 0 0.6 0.2 0.1)
     for i in $(seq 0 $((${#list_omega[@]} - 1))); do
         omega=${list_omega[$i]}
         run_name="run_$benchmark_name-$initial_date-$model/omega_$omega/seed_$seed"

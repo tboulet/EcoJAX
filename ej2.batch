@@ -63,7 +63,6 @@ for k in $(seq 1 $seed_max); do
             env=fruits_plants \
             env.mode_variability_fruits=space_diffusion \
             env.omega=$omega \
-            agents.do_include_id_fruit=True \
             model=$model \
             > "$log_dir"/log.txt 2>&1
     done

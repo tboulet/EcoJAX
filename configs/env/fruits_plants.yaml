@@ -36,7 +36,7 @@ radius_sun_perception : 40
 # ======================== Plants Dynamics ========================
 
 # The initial proportion of food tiles at the beginning of the simulation
-proportion_plant_initial : 0.3
+proportion_plant_initial : 0.0
 
 # Whether plant can grow inside of fruit clusters
 do_plant_grow_in_fruit_clusters : False
@@ -50,7 +50,7 @@ do_plant_grow_in_fruit_clusters : False
 # - logit(p_base_die_food) * 1_if_tile_is_food
 
 # The base probability of a non-food tile to grow spontaneously
-p_base_plant_growth : 0.001
+p_base_plant_growth : 0.0
 # The base probability of a food tile to die spontaneously
 p_base_plant_death : 0.0
 
@@ -94,13 +94,13 @@ e_fruit_0_abs_max : 30 # (zero for no curriculum)
 t_fruit_T : 50000
 # Whether to do normalization of the energy of the fruits
 do_normalize_fruits : True
-# The maximum absolute value of the energy of a fruit at the end of the simulation (if do_normalize_fruits is True)
+# The maximum absolute value of the energy of a fruit at the end of the simulation (if do_normalize_fruits is False)
 e_fruit_T_abs_max : null
 # The reference values that caracterize a certain amount of energy input by unit of time
 e_fruit_abs_max_ref : 10
 sum_energy_map_ref : 300
 # The minimum value of the energy of a fruit
-energy_fruit_min : -5
+energy_fruit_min : -10
 
 # The number of tiles of the side of a fruit cluster. Must be a divider of H and W.
 side_cluster_fruits: 11
@@ -115,7 +115,7 @@ variability_fruits:
   - 0.5
   - 1
 omega: 0.1
-factors_fruits: [1, 0.5, -0.2, -1]
+factors_fruits: [1, 0.5, -1, -1]
 
 # The variability mode, either "time" (cluster's energy value changes over time) or "space_sin"/"space_entropy" (cluster's energy value changes over space)
 mode_variability_fruits: "space_diffusion"

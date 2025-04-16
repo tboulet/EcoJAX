@@ -45,7 +45,7 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 ## Iterate over the seeds
 seed_max=100
-benchmark_name='bench42_ej2'
+benchmark_name='bench42_ej3_side5'
 model='region'
 for k in $(seq 1 $seed_max); do
     seed=$RANDOM 
@@ -60,14 +60,14 @@ for k in $(seq 1 $seed_max); do
             env.sum_energy_map_ref=275 \
             agents=ada_r_hc \
             agents.hp_initial.strength_mutation=0.05 \
-            env=fruits_plants \
+            env=fruits_plants2 \
             env.mode_variability_fruits=space_diffusion \
             env.omega=$omega \
             model=$model \
             agents.do_include_value_fruit=True \
             agents.do_include_values_other_fruits=False \
             agents.do_include_id_fruit=False \
-            env.energy_fruit_min=0 \
+            env.side_cluster_fruits=5 \
             > "$log_dir"/log.txt 2>&1
     done
 done

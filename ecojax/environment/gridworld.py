@@ -284,6 +284,8 @@ class GridworldEnv(EcoEnvironment):
                 self.side_cluster_fruits % 2 == 1
             ), "The side of the cluster of fruits must be odd"
             self.range_cluster_fruits: int = config["range_cluster_fruits"]
+            if self.range_cluster_fruits is None:
+                self.range_cluster_fruits = self.side_cluster_fruits // 2
             assert (
                 self.range_cluster_fruits <= self.side_cluster_fruits // 2
             ), f"The range of the cluster of fruits must be less than half the side of the cluster, but got {self.range_cluster_fruits} > {self.side_cluster_fruits}//2"

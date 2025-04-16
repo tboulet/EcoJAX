@@ -1,20 +1,20 @@
 #!/bin/bash
 #
 
-#SBATCH --job-name=ej4
+#SBATCH --job-name=ej_w
 #SBATCH --output=out.txt
 #SBATCH --error=out.txt
 
 ## For partition: either prod10, prod 20, prod 40 or prod80
 ## For gres: either 1g.10gb:[1:10] for prod10, 2g.20gb:[1:4] for prod20, 3g.40gb:1 for prod40 or A100.80gb for prod80.
 
-#SBATCH --partition=prod10
-#SBATCH --gres=gpu:1g.10gb:1
-#SBATCH --cpus-per-task=4
-
-##SBATCH --partition=prod20
-##SBATCH --gres=gpu:2g.20gb:1
+##SBATCH --partition=prod10
+##SBATCH --gres=gpu:1g.10gb:1
 ##SBATCH --cpus-per-task=4
+
+#SBATCH --partition=prod20
+#SBATCH --gres=gpu:2g.20gb:1
+#SBATCH --cpus-per-task=4
 
 ##SBATCH --partition=prod40
 ##SBATCH --gres=gpu:3g.40gb:1
@@ -45,11 +45,11 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 ## Iterate over the seeds
 seed_max=100
-benchmark_name='bench42_ej3_side7'
+benchmark_name='bench42_ej3'
 model='region'
 for k in $(seq 1 $seed_max); do
     seed=$RANDOM 
-    list_omega=(1)
+    list_omega=(0)
     for i in $(seq 0 $((${#list_omega[@]} - 1))); do
         omega=${list_omega[$i]}
         run_name="run_$benchmark_name-$initial_date-$model/omega_$omega/seed_$seed"
@@ -60,14 +60,14 @@ for k in $(seq 1 $seed_max); do
             env.sum_energy_map_ref=275 \
             agents=ada_r_hc \
             agents.hp_initial.strength_mutation=0.05 \
-            env=fruits_plants2 \
+            env=fruits_plants \
             env.mode_variability_fruits=space_diffusion \
             env.omega=$omega \
             model=$model \
             agents.do_include_value_fruit=True \
             agents.do_include_values_other_fruits=False \
             agents.do_include_id_fruit=False \
-            env.side_cluster_fruits=7 \
+            env.range_cluster_fruits=4 \
             > "$log_dir"/log.txt 2>&1
     done
 done

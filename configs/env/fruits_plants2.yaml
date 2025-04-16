@@ -1,8 +1,8 @@
 name : Gridworld
 
 # The dimensions of the gridworld
-height : 220
-width : 220
+height : 210
+width : 210
 
 # Whether the env is terminal, i.e. the simulation stops when all agents are dead
 is_terminal : True
@@ -93,9 +93,9 @@ e_fruit_0_abs_max : 40 # (zero for no curriculum)
 # The timestep where the final value of the energy of a fruit is reached
 t_fruit_T : 50000
 # Whether to do normalization of the energy of the fruits
-do_normalize_fruits : True
+do_normalize_fruits : False
 # The maximum absolute value of the energy of a fruit at the end of the simulation (if do_normalize_fruits is False)
-e_fruit_T_abs_max : null
+e_fruit_T_abs_max : 20.0
 # The reference values that caracterize a certain amount of energy input by unit of time
 e_fruit_abs_max_ref : 10
 sum_energy_map_ref : 300
@@ -106,7 +106,7 @@ energy_fruit_min : -10
 side_cluster_fruits: 11
 
 # The range of each fruit cluster, which is the number of tiles around the center tile where fruits will be generated
-range_cluster_fruits: 3
+range_cluster_fruits: null
 
 # The list of variabilities of the energy of the fruits, of length 4
 variability_fruits:

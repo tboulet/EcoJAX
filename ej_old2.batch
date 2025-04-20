@@ -44,7 +44,7 @@ cd ~/projects/EcoJAX
 initial_date=$(date +"%Y%m%d_%H%M%S")
 
 ## Iterate over the seeds
-seed_max=100
+seed_max=10
 benchmark_name='bench42_w1_force_use_vj'
 model='region'
 for k in $(seq 1 $seed_max); do
@@ -52,7 +52,7 @@ for k in $(seq 1 $seed_max); do
     list_omega=(1)
     for i in $(seq 0 $((${#list_omega[@]} - 1))); do
         omega=${list_omega[$i]}
-        run_name="run_$benchmark_name-$initial_date-$model/omega_$omega/seed_$seed"
+        run_name="run_$initial_date-$benchmark_name-$model/omega_$omega/seed_$seed"
         log_dir="logs/$run_name"
         echo "Running $log_dir"
         mkdir -p "$log_dir"

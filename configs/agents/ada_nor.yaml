@@ -6,10 +6,10 @@ hp_initial:
   strength_mutation: 0.05
 
 # Which informations to include in the input of the fruit model
-do_include_fruit: True
-do_include_value_global: False
-do_include_value_fruit: False
-do_include_novelty_hunger: False
+do_include_fruit: True # should be always True
+do_include_value_global: False # should generally be False (easy setting)
+do_include_value_fruit: True
+do_include_novelty_hunger: True
 do_include_values_other_fruits: True
 do_include_id_fruit: True
 list_channels_visual_field: ${env.list_channels_visual_field}

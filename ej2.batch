@@ -12,13 +12,13 @@
 ##SBATCH --gres=gpu:1g.10gb:1
 ##SBATCH --cpus-per-task=4
 
-#SBATCH --partition=prod20
-#SBATCH --gres=gpu:2g.20gb:1
-#SBATCH --cpus-per-task=4
-
-##SBATCH --partition=prod40
-##SBATCH --gres=gpu:3g.40gb:1
+##SBATCH --partition=prod20
+##SBATCH --gres=gpu:2g.20gb:1
 ##SBATCH --cpus-per-task=4
+
+#SBATCH --partition=prod40
+#SBATCH --gres=gpu:3g.40gb:1
+#SBATCH --cpus-per-task=4
 
 ##SBATCH --partition=prod80
 ##SBATCH --gres=gpu:A100.80gb:1
@@ -44,15 +44,15 @@ cd ~/projects/EcoJAX
 initial_date=$(date +"%Y%m%d_%H%M%S")
 
 ## Iterate over the seeds
-seed_max=100
-benchmark_name='bench42_ej3_side5'
-model='region'
+seed_max=10
+benchmark_name='bench44'
+model='cnn'
 for k in $(seq 1 $seed_max); do
     seed=$RANDOM 
     list_omega=(1)
     for i in $(seq 0 $((${#list_omega[@]} - 1))); do
         omega=${list_omega[$i]}
-        run_name="run_$benchmark_name-$initial_date-$model/omega_$omega/seed_$seed"
+        run_name="run_$initial_date-$benchmark_name-$model/omega_$omega/seed_$seed"
         log_dir="logs/$run_name"
         echo "Running $log_dir"
         mkdir -p "$log_dir"
@@ -60,14 +60,13 @@ for k in $(seq 1 $seed_max); do
             env.sum_energy_map_ref=275 \
             agents=ada_r_hc \
             agents.hp_initial.strength_mutation=0.05 \
-            env=fruits_plants2 \
+            env=fruits_plants \
             env.mode_variability_fruits=space_diffusion \
             env.omega=$omega \
             model=$model \
             agents.do_include_value_fruit=True \
             agents.do_include_values_other_fruits=False \
             agents.do_include_id_fruit=False \
-            env.side_cluster_fruits=5 \
             > "$log_dir"/log.txt 2>&1
     done
 done

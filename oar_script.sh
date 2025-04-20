@@ -22,7 +22,7 @@ source $HOME/projects/venv/bin/activate
 
 ## Iterate over the seeds
 initial_date=$(date +"%Y%m%d_%H%M%S")
-seed_max=100
+seed_max=10
 benchmark_name='bench_g'
 model='region'
 for k in $(seq 1 $seed_max); do
@@ -30,7 +30,7 @@ for k in $(seq 1 $seed_max); do
     list_omega=(1 0 0.6 0.2 0.1)
     for i in $(seq 0 $((${#list_omega[@]} - 1))); do
         omega=${list_omega[$i]}
-        run_name="run_$benchmark_name-$initial_date-$model/omega_$omega/seed_$seed"
+        run_name="run_$initial_date-$benchmark_name-$model/omega_$omega/seed_$seed"
         log_dir="logs/$run_name"
         mkdir -p "$log_dir"
         echo "Running $run_name"

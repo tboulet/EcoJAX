@@ -274,7 +274,8 @@ class GridworldEnv(EcoEnvironment):
         if self.do_fruits:
             self.proportion_fruit_initial: float = config["proportion_fruit_initial"]
             self.p_base_fruit_growth: float = config["p_base_fruit_growth"]
-
+            self.max_density_fruits: float = config["max_density_fruits"]
+            
             self.side_cluster_fruits: int = config["side_cluster_fruits"]
             assert (
                 self.height % self.side_cluster_fruits == 0
@@ -1099,6 +1100,23 @@ class GridworldEnv(EcoEnvironment):
         for coords_center, id_fruit in self.coords_clusters_to_fruit_id.items():
             key_random, subkey = jax.random.split(key_random)
             idx_fruit_i = self.dict_name_channel_to_idx[f"fruits_{id_fruit}"]
+            density_fruit = map[
+                coords_center[0]
+                - self.range_cluster_fruits : coords_center[0]
+                + self.range_cluster_fruits
+                + 1,
+                coords_center[1]
+                - self.range_cluster_fruits : coords_center[1]
+                + self.range_cluster_fruits
+                + 1,
+                idx_fruit_i,
+            ].mean()
+            # If density_fruit exceed max_density_fruit, we set the p_fruit_growth to 0 to avoid overcrowding
+            p_fruit_growth = jnp.where(
+                density_fruit > self.max_density_fruits,
+                0,
+                self.p_base_fruit_growth,
+            )
             map = map.at[
                 coords_center[0]
                 - self.range_cluster_fruits : coords_center[0]
@@ -1112,7 +1130,7 @@ class GridworldEnv(EcoEnvironment):
             ].add(
                 jax.random.bernoulli(
                     key=subkey,
-                    p=self.p_base_fruit_growth,
+                    p=p_fruit_growth,
                     shape=(
                         2 * self.range_cluster_fruits + 1,
                         2 * self.range_cluster_fruits + 1,

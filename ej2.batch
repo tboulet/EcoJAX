@@ -12,12 +12,12 @@
 ##SBATCH --gres=gpu:1g.10gb:1
 ##SBATCH --cpus-per-task=4
 
-##SBATCH --partition=prod20
-##SBATCH --gres=gpu:2g.20gb:1
+##SBATCH --partition=prod10
+##SBATCH --gres=gpu:1g.10gb:1
 ##SBATCH --cpus-per-task=4
 
-#SBATCH --partition=prod40
-#SBATCH --gres=gpu:3g.40gb:1
+#SBATCH --partition=prod20
+#SBATCH --gres=gpu:2g.20gb:1
 #SBATCH --cpus-per-task=4
 
 ##SBATCH --partition=prod80
@@ -45,7 +45,7 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 ## Iterate over the seeds
 seed_max=10
-benchmark_name='bench44'
+benchmark_name='bench45'
 model='cnn'
 for k in $(seq 1 $seed_max); do
     seed=$RANDOM 

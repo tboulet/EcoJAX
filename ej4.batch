@@ -45,7 +45,7 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 ## Iterate over the seeds
 seed_max=10
-benchmark_name='bench44_nor'
+benchmark_name='bench45_nor'
 model='cnn'
 for k in $(seq 1 $seed_max); do
     seed=$RANDOM 

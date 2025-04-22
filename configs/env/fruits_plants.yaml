@@ -78,6 +78,7 @@ do_fruits : True
 proportion_fruit_initial : 0.4
 
 # The base probability of a non-fruit tile to grow spontaneously a fruit
+p_base_fruit_death : 0.0005
 p_base_fruit_growth : 0.0065
 min_density_fruits: 0.4
 

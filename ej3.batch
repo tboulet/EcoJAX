@@ -45,7 +45,7 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 ## Iterate over the seeds
 seed_max=10
-benchmark_name='bench47'
+benchmark_name='bench48'
 model='region'
 for k in $(seq 1 $seed_max); do
     seed=$RANDOM 
@@ -63,6 +63,7 @@ for k in $(seq 1 $seed_max); do
             env=fruits_plants \
             env.mode_variability_fruits=space_diffusion \
             env.omega=$omega \
+            env.energy_fruit_min=0.0 \
             model=$model \
             agents.do_include_value_fruit=True \
             agents.do_include_values_other_fruits=False \

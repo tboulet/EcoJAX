@@ -274,7 +274,7 @@ class GridworldEnv(EcoEnvironment):
         if self.do_fruits:
             self.proportion_fruit_initial: float = config["proportion_fruit_initial"]
             self.p_base_fruit_growth: float = config["p_base_fruit_growth"]
-            self.max_density_fruits: float = config["max_density_fruits"]
+            self.min_density_fruits: float = config["min_density_fruits"]
             
             self.side_cluster_fruits: int = config["side_cluster_fruits"]
             assert (
@@ -1092,11 +1092,35 @@ class GridworldEnv(EcoEnvironment):
                 ].set(0)
         return state.replace(map=state.map.at[:, :, idx_plants].set(map_plants))
 
+    def get_max_density_fruit(self, state: StateEnvGridworld) -> jnp.ndarray:
+        """Get the maximum fruit density allowed in order to maintain each cluster density below a threshold.
+        """
+        map = state.map
+        list_density_fruits = []
+        for coords_center, id_fruit in self.coords_clusters_to_fruit_id.items():
+            idx_fruit_i = self.dict_name_channel_to_idx[f"fruits_{id_fruit}"]
+            density_cluster = map[
+                coords_center[0]
+                - self.range_cluster_fruits : coords_center[0]
+                + self.range_cluster_fruits
+                + 1,
+                coords_center[1]
+                - self.range_cluster_fruits : coords_center[1]
+                + self.range_cluster_fruits
+                + 1,
+                idx_fruit_i,
+            ].mean()
+            list_density_fruits.append(density_cluster)
+        # Get the inferior median of the densities
+        list_density_fruits = jnp.array(list_density_fruits)
+        return jnp.min(list_density_fruits) * 1.25
+        
     def step_grow_fruits(
         self, state: StateEnvGridworld, key_random: jnp.ndarray
     ) -> StateEnvGridworld:
         """Grow fruits."""
         map = state.map
+        max_density_fruit = self.get_max_density_fruit(state)
         for coords_center, id_fruit in self.coords_clusters_to_fruit_id.items():
             key_random, subkey = jax.random.split(key_random)
             idx_fruit_i = self.dict_name_channel_to_idx[f"fruits_{id_fruit}"]
@@ -1113,10 +1137,11 @@ class GridworldEnv(EcoEnvironment):
             ].mean()
             # If density_fruit exceed max_density_fruit, we set the p_fruit_growth to 0 to avoid overcrowding
             p_fruit_growth = jnp.where(
-                density_fruit > self.max_density_fruits,
+                (density_fruit > max_density_fruit) & (density_fruit > self.min_density_fruits),
                 0,
                 self.p_base_fruit_growth,
             )
+            
             map = map.at[
                 coords_center[0]
                 - self.range_cluster_fruits : coords_center[0]

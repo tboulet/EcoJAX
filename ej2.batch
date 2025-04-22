@@ -45,8 +45,8 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 
 ## Iterate over the seeds
 seed_max=10
-benchmark_name='bench45'
-model='cnn'
+benchmark_name='bench47'
+model='region'
 for k in $(seq 1 $seed_max); do
     seed=$RANDOM 
     list_omega=(1)

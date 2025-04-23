@@ -1,0 +1,62 @@
+name: AdaptiveAgents
+
+# ======================== Agent's Hyperparameter ========================
+# The initial hyperparameters of the population
+hp_initial:
+  strength_mutation: 0.05
+
+# Which informations to include in the input of the fruit model
+do_include_fruit: True # should be always True
+do_include_value_global: False # should generally be False (easy setting)
+do_include_value_fruit: True
+do_include_novelty_hunger: True
+do_include_values_other_fruits: True
+do_include_id_fruit: True
+list_channels_visual_field: ${env.list_channels_visual_field}
+
+# Whether we use the same model instance for all fruits
+do_use_different_model_fruit: False
+
+# The configuration of the decision model . TODO : maybe prevent do_include_values_other_fruits if use of decision model ?
+do_use_decision_model: True
+decision_model_config:
+  hidden_dims: [10]
+factor_normalization_table_value_fruits: 1
+
+# ======================== Evolution Hyperparameters ========================
+mode_weights_transmission: none # initial, final, none
+
+# ======================== Models Config ========================
+
+# The configuration of the reward model
+reward_model: # Hardcoded optimal reward model
+  func_weight: hardcoded # constant, linear, hardcoded, one
+  dict_reward:
+    energy: ${eval:'${env.energy_max} / (${env.energy_plant} - 1)'} # set the reward of eating a plant to 1
+    age: 0
+    n_childrens: ${eval:'1.0 * ${env.energy_cost_reprod} / (${env.energy_plant} - 1)'} 
+# reward_model: # Constant (initialiazed easily)
+#   func_weight: constant
+#   dict_reward:
+#     energy: ${eval:'${env.energy_max} / (${env.energy_plant} - 1)'} # set the reward of eating a plant to 1
+#     age: 0
+#     n_childrens: ${eval:'1.0 * ${env.energy_cost_reprod} / (${env.energy_plant} - 1)'} 
+# reward_model: # Constant (initialiazed 0)
+#   func_weight: hardcoded # constant, linear, hardcoded, one
+#   dict_reward:
+#     energy: 0
+#     age: 0
+#     n_childrens: 0
+
+# ========================= Logging and Visualization ========================
+log_dir: ${log_dir}
+
+log_weights: True
+n_weights_log: 30
+
+
+
+# ======================== Defaults sub-configs and other Hydra config ========================
+defaults:
+  - _self_
+  - metrics : base_agents_metrics

@@ -49,7 +49,7 @@ benchmark_name='bench48'
 model='region'
 for k in $(seq 1 $seed_max); do
     seed=$RANDOM 
-    list_omega=(1)
+    list_omega=(0 0.1)
     for i in $(seq 0 $((${#list_omega[@]} - 1))); do
         omega=${list_omega[$i]}
         run_name="run_$initial_date-$benchmark_name-$model/omega_$omega/seed_$seed"
@@ -59,7 +59,7 @@ for k in $(seq 1 $seed_max); do
         python run.py --config-name dgx do_wandb=True env/metrics=metrics_dgx +benchmark_name=$benchmark_name seed=$seed +run_name=\'$run_name\' \
             env.sum_energy_map_ref=275 \
             agents=ada_r_hc \
-            agents.hp_initial.strength_mutation=0.50 \
+            agents.hp_initial.strength_mutation=0.05 \
             env=fruits_plants \
             env.mode_variability_fruits=space_diffusion \
             env.omega=$omega \

@@ -292,6 +292,7 @@ class GridworldEnv(EcoEnvironment):
             ), f"The range of the cluster of fruits must be less than half the side of the cluster, but got {self.range_cluster_fruits} > {self.side_cluster_fruits}//2"
             self.variability_fruits: List[float] = config["variability_fruits"]
             self.omega: float = config["omega"]
+            self.period_fruits: int = config["period_fruits"]
             self.factors_fruits: List[float] = config["factors_fruits"]
             self.prop_empty_clusters: float = config["prop_empty_clusters"]
             self.mode_variability_fruits: str = config["mode_variability_fruits"]
@@ -1313,6 +1314,34 @@ class GridworldEnv(EcoEnvironment):
         )
         return agent_position_new, agent_orientation_new
 
+    def get_map_temporal_scaling_factors(self, map_scaling_factors: jnp.ndarray, t: int) -> jnp.ndarray:
+        """Get the map scaling factors at time t."""
+        if self.period_fruits in [None, "inf"]:
+            return map_scaling_factors
+        
+        half_period = self.period_fruits // 2 # 500
+        phase = t % self.period_fruits # 200
+
+        pos_mask = map_scaling_factors > 0
+        neg_mask = ~pos_mask
+
+        # Scaling for positives
+        pos_scale = jnp.where(
+            phase < half_period,
+            1.0,
+            1.0 - 2.0 * (phase - half_period) / half_period
+        )
+
+        # Scaling for negatives, shifted by half-period
+        neg_phase = (phase + half_period) % self.period_fruits
+        neg_scale = jnp.where(
+            neg_phase < half_period,
+            1.0,
+            1.0 - 2.0 * (neg_phase - half_period) / half_period
+        )
+
+        return jnp.where(pos_mask, map_scaling_factors * pos_scale, map_scaling_factors * neg_scale)
+    
     def step_action_agents(
         self,
         state: StateEnvGridworld,
@@ -1366,7 +1395,7 @@ class GridworldEnv(EcoEnvironment):
             # Scale by the map_scaling_factors and e_fruit_t_abs_max
             map_fruit_energy_bonus_available_per_agent = (
                 map_fruit_energy_bonus_available_per_agent
-                * self.map_scaling_factors
+                * self.get_map_temporal_scaling_factors(self.map_scaling_factors, state.timestep)
                 * e_fruit_t_abs_max
             )
             # Low-bound the energy of the fruit to avoid too poisonous fruits
@@ -1932,7 +1961,9 @@ class GridworldEnv(EcoEnvironment):
                             value_fruit
                         )
                 elif self.mode_variability_fruits in ["space_sin", "space_entropy", "space_diffusion"]:
-                    dict_measures[f"map_scaling_factors"] = self.map_scaling_factors
+                    dict_measures[f"map_scaling_factors"] = self.get_map_temporal_scaling_factors(
+                        self.map_scaling_factors, state.timestep
+                    )
                 else:
                     raise ValueError(
                         f"Unknown mode_variability_fruits: {self.mode_variability_fruits}"

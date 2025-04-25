@@ -1,7 +1,7 @@
 name: RegionalModel
 weighting_method: "uniform"
 mlp_region_config:
-  hidden_dims: [12, 8]
+  hidden_dims: [10]
   n_output_features: 1 # must be 1
 mlp_config:
   hidden_dims: []

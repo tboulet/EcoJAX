@@ -106,7 +106,8 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
         self.dir_weights = f"{self.log_dir}/weights/{self.run_name}"
         
         # Hyperparameters
-
+        self.do_use_model_fruit: bool = self.config["do_use_model_fruit"]
+        
         self.do_include_fruit: bool = self.config["do_include_fruit"]
         self.do_include_value_global: bool = self.config["do_include_value_global"]
         self.do_include_value_fruit: bool = self.config["do_include_value_fruit"]
@@ -339,10 +340,17 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
         self.space_output_fruit_averager = spaces.ContinuousSpace(
             shape=(self.n_actions,)
         )
-        self.model = ModelFruitAverager(
-            space_input=self.space_observation_fruit_averager,
-            space_output=self.space_output_fruit_averager,
-        )
+        if self.do_use_model_fruit:
+            self.model = ModelFruitAverager(
+                space_input=self.space_observation_fruit_averager,
+                space_output=self.space_output_fruit_averager,
+            )
+        else:
+            self.model = model_class(
+                space_input=self.space_observation_fruit_averager,
+                space_output=self.space_output_fruit_averager,
+                **config_model,
+            )
         print(f"Model: {self.model.get_table_summary()}")
 
         # Reward model : this neuro-evolved model converts the observation variation to a reward used by the RL process

@@ -118,8 +118,8 @@ variability_fruits:
   - 1
 omega: 0.1
 factors_fruits: [1, 0.5, -0.5, -1]
-prop_empty_clusters: 0.0
-period_fruits: 1000
+prop_empty_clusters: 0.15
+period_fruits: null
 
 # The variability mode, either "time" (cluster's energy value changes over time) or "space_sin"/"space_entropy" (cluster's energy value changes over space)
 mode_variability_fruits: "space_diffusion"

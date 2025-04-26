@@ -5,6 +5,9 @@ name: AdaptiveAgents
 hp_initial:
   strength_mutation: 0.05
 
+# Whether to use the aggregative fruit model
+do_use_model_fruit: False
+
 # Which informations to include in the input of the fruit model
 do_include_fruit: True # should be always True
 do_include_value_global: False # should generally be False (easy setting)

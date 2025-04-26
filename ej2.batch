@@ -46,10 +46,10 @@ initial_date=$(date +"%Y%m%d_%H%M%S")
 ## Iterate over the seeds
 seed_max=10
 benchmark_name='bench53'
-model='region2'
+model='region'
 for k in $(seq 1 $seed_max); do
     seed=$RANDOM 
-    list_omega=(1)
+    list_omega=(1 0.7 0.4 0.1 0)
     for i in $(seq 0 $((${#list_omega[@]} - 1))); do
         omega=${list_omega[$i]}
         run_name="run_$initial_date-$benchmark_name-$model/omega_$omega/seed_$seed"
@@ -64,6 +64,7 @@ for k in $(seq 1 $seed_max); do
             env.mode_variability_fruits=space_diffusion \
             env.omega=$omega \
             model=$model \
+            agents.mode_weights_transmission=none \
             agents.do_include_value_fruit=True \
             agents.do_include_values_other_fruits=False \
             agents.do_include_id_fruit=True \

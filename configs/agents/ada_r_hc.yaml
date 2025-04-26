@@ -55,7 +55,7 @@ reward_model: # Hardcoded optimal reward model
 # ========================= Logging and Visualization ========================
 log_dir: ${log_dir}
 
-log_weights: True
+log_weights: False
 n_weights_log: 30
 
 

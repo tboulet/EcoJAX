@@ -49,7 +49,7 @@ benchmark_name='bench53'
 model='region'
 for k in $(seq 1 $seed_max); do
     seed=$RANDOM 
-    list_omega=(1 0.7 0.4 0.1 0)
+    list_omega=(0 0.1 0.4)
     for i in $(seq 0 $((${#list_omega[@]} - 1))); do
         omega=${list_omega[$i]}
         run_name="run_$initial_date-$benchmark_name-$model/omega_$omega/seed_$seed"
@@ -64,7 +64,8 @@ for k in $(seq 1 $seed_max); do
             env.mode_variability_fruits=space_diffusion \
             env.omega=$omega \
             model=$model \
-            agents.mode_weights_transmission=none \
+            env.prop_empty_clusters=0.15 \
+            agents.mode_weights_transmission=final \
             agents.do_include_value_fruit=True \
             agents.do_include_values_other_fruits=False \
             agents.do_include_id_fruit=True \

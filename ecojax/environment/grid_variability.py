@@ -131,7 +131,7 @@ def get_grid_of_variability(var_target, H, W, diffusion_rate=0.5, iterations=100
         grid = new_grid
 
         if iteration % 1 == 0:
-            # print(f"Iteration {iteration}: Variability = {new_var:.4f}")
+            print(f"Iteration {iteration}: Variability = {new_var:.4f}")
             # plot_continuous_grid(grid, save_idx=iteration)
             pass
 
@@ -194,3 +194,13 @@ def plot_continuous_grid(grid, save_path=None):
         plt.savefig(save_path)
     else:
         plt.show()
+
+if __name__ == "__main__":
+    # Example usage
+    H, W = 10, 10
+    var_target = 4
+    diffusion_rate = 0.5
+    iterations = 1000
+
+    grid = get_grid_of_variability(var_target, H, W, diffusion_rate, iterations)
+    plot_continuous_grid(grid)

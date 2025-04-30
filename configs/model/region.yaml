@@ -1,5 +1,5 @@
 name: RegionalModel
-weighting_method: "uniform"
+weighting_method: "proximity"
 mlp_region_config:
   hidden_dims: [12, 8]
   n_output_features: 1 # must be 1

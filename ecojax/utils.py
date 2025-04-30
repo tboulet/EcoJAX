@@ -291,7 +291,7 @@ def average_pooling(input_array: jnp.ndarray, h: int) -> jnp.ndarray:
     return pooled
 
 
-def separate_visual_field(input_array: jnp.ndarray) -> jnp.ndarray:
+def separate_visual_field(input_array: jnp.ndarray, weighting_method: str = "uniform") -> jnp.ndarray:
     """
     Separates the visual field into 5 regions (center, front, left, right, and backward),
     with backward excluding diagonal tiles, but front including them.
@@ -304,6 +304,18 @@ def separate_visual_field(input_array: jnp.ndarray) -> jnp.ndarray:
     """
     H, W, C = input_array.shape
     assert H == W, "Input array must have square spatial dimensions (H, H, C)."
+    
+    # Compute the map of proximity (1/L1 distance) to the center pixel
+    if weighting_method == "uniform":
+        map_proximity = jnp.ones((H, W))
+    elif weighting_method == "proximity":
+        map_proximity = jnp.zeros((H, W))
+        for i in range(H):
+            for j in range(W):
+                l1_distance = abs(i - H // 2) + abs(j - W // 2)
+                map_proximity = map_proximity.at[i, j].set(1 / (1+ l1_distance))
+    else:
+        raise ValueError(f"Unknown weighting method: {weighting_method}")
     
     # Center pixel (middle of the array)
     center_pixel = input_array[H // 2, W // 2, :]
@@ -327,6 +339,7 @@ def separate_visual_field(input_array: jnp.ndarray) -> jnp.ndarray:
     backward_mask = (y > H // 2) & (x > H - y - 1) & (x < y)
 
     # Average the values in each region
+    input_array = input_array * map_proximity[..., None]  # Apply proximity weighting to the input array
     center_avg = jnp.sum(input_array * center_mask[..., None] / center_mask.sum(), axis=(0, 1))
     front_avg = jnp.sum(input_array * front_mask[..., None] / front_mask.sum(), axis=(0, 1))
     left_avg = jnp.sum(input_array * left_mask[..., None] / left_mask.sum(), axis=(0, 1))
@@ -337,3 +350,4 @@ def separate_visual_field(input_array: jnp.ndarray) -> jnp.ndarray:
     regions_avg = jnp.stack([center_avg, front_avg, left_avg, right_avg, backward_avg], axis=0)
     
     return regions_avg
+

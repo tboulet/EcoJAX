@@ -1,6 +1,6 @@
 # Hyperparameters
 seed: 
-n_timesteps : 200000
+n_timesteps : 100000
 period_eval : 500
 n_agents_max : 1500
 n_agents_initial : 400

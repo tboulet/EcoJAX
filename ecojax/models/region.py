@@ -75,7 +75,7 @@ class RegionalModel(BaseModel):
         
         # Obtain the regions
         if self.weighting_method == "uniform":
-            regions = separate_visual_field(visual_field_with_scalars) # (5, C+m)
+            regions = separate_visual_field(visual_field_with_scalars, weighting_method=self.weighting_method) # (5, S, S, C+m)
         else:
             raise NotImplementedError(f"Weighting method {self.weighting_method} is not implemented")
         

@@ -74,10 +74,7 @@ class RegionalModel(BaseModel):
         ) # (S, S, C+m)
         
         # Obtain the regions
-        if self.weighting_method == "uniform":
-            regions = separate_visual_field(visual_field_with_scalars, weighting_method=self.weighting_method) # (5, S, S, C+m)
-        else:
-            raise NotImplementedError(f"Weighting method {self.weighting_method} is not implemented")
+        regions = separate_visual_field(visual_field_with_scalars, weighting_method=self.weighting_method) # (5, S, S, C+m)
         
         # Apply the MLP for each region
         assert self.mlp_region_config["n_output_features"] == 1, "The MLP for the regions should have a single output feature"

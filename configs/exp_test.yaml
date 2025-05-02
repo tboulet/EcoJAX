@@ -3,9 +3,9 @@ seed:
 n_timesteps : 100000
 # period_eval : ${eval:'${n_timesteps} / 500'}
 period_eval : 50
-n_agents_max : 12
+n_agents_max : 1
 # n_agents_initial : ${n_agents_max}
-n_agents_initial : 2
+n_agents_initial : 1
 do_jit: True
 n_actions: ${eval:'len(${env.list_actions})'}
 

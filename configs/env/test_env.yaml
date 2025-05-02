@@ -79,6 +79,7 @@ proportion_fruit_initial : 1.0
 
 # The base probability of a non-fruit tile to grow spontaneously a fruit
 p_base_fruit_growth : 0.05
+min_density_fruits: 0.4
 
 # The rules for the value of a fruit are the following :
 # - The value of fruit j will be e_fruit_t_max_abs * cos(w_j x pi) * cos(w_j y pi)
@@ -89,7 +90,7 @@ p_base_fruit_growth : 0.05
 # - If normalization is done, it is set so that the input of positive energy by unit of time correspond to (energy_fruit_max_abs_ref, sum_energy_map_ref)
 
 # The maximum absolute value of the energy of a fruit at the beginning of the simulation
-e_fruit_0_abs_max : 25 # (like in brown experiment)
+e_fruit_0_abs_max : 50 # (like in brown experiment)
 # The timestep where the final value of the energy of a fruit is reached
 t_fruit_T : 10000
 # Whether to do normalization of the energy of the fruits
@@ -100,7 +101,7 @@ e_fruit_T_abs_max : 50.0
 e_fruit_abs_max_ref : 10
 sum_energy_map_ref : 200
 # The minimum value of the energy of a fruit
-energy_fruit_min : -5
+energy_fruit_min : -10
 
 # The number of tiles of the side of a fruit cluster. Must be a divider of H and W.
 side_cluster_fruits: 5
@@ -116,9 +117,11 @@ variability_fruits:
   - 1
 omega: 0.5
 factors_fruits: [-1, -0.2, 0.5, 1]
+prop_empty_clusters: 0.15
+period_fruits: null
 
 # The variability mode, either "time" (cluster's energy value changes over time) or "space_sin"/"space_entropy" (cluster's energy value changes over space)
-mode_variability_fruits: "space_sin"
+mode_variability_fruits: "space_diffusion"
 
 # ======================== Agent Parameters ========================
 

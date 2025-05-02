@@ -1774,8 +1774,9 @@ class GridworldEnv(EcoEnvironment):
             self.novelty_hunger_value_initial
         )
         n_childrens_new = state.agents.n_childrens.at[
-            indices_had_reproduced_FILLED
+            indices_newborn_agents_FILLED
         ].set(0)
+        n_childrens_new = n_childrens_new.at[indices_newborn_agents_FILLED2].set(0)
         n_childrens_new += are_agents_reproducing
 
         # Update the state

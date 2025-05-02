@@ -17,7 +17,13 @@ import hydra
 from omegaconf import OmegaConf, DictConfig
 from ecojax.metrics.utils import get_dict_metrics_by_type
 from ecojax.register_hydra import register_hydra_resolvers
-from ecojax.types import ActionAgent, ObservationAgent, StateEnv, StateGlobal, StateSpecies
+from ecojax.types import (
+    ActionAgent,
+    ObservationAgent,
+    StateEnv,
+    StateGlobal,
+    StateSpecies,
+)
 
 register_hydra_resolvers()
 
@@ -66,14 +72,14 @@ class Runner:
         self.config = config
 
     def run(self):
-        
+
         agent_config_path = input("Enter the path to the agent config file: ")
-        # if agent_config_path:
-        #     with open(agent_config_path, "r") as f:
-        #         self.config["agents"] = OmegaConf.load(f)
-        # else:
-        #     print("No agent config file provided, using default config.")
-            
+        if agent_config_path:
+            with open(agent_config_path, "r") as f:
+                self.config["agents"] = OmegaConf.load(f)
+        else:
+            print("No agent config file provided, using default config.")
+
         # Main run's components
         env_name = self.config["env"]["name"]
         agent_species_name = self.config["agents"]["name"]
@@ -95,7 +101,7 @@ class Runner:
         self.config["run_name"] = run_name
         self.config["agents"]["run_name"] = run_name
         self.config["env"]["run_name"] = run_name
-        
+
         # Create the env
         EnvClass = env_name_to_EnvClass[env_name]
         if not self.config["do_global_log"]:
@@ -110,7 +116,6 @@ class Runner:
             n_agents_max=self.config["n_agents_max"],
             n_agents_initial=self.config["n_agents_initial"],
         )
-        jnp.array
         observation_space = env.get_observation_space()
         action_space = env.get_action_space()
 
@@ -119,7 +124,7 @@ class Runner:
 
         # Create the agent's species
         AgentSpeciesClass = agent_name_to_AgentSpeciesClass[agent_species_name]
-        agent_species : AdaptiveRL_AgentSpecies = AgentSpeciesClass(
+        agent_species: AdaptiveRL_AgentSpecies = AgentSpeciesClass(
             config=self.config["agents"],
             n_agents_max=self.config["n_agents_max"],
             n_agents_initial=self.config["n_agents_initial"],
@@ -128,52 +133,113 @@ class Runner:
             model_class=ModelClass,
             config_model=self.config["model"],
         )
-        env.agent_species = agent_species # give the react function to the environment (for behavior measures)
-        agent_species.env = env # give the environment to the agent_species
-        
+        env.agent_species = agent_species  # give the react function to the environment (for behavior measures)
+        agent_species.env = env  # give the environment to the agent_species
+
         list_agent_weights_np = []
         while True:
             try:
                 command = input("Enter a command: ")
-                
+
                 if command.startswith("load"):
                     _, path = command.split()
-                    
+
                     for agent_weight_name in os.listdir(path):
                         with open(os.path.join(path, agent_weight_name), "rb") as f:
                             agent_weights = pickle.load(f)
                             list_agent_weights_np.append(agent_weights)
-                    print(f"Loaded {len(list_agent_weights_np)} agent weights from {path}")
-                    
+                    print(
+                        f"Loaded {len(list_agent_weights_np)} agent weights from {path}"
+                    )
+                    break
+
                 elif command == "done":
                     break
-                
+
             except Exception as e:
                 print(f"Error: {e}. Please try again.")
-                
-        def obs_to_dict_action(obs : ObservationAgent, idx = 0) -> Dict[str, ActionAgent]:
+
+        def obs_to_dict_action(obs: ObservationAgent, idx=0) -> Dict[str, ActionAgent]:
             """Convert the observation to a dict of actions representing probs"""
             try:
                 # Get the jnp weights
                 params_np = list_agent_weights_np[idx]
                 params = jax.tree_util.tree_map(lambda x: jnp.array(x), params_np)
-                # Define the action space
+                # Perform inference
                 key_random = random.PRNGKey(seed)
-                logits = agent_species.model.apply(variables={"params": params}, x=obs, key_random=key_random)
+                logits = agent_species.model.apply(
+                    variables={"params": params}, x=obs, key_random=key_random
+                )
                 probs = jax.nn.softmax(logits)
-                action_to_probs = {name_action : probs[idx_action] for idx_action, name_action in env.action_idx_to_meaning().items()}
+                action_to_probs = {
+                    name_action: probs[idx_action]
+                    for idx_action, name_action in env.action_idx_to_meaning().items()
+                }
             except Exception as e:
                 print(f"Error: {e}")
                 breakpoint()
-        
+
             return action_to_probs
-        
+
         # Test the function
         obs = observation_space.sample(jax.random.PRNGKey(seed))
         obs["table_value_fruits"] = jnp.array([0, 0, 0, 0])
-        action = obs_to_dict_action(obs)
-        print(f"Action: {action}")
+        dict_action = obs_to_dict_action(obs)
+        print(f"Action: {dict_action}")
+
+        # Setup
+        shape_visual_field = (
+            env.get_observation_space().dict_space["visual_field"].shape
+        )
+        idx_agents = env.dict_name_channel_to_idx["agents"]
+        idx_fruit_0 = env.dict_name_channel_to_idx["fruits_0"]
+        h, w = shape_visual_field[0], shape_visual_field[1]
+        h_center, w_center = h // 2, w // 2
+        visual_field = jnp.zeros((shape_visual_field))
+        visual_field = visual_field.at[..., idx_agents].set(1)
+        obs_base = {
+            "visual_field": jnp.zeros((shape_visual_field)),
+            "energy": 0.5,
+            "table_value_fruits": jnp.zeros((4,)),
+            # "age": 0.5,
+            "novelty_hunger" : jnp.full((4,), 0.3),
+            # "n_childrens": 1,
+            }
+
+        def to_array(x):
+            return jax.tree_util.tree_map(lambda y: jnp.array(y), x)
+        obs_base = to_array(obs_base)
         
-                
+        # Elementary functions
+        def add_obs(obs, delta_obs):
+            obs = to_array(obs)
+            delta_obs = to_array(delta_obs)
+            assert observation_space.contains(obs), "obs is not in the observation space"
+            for key, value in delta_obs.items():
+                assert key in obs, f"Key {key} not in obs"
+                assert value.shape == obs[key].shape, f"Value {value} has shape {value.shape} but obs[key] has shape {obs[key].shape}"
+                obs[key] = obs[key] + value
+            return obs
+        
+        def get_var_prob(
+            delta_obs1: Dict[str, jnp.ndarray],
+            delta_obs2: Dict[str, jnp.ndarray] = {},
+            action_meaning : str = "eat",
+            ) -> float:
+            delta_obs1 = to_array(delta_obs1)
+            delta_obs2 = to_array(delta_obs2)
+            obs_positive = add_obs(obs_base, delta_obs1)
+            prob1 = obs_to_dict_action(obs_positive)[action_meaning]
+            obs_negative = add_obs(obs_base, delta_obs2)
+            prob2 = obs_to_dict_action(obs_negative)[action_meaning]
+            return prob1 - prob2
+        
+        # Test the function
+        delta_obs1 = {
+            "visual_field": jnp.zeros((shape_visual_field)).at[h_center, w_center, idx_fruit_0].set(1),
+        }
+        var_prob_for_fruit_available = get_var_prob(delta_obs1)
+        print(f"Var prob for fruit available: {var_prob_for_fruit_available}")
+            
 if __name__ == "__main__":
     main()

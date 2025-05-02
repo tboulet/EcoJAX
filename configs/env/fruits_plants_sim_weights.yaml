@@ -1,0 +1,187 @@
+name : Gridworld
+
+# The dimensions of the gridworld
+height : 220
+width : 220
+
+# Whether the env is terminal, i.e. the simulation stops when all agents are dead
+is_terminal : True
+
+# The duration of the simulation
+duration : ${n_timesteps}
+
+
+
+# ======================== Sun Parameters ========================
+# The duration of 1 cycle of the sun (for methods using a period)
+period_sun : 300
+
+# The method to determine the sun's position, among :
+# - "none" : there is no sun
+# - "fixed" : the sun does not move at, all and is fixed in the middle latitude
+# - "random" : the sun moves randomly
+# - "brownian" : the sun moves in a brownian motion
+# - "sine" : the sun moves in a sine wave between south and north
+# - "linear" : the sun moves in a linear way and wraps around the gridworld when reaching the south
+method_sun : "none"
+
+# The radius of the effect of the sun, i.e. the distance at which the sun increase food's growth
+radius_sun_effect : 10
+
+# The radius of the perception of the sun by the agents
+radius_sun_perception : 40
+
+
+
+# ======================== Plants Dynamics ========================
+
+# The initial proportion of food tiles at the beginning of the simulation
+proportion_plant_initial : 0.3
+
+# Whether plant can grow inside of fruit clusters
+do_plant_grow_in_fruit_clusters : False
+
+# The rule for a tile to be a food-tile is the following :
+# P(food spawn) = sigmoid(
+# + logit(p_base_grow_food) * 1_if_tile_is_not_food
+# + factor_sun_grow_food * 1_if_sun_is_up
+# + factor_food_grow_food * average_food_in_radius_food_grow_food
+# - factor_food_kill_food * average_food_in_radius_food_kill_food
+# - logit(p_base_die_food) * 1_if_tile_is_food
+
+# The base probability of a non-food tile to grow spontaneously
+p_base_plant_growth : 0.001
+# The base probability of a food tile to die spontaneously
+p_base_plant_death : 0.0
+
+# The factor of the sun's effect on the growth of food
+factor_sun_effect : 0
+
+# The factor of the effect of the presence of food on the growth of food
+factor_plant_reproduction : 0
+# The radius of the effect of the presence of food on the growth of food
+radius_plant_reproduction : 10
+
+# The factor of the effect of the presence of food on the death of food
+factor_plant_asphyxia : 0
+# The radius of the effect of the presence of food on the death of food
+radius_plant_asphyxia : 20
+
+
+
+# ======================== Fruit parameters ========================
+
+# Whether to add fruits to the simulation
+do_fruits : True
+
+# The initial proportion of fruit tiles at the beginning of the simulation
+proportion_fruit_initial : 0.4
+
+# The base probability of a non-fruit tile to grow spontaneously a fruit
+p_base_fruit_growth : 0.0065
+
+# The rules for the value of a fruit are the following :
+# - The value of fruit j will be e_fruit_t_max_abs * cos(w_j x pi) * cos(w_j y pi)
+# - This will then be low-bounded by energy_fruit_min to avoid too poisonous fruits
+# - The value of e_fruit_t_max_abs is given by the scheduler starting at e_fruit_0_abs_max and ending at e_fruit_T_max_abs
+# - The scheduler can not be increasing, so if e_fruit_0_abs_max < e_fruit_T_max_abs, the value will directly be e_fruit_T_max_abs during all the run
+# - If no normalization is done, e_fruit_T_max_abs is extracted from the config. 
+# - If normalization is done, it is set so that the input of positive energy by unit of time correspond to (energy_fruit_max_abs_ref, sum_energy_map_ref)
+
+# The maximum absolute value of the energy of a fruit at the beginning of the simulation
+e_fruit_0_abs_max : 30 # (zero for no curriculum)
+# The timestep where the final value of the energy of a fruit is reached
+t_fruit_T : 50000
+# Whether to do normalization of the energy of the fruits
+do_normalize_fruits : True
+# The maximum absolute value of the energy of a fruit at the end of the simulation (if do_normalize_fruits is True)
+e_fruit_T_abs_max : null
+# The reference values that caracterize a certain amount of energy input by unit of time
+e_fruit_abs_max_ref : 10
+sum_energy_map_ref : 300
+# The minimum value of the energy of a fruit
+energy_fruit_min : -5
+
+# The number of tiles of the side of a fruit cluster. Must be a divider of H and W.
+side_cluster_fruits: 11
+
+# The range of each fruit cluster, which is the number of tiles around the center tile where fruits will be generated
+range_cluster_fruits: 3
+
+# The list of variabilities of the energy of the fruits, of length 4
+variability_fruits:
+  - 0
+  - 0.1
+  - 0.5
+  - 1
+omega: 0.2
+factors_fruits: [1, 0.5, -0.2, -1]
+
+# The variability mode, either "time" (cluster's energy value changes over time) or "space_sin"/"space_entropy" (cluster's energy value changes over space)
+mode_variability_fruits: "space_sin"
+
+
+# ======================== Agent Parameters ========================
+
+# A list indicating which type of observation use
+list_observations:
+  - visual_field
+  - energy
+  - age
+  - novelty_hunger
+  - n_childrens
+
+# A list indicating which channels the agent can observe in its visual field
+list_channels_visual_field:
+  - plants
+  - agents
+  - fruits_0
+  - fruits_1
+  - fruits_2
+  - fruits_3
+
+# A list indicating which actions the agent has to choose from
+list_actions:
+  - forward
+  - left
+  - backward
+  - right
+  - eat
+  # - reproduce
+  # - transfer
+  # - nothing
+
+# The vision range of an agent. If of value v, the agent will receive the information v tiles around it, so a (2v+1)*(2v+1) grid
+vision_range_agent : 7
+
+# The dimension of the agent's appearance space
+dim_appearance : 0
+
+# The maximum age of an agent
+age_max : 200
+# The allowed situations for an agent to die :
+list_death_events:
+  - age
+  - energy
+
+# The initial energy of an agent
+energy_initial : 50
+# The energy amount obtained by eating a food tile
+energy_plant : 20
+# The energy threshold under which an agent dies
+energy_thr_death : 0
+# The maximal amount of energy an agent can have
+energy_max : ${env.energy_req_reprod}
+
+# The energy required to be able to reproduce
+energy_req_reprod : ${eval:'${env.energy_initial} * 2'}
+# The energy cost of reproduction
+energy_cost_reprod : ${eval:'${env.energy_initial} * 1.2'}
+
+# The threshold below with new random agents will be added to the simulation
+threshold_n_agents: 300
+
+# ======================== Defaults sub-configs and other Hydra config ========================
+defaults:
+  - _self_
+  - metrics : base_env_metrics

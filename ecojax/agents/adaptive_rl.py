@@ -655,11 +655,14 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
 
             # Compute the reward : r_t = reward_model(o_t, o_{t+1})
             key_random, subkey = random.split(key_random)
-            reward_last = self.reward_model.apply(
-                variables={"params": agent.params_reward},
-                x={"obs": agent.obs_last, "obs_next": obs},
-                key_random=subkey,
-            )
+            # reward_last = self.reward_model.apply(
+            #     variables={"params": agent.params_reward},
+            #     x={"obs": agent.obs_last, "obs_next": obs},
+            #     key_random=subkey,
+            # )
+            
+            reward_last = (obs["energy"] - agent.obs_last["energy"]) / 50
+            not_had_child = (obs["n_childrens"] == agent.obs_last["n_childrens"])
             reward_last *= (
                 agent.age > 0
             )  # If agent is just born, don't learn (reward set at 0)
@@ -683,7 +686,8 @@ class AdaptiveRL_AgentSpecies(AgentSpecies):
                         ]
                         == 1.0
                     )
-                    & (agent.action_last == idx_eat_action)
+                    & (agent.action_last == idx_eat_action) # also check not had_child
+                    & (not_had_child)
                 )
                 choicelist.append(
                     agent.table_value_fruits.at[id_fruit].set(reward_last)
